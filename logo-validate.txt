@@ -1,0 +1,45 @@
+PNG source size: 30178 bytes; declared 512 x 512 px
+
+ICO file size: 7830 bytes
+reserved: 0 (must be 0)
+type: 1 (must be 1)
+directory entry count: 3
+
+entry 0 @ directory byte 6 :
+  w: 16  h: 16  j: 0  r: 0
+  planes: 1  bpp: 32
+  sizeOfImageData: 1096  bytes
+  offsetToImageData: 54  bytes
+  DIB header size field at offset 54 : 341835776 (must be 40, 12, 16, 48, or 52 for ICO)
+  -> INVALID: DIB header size is not 40
+  -> INVALID: DIB width 2883584 != directory width 16
+  -> INVALID: DIB height 0 != directory height 16
+  -> INVALID: DIB planes 0 != 1
+  -> INVALID: DIB bpp 0 != directory bpp 32
+
+entry 1 @ directory byte 22 :
+  w: 24  h: 24  j: 0  r: 0
+  planes: 1  bpp: 32
+  sizeOfImageData: 2416  bytes
+  offsetToImageData: 1150  bytes
+  DIB header size field at offset 1150 : 0 (must be 40, 12, 16, 48, or 52 for ICO)
+  -> INVALID: DIB header size is not 40
+  -> INVALID: DIB width 0 != directory width 24
+  -> INVALID: DIB height 1069023232 != directory height 24
+  -> INVALID: DIB planes 0 != 1
+  -> INVALID: DIB bpp 105 != directory bpp 32
+
+entry 2 @ directory byte 38 :
+  w: 32  h: 32  j: 0  r: 0
+  planes: 1  bpp: 32
+  sizeOfImageData: 4264  bytes
+  offsetToImageData: 3566  bytes
+  DIB header size field at offset 3566 : 0 (must be 40, 12, 16, 48, or 52 for ICO)
+  -> INVALID: DIB header size is not 40
+  -> INVALID: DIB width 0 != directory width 32
+  -> INVALID: DIB height 0 != directory height 32
+  -> INVALID: DIB planes 0 != 1
+  -> INVALID: DIB bpp 0 != directory bpp 32
+
+=== RESULT ===
+FAIL: invalid or incomplete ICO

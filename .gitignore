@@ -1,4 +1,21 @@
 .env.local
 node_modules
 dist
+# The web (Cloudflare Sites) build output. Same content as dist/ but built with
+# a root-absolute asset base, and it must never be committed: it contains the
+# published APK and every hashed chunk.
+dist-web
 src/convex/_generated
+isolate
+
+# Signing material, wherever it ends up. `android/.gitignore` already covers the
+# Android tree, but a keystore or its passwords copied to the repository root —
+# the usual accident when someone is in a hurry — must not be committable
+# either. The distribution key identifies the app on Play and cannot be
+# rotated, so an exposed one is not a mistake that can be undone.
+*.jks
+*.keystore
+*.p12
+keystore.properties
+keystore.properties.*
+!keystore.properties.example

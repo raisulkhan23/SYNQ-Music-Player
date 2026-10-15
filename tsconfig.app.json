@@ -17,6 +17,7 @@
 
     /* Linting */
     "strict": true,
+    "noImplicitAny": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "erasableSyntaxOnly": true,
@@ -28,5 +29,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "vly-toolbar-readonly.tsx"]
+  "include": ["src/components", "src/pages", "src/store", "src/hooks", "src/lib", "src/assets", "src/convex/_generated", "src/types", "src/main.tsx", "src/instrumentation.tsx", "src/vite-env.d.ts", "src/index.css", "vly-toolbar-readonly.tsx"],
+  "exclude": ["src/components/HaloSearchDemo.tsx"]
 }

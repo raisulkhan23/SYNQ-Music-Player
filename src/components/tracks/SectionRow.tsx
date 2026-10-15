@@ -19,7 +19,9 @@ export function SectionRow({
             {title}
           </h2>
           {subtitle && (
-            <p className="mt-0.5 truncate text-sm text-muted-foreground">{subtitle}</p>
+            <p className="mt-0.5 truncate text-sm text-muted-foreground">
+              {subtitle}
+            </p>
           )}
         </div>
         {action}

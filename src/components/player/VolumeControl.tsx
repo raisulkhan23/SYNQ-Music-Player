@@ -9,7 +9,8 @@ export function VolumeControl({ className }: { className?: string }) {
   const setVolume = usePlayerStore((s) => s.setVolume);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
 
-  const Icon = muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
+  const Icon =
+    muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
 
   return (
     <div className={cn("flex items-center gap-1", className)}>
@@ -23,12 +24,17 @@ export function VolumeControl({ className }: { className?: string }) {
       </button>
       <Slider
         aria-label="Volume"
-        value={[muted ? 0 : volume]}
+        // `muted ? 0 : volume` was the reason the slider snapped back to zero
+        // the moment it was muted: dragging while muted wrote 0 into the store
+        // and the user could never turn the sound up without pressing the
+        // button first. Keep the real value visible and let the mute icon carry
+        // the muted state instead.
+        value={[volume]}
         min={0}
         max={1}
         step={0.01}
         onValueChange={([v]) => {
-          if (muted) toggleMute();
+          if (muted && v > 0) toggleMute();
           setVolume(v);
         }}
         className="w-20 sm:w-24"

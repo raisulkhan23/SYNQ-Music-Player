@@ -1,0 +1,32 @@
+regenerated D:\synq67\synqmusic\public\logo.ico from D:\synq67\synqmusic\public\logo.png ; size 7886 bytes; entries 16, 24, 32
+PNG source size: 30178 bytes; declared 512 x 512 px
+
+ICO file size: 7886 bytes
+reserved: 0 (must be 0)
+type: 1 (must be 1)
+directory entry count: 3
+
+entry 0 @ directory byte 6 :
+  w: 16  h: 16  j: 0  r: 0
+  planes: 1  bpp: 32
+  sizeOfImageData: 1128  bytes
+  offsetToImageData: 54  bytes
+  DIB header size field at offset 54 : 40 (must be 40, 12, 16, 48, or 52 for ICO)
+
+entry 1 @ directory byte 22 :
+  w: 24  h: 24  j: 0  r: 0
+  planes: 1  bpp: 32
+  sizeOfImageData: 2440  bytes
+  offsetToImageData: 1182  bytes
+  DIB header size field at offset 1182 : 40 (must be 40, 12, 16, 48, or 52 for ICO)
+
+entry 2 @ directory byte 38 :
+  w: 32  h: 32  j: 0  r: 0
+  planes: 1  bpp: 32
+  sizeOfImageData: 4264  bytes
+  offsetToImageData: 3622  bytes
+  DIB header size field at offset 3622 : 40 (must be 40, 12, 16, 48, or 52 for ICO)
+
+=== RESULT ===
+PASS: structurally valid ICO
+validated public/logo.ico: OK

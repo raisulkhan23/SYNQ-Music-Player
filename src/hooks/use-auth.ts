@@ -7,8 +7,11 @@ export function useAuth() {
   const user = useQuery(api.users.currentUser);
   const { signIn, signOut } = useAuthActions();
 
-  // Derive isLoading directly from the dependencies instead of managing separate state
-  const isLoading = isAuthLoading || user === undefined;
+  // Authentication readiness must depend only on the auth session. Waiting
+  // for the optional profile query here used to leave the sign-in page stuck
+  // on its loading screen whenever that query was slow or unavailable, which
+  // made it look like login itself was broken.
+  const isLoading = isAuthLoading;
 
   return {
     isLoading,

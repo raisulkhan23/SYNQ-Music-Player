@@ -19,7 +19,11 @@ export default {
     // `kid` header, so sign-in would silently never confirm and RequireAuth
     // would loop back to /auth forever.
     {
-      domain: process.env.CONVEX_SITE_URL!,
+      // Freebuff deployments expose the canonical Convex site as SITE_URL.
+      // CONVEX_SITE_URL is not guaranteed to be injected, and leaving the
+      // domain undefined makes locally issued session JWTs fail validation —
+      // which logs the user out again on every refresh.
+      domain: process.env.CONVEX_SITE_URL ?? process.env.SITE_URL!,
       applicationID: "convex",
     },
     {

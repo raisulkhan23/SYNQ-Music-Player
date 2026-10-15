@@ -13,13 +13,24 @@ export function SeekBar({ className }: { className?: string }) {
   const [hoverPos, setHoverPos] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const ratio = duration > 0 ? currentTime / duration : 0;
-  const bufferedRatio = duration > 0 ? Math.min(1, bufferedEnd / duration) : 0;
+  // A NaN in either numerator would render as an invalid `NaN%` width and put
+  // the progress fill and the thumb in the wrong place.
+  const ratio =
+    duration > 0 && Number.isFinite(currentTime) ? currentTime / duration : 0;
+  const bufferedRatio =
+    duration > 0 && Number.isFinite(bufferedEnd)
+      ? Math.min(1, bufferedEnd / duration)
+      : 0;
 
   const posFromEvent = (clientX: number): number => {
     const el = trackRef.current;
     if (!el) return 0;
     const rect = el.getBoundingClientRect();
+    // A zero-width track — not laid out yet, or hidden behind a panel that is
+    // still animating in — divides by zero, and `Math.max(0, NaN)` is still
+    // NaN. That NaN used to travel all the way into the media element and
+    // throw, breaking the whole pointer handler.
+    if (!(rect.width > 0)) return 0;
     return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
   };
 

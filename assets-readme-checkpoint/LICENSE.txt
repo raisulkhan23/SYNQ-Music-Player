@@ -1,0 +1,23 @@
+SYNQ Music Player
+Copyright (c) 2026 SYNQ
+
+IMPORTANT NOTICE — PLEASE READ
+
+This software is provided for personal use. By installing SYNQ you agree:
+
+1. SYNQ streams music from third-party, authorized public sources at your
+   request. SYNQ does not host, cache, or redistribute any music catalog.
+
+2. You are responsible for complying with the terms of service of any
+   source or account you connect to SYNQ.
+
+3. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+   LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+   OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+   WITH THE SOFTWARE OR THE USE OF OTHER DEALINGS IN THE SOFTWARE.
+
+You may uninstall SYNQ at any time; uninstalling does not delete your
+listening history or personal data stored by the service.

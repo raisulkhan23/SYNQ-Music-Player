@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/convex/_generated/api";
+import { useAuthGate } from "@/store/authGate";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useMutation } from "convex/react";
 import { Loader2, Plus } from "lucide-react";
@@ -22,7 +23,7 @@ export function PlaylistDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate?: (id: Id<"playlists">) => void;
+  onCreate?: (id: Id<"playlists">, name: string) => void;
 }) {
   const createPlaylist = useMutation(api.playlists.create);
   const [name, setName] = useState("");
@@ -32,15 +33,24 @@ export function PlaylistDialog({
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed || submitting) return;
+    // A playlist belongs to an account, so a guest is asked for one instead
+    // of getting a server error toast. No intent is parked: the name they
+    // typed lives in this dialog's own state, which survives the prompt, so
+    // they can submit again straight after signing in.
+    if (!useAuthGate.getState().request("library", null)) return;
     setSubmitting(true);
     try {
       const id = await createPlaylist({ name: trimmed });
       toast.success(`Created "${trimmed}"`);
       setName("");
       onOpenChange(false);
-      onCreate?.(id);
-    } catch {
-      toast.error("Could not create the playlist");
+      onCreate?.(id, trimmed);
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Unknown error";
+      toast.error("Could not create the playlist", { description: message });
     } finally {
       setSubmitting(false);
     }
