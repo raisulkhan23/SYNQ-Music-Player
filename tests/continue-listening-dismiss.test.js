@@ -1,6 +1,5 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import { setGlobal } from "./helpers/globals.js";
 import { readSource } from "./helpers/tailwind-css.js";
 
 /**
@@ -26,7 +25,7 @@ const win = new Window({ url: "https://example.test/" });
 globalThis.window = win;
 globalThis.document = win.document;
 globalThis.localStorage = win.localStorage;
-setGlobal("navigator", win.navigator);
+globalThis.navigator = win.navigator;
 globalThis.HTMLElement = win.HTMLElement;
 globalThis.Element = win.Element;
 globalThis.Node = win.Node;

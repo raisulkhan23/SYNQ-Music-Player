@@ -7,7 +7,7 @@
  * against an in-process fake so the parts that only matter against a real
  * deployment — pagination and tenant isolation — are actually exercised.
  */
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { ConvexVectorStore } from "../src/convex/convexVectorStore";
 import { HashingEmbedder, MusicVectorDB } from "../src/lib/musicdb";
 

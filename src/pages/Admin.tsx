@@ -290,8 +290,8 @@ function ConfirmButton({
 
 export default function Admin() {
   const status = useQuery(api.admin.status);
-  const users: any[] | undefined = useQuery(api.admin.listUsers);
-  const playlists: any[] | undefined = useQuery(api.admin.listAllPlaylists);
+  const users = useQuery(api.admin.listUsers);
+  const playlists = useQuery(api.admin.listAllPlaylists);
   const allLikes = useQuery(api.admin.listAllLikes);
   const topTracks = useQuery(api.admin.globalTopTracks);
   const activity = useQuery(api.admin.userActivity);
@@ -432,12 +432,12 @@ export default function Admin() {
       all: 0,
       [OTHER_SIGN_IN_METHOD]: 0,
     };
-    for (const u of (users ?? []) as any[]) {
+    for (const u of users ?? []) {
       counts.all += 1;
       // `providers` carries one entry per linked auth account, so a user with
       // two GitHub credentials would otherwise be counted twice and the label
       // would promise more rows than the filter can show.
-      const unique = new Set((u.providers ?? []) as string[]);
+      const unique = new Set(u.providers ?? []);
       for (const p of unique) {
         if (KNOWN_SIGN_IN_METHODS.has(p)) counts[p] = (counts[p] ?? 0) + 1;
         else counts[OTHER_SIGN_IN_METHOD] += 1;
@@ -864,24 +864,24 @@ export default function Admin() {
                   const stamp = new Date().toISOString().slice(0, 10);
                   const ok = downloadCsv(
                     `synq-accounts-${stamp}.csv`,
-                    toCsv(filteredUsers as any[], [
-                      { header: "Name", value: (u: any) => u.name ?? "" },
-                      { header: "Email", value: (u: any) => u.email ?? "" },
-                      { header: "Role", value: (u: any) => u.role ?? "user" },
+                    toCsv(filteredUsers, [
+                      { header: "Name", value: (u) => u.name ?? "" },
+                      { header: "Email", value: (u) => u.email ?? "" },
+                      { header: "Role", value: (u) => u.role ?? "user" },
                       {
                         header: "Sign-in",
-                        value: (u: any) => (u.providers ?? []).join(" + "),
+                        value: (u) => (u.providers ?? []).join(" + "),
                       },
-                      { header: "GitHub id", value: (u: any) => u.githubId ?? "" },
+                      { header: "GitHub id", value: (u) => u.githubId ?? "" },
                       {
                         header: "Guest",
-                        value: (u: any) => (u.isAnonymous ? "yes" : "no"),
+                        value: (u) => (u.isAnonymous ? "yes" : "no"),
                       },
                       {
                         header: "Joined",
-                        value: (u: any) => new Date(u._creationTime).toISOString(),
+                        value: (u) => new Date(u._creationTime).toISOString(),
                       },
-                      { header: "Account id", value: (u: any) => u._id },
+                      { header: "Account id", value: (u) => u._id },
                     ]),
                   );
                   if (!ok) {
@@ -1314,13 +1314,13 @@ export default function Admin() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
-                        {renaming && renaming.id === playlist._id ? (
+                        {renaming?.id === playlist._id ? (
                           <form
                             onSubmit={(e) => {
                               e.preventDefault();
                               if (renaming.name.trim())
                                 handleRenamePlaylist(
-                                  renaming.id,
+                                  playlist._id,
                                   renaming.name,
                                 );
                             }}
@@ -1328,7 +1328,7 @@ export default function Admin() {
                           >
                             <input
                               autoFocus
-                              value={renaming?.name ?? ""}
+                              value={renaming.name}
                               onChange={(e) =>
                                 setRenaming({
                                   id: playlist._id,

@@ -1678,37 +1678,6 @@ html.reduce-motion *::after {
     content: none !important;
   }
 
-  /* ---------------------------------------------------------------------
-     Touch-device rendering budget.
-
-     This is the SAME idea as `html.perf-lite` above, but keyed on the device
-     rather than on a setting, because the costs it removes are costs that
-     only pay off on a desktop GPU. Every rule here keeps the surface looking
-     identical and removes work that has to be redone on every frame.
-
-     The three offenders, and why they matter far more on a phone:
-
-     1. `glass-sheen` animates `background-position`. That is a PAINT
-        animation, not a compositor one: the gradient is re-rasterised and
-        re-blended on every frame, forever. It sits on `.liquid-glass::before`,
-        which is on the mobile top bar, the bottom nav AND the player island —
-        three permanently mounted, full-width surfaces. On a desktop GPU this
-        is free; on a phone it is a continuous full-screen repaint.
-
-     2. `mobile-art-breathe` animates `box-shadow`. Also a paint animation,
-        and it never stops while a track is loaded.
-
-     3. `.aurora-orb` is `filter: blur(58px)` over a 34rem/42rem box, with
-        `will-change: transform` permanently promoting it to its own composited
-        layer. That is a very large offscreen surface that must be re-blurred
-        whenever the accent tint changes, and it is re-composited through the
-        drift animation. It sits behind EVERY route in the shell.
-
-     Stopping the two paint animations keeps the exact same pixels on screen
-     (a 5.8s and an 11s sweep are imperceptible in normal use) and removes the
-     per-frame cost entirely. The orbs are decorative background; dropping
-     their blur on touch keeps the soft glow but stops the huge blur surface.
-     --------------------------------------------------------------------- */
   @media (pointer: coarse) {
     /* Never show the desktop cursor trail on a touch surface. The pointer
        bloom is still enabled by pointerdown, but it fades independently. */
@@ -1721,42 +1690,6 @@ html.reduce-motion *::after {
     .mobile-nav-item::before {
       backdrop-filter: blur(14px) saturate(1.5);
       -webkit-backdrop-filter: blur(14px) saturate(1.5);
-    }
-
-    /* 1. Freeze the glass sheen. The gradient band is still painted — the
-          panels keep their specular highlight — it just stops sweeping, so
-          three full-width surfaces stop repainting every frame. */
-    .liquid-glass::before,
-    .settings-liquid-glass::before,
-    .settings-jump-glass::before {
-      animation: none !important;
-      /* Park the band mid-sweep so the visible highlight matches what a
-         running animation looked like at rest, rather than snapping to the
-         0% keyframe where the band is off the surface. */
-      background-position: 55% 0;
-    }
-
-    /* 2. Freeze the album-art breathe. The static shadow stays; only the
-          per-frame box-shadow repaint goes away. */
-    .mobile-player-art {
-      animation: none !important;
-    }
-
-    /* 3. Keep the aurora glow but drop the enormous blur surface behind it.
-          A plain radial gradient already fades out, so the 58px blur was
-          mostly re-blurring transparency. */
-    .aurora-orb {
-      filter: blur(18px);
-    }
-
-    /* A full-width `backdrop-filter` has to read back and blur everything
-       scrolling beneath it. Trimming the radius on the three persistent bars
-       is visually indistinguishable at these sizes and roughly halves that
-       cost. */
-    .mobile-topbar,
-    .mobile-bottom-nav {
-      backdrop-filter: blur(12px) saturate(1.4);
-      -webkit-backdrop-filter: blur(12px) saturate(1.4);
     }
   }
 

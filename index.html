@@ -5,11 +5,6 @@
     <!-- `?v=2`: a /public asset keeps its URL, so an unversioned href lets the
        browser keep serving the previous mark from cache. Bump on every change. -->
     <link rel="icon" type="image/svg+xml" href="/logo.svg?v=2" />
-    <!-- Raster fallbacks. The SVG above is the preferred mark, but Safari and
-       older browsers still ask for a PNG, and /public assets keep their URL so
-       the version query is what busts the cache. -->
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=1" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=1" />
     <link rel="mask-icon" href="/logo.svg" color="#c42ad6" />
     <!-- Social share card. Regenerate with: python3 scripts/generate-brand-assets.py -->
     <meta property="og:type" content="website" />

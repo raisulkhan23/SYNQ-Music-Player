@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 /**
@@ -47,7 +47,7 @@ describe("a total resolver outage must not stop playback", () => {
   test("the deck path races the resolver instead of waiting on it", () => {
     const branch = sliceBetween(
       player,
-      "const wantDeckEngine",
+      "const wantDeckEngine = wantFilter",
       "getAudio().pause();",
     );
     // A raw `await ytResolve` here means a hung resolver keeps the track
@@ -65,18 +65,17 @@ describe("a total resolver outage must not stop playback", () => {
 
   test("the deadline is short enough to actually save the track", () => {
     // Long enough to catch a warm resolver, short enough that the listener is
-    // not staring at a spinner. 15s.
-    expect(player).toMatch(/15_000/);
-    expect(player).not.toMatch(/resolveWithDeadline\(videoId\)/);
-    // The new cap guards against a hung fetch; it is not a bet that the IFrame will win.
-    // The deck path uses a 15s timer via Promise.race with ytResolve (see line 3621).
-    expect(player).toMatch(/setTimeout\([\s\S]{0,200}?15_000/);
+    // not staring at a spinner. 1.2s.
+    expect(player).toMatch(/const RESOLVE_RACE_MS = 1_200;/);
+    expect(player).toMatch(
+      /function resolveWithDeadline[\s\S]{0,600}?setTimeout\(\(\) => r\(null\), RESOLVE_RACE_MS\)/,
+    );
   });
 
   test("the IFrame fallback is armed with a watchdog", () => {
     const branch = sliceBetween(
       player,
-      "const wantDeckEngine",
+      "const wantDeckEngine = wantFilter",
       "getAudio().pause();",
     );
     // The defect in one line: this path had no timeout, so a refused stream
@@ -90,7 +89,7 @@ describe("a total resolver outage must not stop playback", () => {
   test("the watchdog ends in a visible error, not another silent stall", () => {
     const branch = sliceBetween(
       player,
-      "const wantDeckEngine",
+      "const wantDeckEngine = wantFilter",
       "getAudio().pause();",
     );
     // `isBuffering: false` plus a bumped errorNonce is what raises the real

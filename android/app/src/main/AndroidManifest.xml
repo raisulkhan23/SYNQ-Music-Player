@@ -38,42 +38,4 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- Background playback.
-
-         Music that keeps playing with the screen off is a foreground service on
-         Android, and since Android 17 it is mandatory: the audio framework
-         refuses background audio (silently, with no exception) unless the app
-         has a visible activity or a non-SHORT foreground service, "whether or
-         not the app targets API level 37". These four permissions exist for
-         exactly that one service:
-
-           FOREGROUND_SERVICE            — run any foreground service at all.
-           FOREGROUND_SERVICE_MEDIA_PLAYBACK — the service is of type
-                                             mediaPlayback. Required from
-                                             Android 14 (API 34); starting the
-                                             service without it throws
-                                             SecurityException.
-           WAKE_LOCK                      — lets the media playback hold the CPU
-                                             awake while the display is off, so
-                                             a long track cannot be cut short by
-                                             the device falling idle.
-           POST_NOTIFICATIONS             — for the media notification. Media
-                                             session notifications are exempt
-                                             from this runtime permission, so the
-                                             card is not gated on it; it is
-                                             declared so the foreground service's
-                                             notification channel is fully
-                                             visible, and is never requested at
-                                             runtime because nothing here needs
-                                             an unrelated notification.
-
-         The service and the MEDIA_BUTTON receiver themselves are contributed by
-         the @capgo/capacitor-media-session plugin's own manifest, and merge into
-         the release manifest from there. Nothing here asks for a permission the
-         background player does not use. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

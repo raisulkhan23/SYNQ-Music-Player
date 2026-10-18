@@ -11,7 +11,6 @@ import { toPlayableYoutube } from "@/lib/playable";
 import { giveUpNotice } from "@/lib/playbackFallback";
 import { artistSearchQuery } from "@/lib/youtube";
 import { getAudio } from "@/lib/audio";
-import { publishPosition } from "@/lib/mediaSession";
 import { formatRemaining, useSleepCountdown } from "@/lib/sleepTimer";
 import { formatSkipped } from "@/lib/introTrim";
 import { usePlayerStore } from "@/store/player";
@@ -506,31 +505,152 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
     toast.success("Playing a matching version", { id: "yt-fallback" });
   }, [errorNonce, replaceCurrentStream, playViaStream, searchSameSong]);
 
-  /**
-   * Keep the lock-screen scrubber in step with the transport.
-   *
-   * Metadata, transport state and the remote-control buttons are NOT published
-   * from here. The player store owns them (`syncMediaSession` /
-   * `wireMediaKeys`), which is deliberate: there is exactly one writer, it fires
-   * when playback actually changes rather than when a component happens to
-   * re-render, and — the reason this file ever had a second copy of it at all —
-   * it survives this bar being swapped for the fullscreen player or replaced by
-   * the compact layout at another breakpoint. Two writers meant two competing
-   * `metadata`/`playbackState` pushes and duplicated action handlers, which is
-   * how one "next track" press from a headset can skip two songs.
-   *
-   * Position is the one value that only exists in rendered state, so it is the
-   * one value read here. Throttling, clamping and the native bridge live in
-   * `@/lib/mediaSession`.
-   */
+  // AirPods and other Bluetooth media remotes dispatch Media Session actions
+  // rather than key events. Registering the handlers makes a double tap send
+  // `nexttrack`, while also supporting play, pause, seek and previous track.
   useEffect(() => {
-    if (!current) return;
-    const player = usePlayerStore.getState();
-    publishPosition({
-      duration: duration || current.duration || player.duration,
-      position: currentTime,
-      rate: player.rate,
+    if (!("mediaSession" in navigator)) return;
+    type SessionAction =
+      | "play"
+      | "pause"
+      | "playpause"
+      | "nexttrack"
+      | "previoustrack"
+      | "seekbackward"
+      | "seekforward";
+    type SessionWithActions = MediaSession & {
+      setMediaSessionActionHandler: (
+        action: SessionAction,
+        handler: ((details: MediaSessionActionDetails) => void) | null,
+      ) => void;
+    };
+    const session = navigator.mediaSession as SessionWithActions;
+    const register = (
+      action: SessionAction,
+      handler: (details: MediaSessionActionDetails) => void,
+    ) => {
+      try {
+        session.setMediaSessionActionHandler(action, handler);
+      } catch {
+        // Older Safari builds expose Media Session but reject individual
+        // actions. Unsupported controls should never affect playback.
+      }
+    };
+
+    register("play", () => {
+      const player = usePlayerStore.getState();
+      if (player.current && !player.isPlaying) player.togglePlay();
     });
+    register("pause", () => {
+      const player = usePlayerStore.getState();
+      if (player.current && player.isPlaying) player.togglePlay();
+    });
+    register("playpause", () => {
+      const player = usePlayerStore.getState();
+      if (player.current) player.togglePlay();
+    });
+    register("nexttrack", () => {
+      const player = usePlayerStore.getState();
+      if (player.current) player.next();
+    });
+    register("previoustrack", () => {
+      const player = usePlayerStore.getState();
+      if (player.current) player.prev();
+    });
+    register("seekbackward", (details) => {
+      const player = usePlayerStore.getState();
+      const requestedOffset = details.seekOffset;
+      const offset =
+        typeof requestedOffset === "number" && Number.isFinite(requestedOffset)
+          ? requestedOffset
+          : 10;
+      player.seek(Math.max(0, player.currentTime - offset));
+    });
+    register("seekforward", (details) => {
+      const player = usePlayerStore.getState();
+      const requestedOffset = details.seekOffset;
+      const offset =
+        typeof requestedOffset === "number" && Number.isFinite(requestedOffset)
+          ? requestedOffset
+          : 10;
+      const end =
+        player.duration > 0 ? player.duration : Number.POSITIVE_INFINITY;
+      player.seek(Math.min(end, player.currentTime + offset));
+    });
+
+    return () => {
+      const actions: SessionAction[] = [
+        "play",
+        "pause",
+        "playpause",
+        "nexttrack",
+        "previoustrack",
+        "seekbackward",
+        "seekforward",
+      ];
+      actions.forEach((action) => {
+        try {
+          session.setMediaSessionActionHandler(action, null);
+        } catch {
+          /* ignore unsupported cleanup */
+        }
+      });
+    };
+  }, []);
+
+  // Publish now-playing metadata so iOS/Safari can show SYNQ in Control Center
+  // and expose the app as the active AirPods media session.
+  useEffect(() => {
+    if (!("mediaSession" in navigator) || typeof MediaMetadata === "undefined")
+      return;
+    const session = navigator.mediaSession;
+    if (!current) {
+      session.metadata = null;
+      return;
+    }
+    const artwork = current.coverUrl
+      ? [96, 256, 512].map((size) => ({
+          src: current.coverUrl,
+          sizes: `${size}x${size}`,
+        }))
+      : undefined;
+    session.metadata = new MediaMetadata({
+      title: current.title,
+      artist: current.artistName,
+      album: current.albumName ?? "SYNQ",
+      artwork,
+    });
+  }, [current]);
+
+  // Keep lock-screen / headphone scrubber state synchronized with playback.
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    const session = navigator.mediaSession;
+    session.playbackState = current
+      ? isPlaying
+        ? "playing"
+        : "paused"
+      : "none";
+    if (!current) return;
+
+    const player = usePlayerStore.getState();
+    const mediaDuration = duration || current.duration || player.duration;
+    if (!Number.isFinite(mediaDuration) || mediaDuration <= 0) return;
+    const safeTime = Math.min(
+      mediaDuration,
+      Math.max(0, Number.isFinite(currentTime) ? currentTime : 0),
+    );
+    const playbackRate =
+      Number.isFinite(player.rate) && player.rate > 0 ? player.rate : 1;
+    try {
+      session.setPositionState({
+        duration: mediaDuration,
+        playbackRate,
+        position: safeTime,
+      });
+    } catch {
+      // Some browsers throw while duration metadata is still resolving.
+    }
   }, [current, currentTime, duration, isPlaying]);
 
   if (!current) return <ReadingSessionNav />;

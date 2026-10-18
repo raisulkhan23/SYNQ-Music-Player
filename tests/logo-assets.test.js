@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { readSource } from "./helpers/tailwind-css.js";
@@ -32,43 +32,7 @@ function readPng(rel) {
   }
   // A truncated or mis-ordered PNG throws here rather than silently decoding.
   const raw = inflateSync(Buffer.concat(idat));
-
-  // Un-filtered pixels.
-  //
-  // `raw` is the compressed scanline stream, which carries a filter byte per
-  // row; reading pixel values straight out of it is only correct when the
-  // encoder happened to choose filter 0 for every row. The shipped icons use a
-  // mix (measured: 224 rows of Paeth on logo.png), so a test that assumed
-  // filter 0 both read the wrong bytes AND reported a filter byte as a pixel.
-  const channels = ihdr.color === 6 ? 4 : ihdr.color === 2 ? 3 : 1;
-  const stride = ihdr.width * channels;
-  const pixels = Buffer.alloc(ihdr.height * stride);
-  let pos = 0;
-  for (let y = 0; y < ihdr.height; y++) {
-    const filter = raw[pos++];
-    const line = raw.subarray(pos, pos + stride);
-    pos += stride;
-    const cur = pixels.subarray(y * stride, (y + 1) * stride);
-    const prev = y > 0 ? pixels.subarray((y - 1) * stride, y * stride) : null;
-    for (let i = 0; i < stride; i++) {
-      const a = i >= channels ? cur[i - channels] : 0;
-      const b = prev ? prev[i] : 0;
-      const c = prev && i >= channels ? prev[i - channels] : 0;
-      let value = line[i];
-      if (filter === 1) value += a;
-      else if (filter === 2) value += b;
-      else if (filter === 3) value += (a + b) >> 1;
-      else if (filter === 4) {
-        const p = a + b - c;
-        const pa = Math.abs(p - a);
-        const pb = Math.abs(p - b);
-        const pc = Math.abs(p - c);
-        value += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-      }
-      cur[i] = value & 0xff;
-    }
-  }
-  return { ...ihdr, types, sawEnd, raw, buf, channels, pixels };
+  return { ...ihdr, types, sawEnd, raw, buf };
 }
 
 const publicSvg = readFileSync("public/logo.svg", "utf8");
@@ -108,12 +72,7 @@ describe("the logo is a real, valid image everywhere it is referenced", () => {
   test("the favicon and the in-app logo point at the same file", () => {
     expect(indexHtml).toMatch(/href="\/logo\.svg\?v=\d+"/);
     const logo = readSource("src/components/brand/Logo.tsx");
-    // The URL is built with `publicAsset(...)` so the packaged desktop build
-    // points at the logo inside its own bundle rather than `file:///logo.svg`;
-    // the versioned query string is what this test is about.
-    expect(logo).toMatch(
-      /export const LOGO_SRC = publicAsset\("logo\.svg\?v=\d+"\)/,
-    );
+    expect(logo).toMatch(/export const LOGO_SRC = "\/logo\.svg\?v=\d+"/);
     // Every <img> of the mark must reference it, never an older asset.
     expect(logo).not.toMatch(/src="\/logo\.png"/);
     expect(logo).not.toMatch(/src="\/logo\.svg"/);
@@ -125,13 +84,12 @@ describe("the logo is a real, valid image everywhere it is referenced", () => {
     // preview — keep showing the PREVIOUS logo indefinitely. That is exactly
     // how a correctly-replaced file can look like it was never changed.
     const logo = readSource("src/components/brand/Logo.tsx");
-    const version = logo.match(/LOGO_SRC = publicAsset\("logo\.svg\?v=(\d+)"\)/);
+    const version = logo.match(/LOGO_SRC = "\/logo\.svg\?v=(\d+)"/);
     expect(version).not.toBeNull();
 
-    // Every consumer must use that same version, or they will disagree. Both
-    // go through `publicAsset`, so the version is matched inside that call.
+    // Every consumer must use that same version, or they will disagree.
     const player = readSource("src/lib/youtubePlayer.ts");
-    expect(player).toContain(`publicAsset("logo.svg?v=${version[1]}")`);
+    expect(player).toContain(`logo.src = "/logo.svg?v=${version[1]}"`);
     expect(indexHtml).toContain(`/logo.svg?v=${version[1]}`);
     // The iOS home-screen icon is versioned for the same reason. It is the
     // full-bleed 180px render (iOS applies its own rounded mask, so a
@@ -154,40 +112,30 @@ describe("the raster icons are valid PNGs, not placeholders", () => {
     expect(img.raw.length).toBe(512 * (512 * 4 + 1));
   });
 
-  test("product-icon.png is the square the packaging pipeline reads", () => {
-    // The iOS home-screen icon is `public/icons/apple-180.png`, which is what
-    // index.html links as apple-touch-icon. `product-icon.png` is the full-size
-    // square that the Android/Electron icon pipeline consumes (see
-    // scripts/build-icons-from-artwork.cjs), so 512 is the contract here — it
-    // used to double as the iOS icon, which is why this asserted 180.
+  test("product-icon.png is the 180x180 iOS size", () => {
+    // apple-touch-icon is ignored by iOS unless it is a real PNG.
     const img = readPng("public/product-icon.png");
-    expect(img.width).toBe(512);
-    expect(img.height).toBe(512);
-    expect(img.raw.length).toBe(512 * (512 * 4 + 1));
+    expect(img.width).toBe(180);
+    expect(img.height).toBe(180);
+    expect(img.raw.length).toBe(180 * (180 * 4 + 1));
   });
 
   test("neither icon is an empty or blank file", () => {
-    // The claim is "this is a real rendered mark, not a blank or placeholder
-    // file", so it is measured on the decoded pixels: there is transparency (the
-    // mark's rounded corners are cut out) and there is fully opaque paint. The
-    // old version read the raw scanline stream instead, which required every row
-    // to use filter type 0 — an encoder detail, not a property of the image.
     for (const file of ["public/logo.png", "public/product-icon.png"]) {
       const img = readPng(file);
-      expect(img.channels).toBe(4);
+      // Every row's filter byte is 0, and the payload is not uniform black.
       let min = 255;
       let max = 0;
-      let painted = 0;
-      for (let i = 3; i < img.pixels.length; i += 4) {
-        const a = img.pixels[i];
-        if (a < min) min = a;
-        if (a > max) max = a;
-        if (a > 200) painted += 1;
+      for (let y = 0; y < img.height; y++) {
+        expect(img.raw[y * (img.width * 4 + 1)]).toBe(0);
+        for (let i = 0; i < img.width * 4; i += 4) {
+          const v = img.raw[y * (img.width * 4 + 1) + 1 + i + 3];
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
       }
-      expect(min).toBeLessThan(128); // a cut-out corner
-      expect(max).toBe(255); // fully painted mark
-      // Not a hairline of content on a transparent field either.
-      expect(painted).toBeGreaterThan(img.width * img.height * 0.2);
+      expect(min).toBe(0); // transparent corners
+      expect(max).toBe(255); // painted centre
     }
   });
 

@@ -19,7 +19,7 @@ const INSTANCE = (process.argv[2] ?? "https://invidious.f5.si").replace(
   "",
 );
 const VIDEO = process.argv[3] ?? "kJQP7kiw5Fk";
-const SITE = "https://impartial-ptarmigan-116.convex.site";
+const SITE = "https://frugal-lobster-91.convex.site";
 const ALLOW =
   /^https:\/\/rr[0-9a-z-]*---sn-[a-z0-9-]+\.googlevideo\.com\/videoplayback\?/;
 

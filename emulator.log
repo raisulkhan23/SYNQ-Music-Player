@@ -1,5 +1,0 @@
-INFO         | Android emulator version 37.1.11.0 (build_id 15917651) (CL:N/A)
-INFO         | Graphics backend: gfxstream
-ERROR        | Unknown AVD name [synq], use -list-avds to see valid list.
-ERROR        | HOME is defined but there is no file synq.ini in $HOME\.android\avd
-ERROR        | (Note: Directories are searched in the order $ANDROID_AVD_HOME, $ANDROID_SDK_HOME\avd and $HOME\.android\avd)

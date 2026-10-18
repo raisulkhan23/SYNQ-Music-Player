@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readSource } from "./helpers/tailwind-css.js";
 import {
   CROSSFADE_CHOICES,
@@ -113,11 +113,8 @@ describe("RC2 — the crossfade engine has to be reachable at all", () => {
   );
 
   test("asking for a crossfade routes playback onto the audio decks", () => {
-    // `\s*` rather than single spaces: prettier wraps this expression across
-    // three lines, and the claim is about the conditions and their order, not
-    // about where the line breaks fell.
     expect(load).toMatch(
-      /wantFilter\s*\|\|\s*get\(\)\.crossfade > 0\s*\|\|\s*get\(\)\.gapless/,
+      /wantFilter \|\| get\(\)\.crossfade > 0 \|\| get\(\)\.gapless/,
     );
   });
 

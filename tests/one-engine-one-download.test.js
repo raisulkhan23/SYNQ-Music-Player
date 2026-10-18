@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 /**
@@ -43,10 +43,7 @@ describe("one engine, one download", () => {
   test("the deck path no longer starts the YouTube IFrame alongside it", () => {
     const branch = sliceBetween(
       player,
-      // Anchored on the declaration only: the expression is wrapped across
-      // lines by prettier, so pinning `= wantFilter` here made a formatting
-      // change look like a deleted branch.
-      "const wantDeckEngine",
+      "const wantDeckEngine = wantFilter",
       "getAudio().pause();",
     );
     // The IFrame may still appear — as the FALLBACK when resolution fails —
@@ -76,10 +73,7 @@ describe("one engine, one download", () => {
   test("the IFrame is still a real fallback, not deleted", () => {
     const branch = sliceBetween(
       player,
-      // Anchored on the declaration only: the expression is wrapped across
-      // lines by prettier, so pinning `= wantFilter` here made a formatting
-      // change look like a deleted branch.
-      "const wantDeckEngine",
+      "const wantDeckEngine = wantFilter",
       "getAudio().pause();",
     );
     // Resolver failures must still produce sound rather than silence.

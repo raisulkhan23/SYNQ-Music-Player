@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readSource } from "./helpers/tailwind-css.js";
 
 const shell = readSource("src/components/layout/AppShell.tsx");

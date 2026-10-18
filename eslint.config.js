@@ -6,18 +6,7 @@ import tseslint from "typescript-eslint";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
 
 export default tseslint.config(
-  {
-    ignores: [
-      "dist",
-      // Build output, not source. `android/app/build` is Gradle's, and it
-      // contains the minified Capacitor bundles — linting them produced parse
-      // errors on code nobody wrote and nobody can edit.
-      "android/app/build",
-      "desktop-dist",
-      "release",
-      "src/convex/_generated",
-    ],
-  },
+  { ignores: ["dist"] },
   {
     extends: [
       js.configs.recommended,

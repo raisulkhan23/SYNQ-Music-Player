@@ -1,6 +1,5 @@
-import { beforeAll, describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import { setGlobal } from "./helpers/globals.js";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { InfiniteSlider } from "../src/components/core/infinite-slider.tsx";
@@ -28,7 +27,7 @@ beforeAll(() => {
   win = new Window({ url: "https://example.test/" });
   globalThis.window = win;
   globalThis.document = win.document;
-  setGlobal("navigator", win.navigator);
+  globalThis.navigator = win.navigator;
   globalThis.HTMLElement = win.HTMLElement;
   globalThis.Element = win.Element;
   globalThis.Node = win.Node;

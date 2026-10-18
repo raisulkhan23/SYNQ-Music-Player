@@ -1,7 +1,6 @@
 import { Logo } from "@/components/brand/Logo";
 import { InfiniteSlider } from "@/components/core/infinite-slider";
 import { ShieldCheck } from "lucide-react";
-import { useState } from "react";
 import { Link } from "react-router";
 
 /**
@@ -14,52 +13,6 @@ import { Link } from "react-router";
  * glass surfaces) rather than any single flat brand colour, so it re-themes
  * with the accent picker and stays legible in light, dark and amoled.
  */
-
-/**
- * One "featured on" badge.
- *
- * These images come from third-party launch directories, so they can fail for
- * reasons SYNQ cannot control: the directory is down, it moved the badge path,
- * the device is offline, or a privacy/blocklist extension stops the request. A
- * bare <img> then paints the browser's broken-image glyph inside this bordered
- * tile — which is what made the landing footer look unfinished in the packaged
- * app, where the badge hosts are often unreachable.
- *
- * On error the badge withdraws itself. That is the right trade for decoration
- * that points at someone else's site: losing one costs nothing, while a row of
- * broken-image icons costs credibility. This is not "hiding an error" — the
- * badge is remote artwork with no bundled replacement, and the directory is
- * still reachable from its own site; there is simply nothing useful to show.
- * Badges that do load behave exactly as before (real link, real hover/focus).
- */
-function FeaturedBadge({
-  badge,
-}: {
-  badge: (typeof featuredOn)[number];
-}) {
-  const [unavailable, setUnavailable] = useState(false);
-  if (unavailable) return null;
-
-  return (
-    <a
-      href={badge.href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`block shrink-0 border border-white/75 transition-all duration-200 hover:-translate-y-0.5 hover:border-white focus-visible:-translate-y-0.5 focus-visible:border-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgb(var(--tint))] ${badge.radius}`}
-    >
-      <img
-        src={badge.badge}
-        alt={`Featured on ${badge.name}`}
-        width={badge.width}
-        height={badge.height}
-        loading="lazy"
-        decoding="async"
-        onError={() => setUnavailable(true)}
-        className="block h-8 w-auto"
-      />
-    </a>
-  );
-}
 
 const linkColumns = [
   {
@@ -172,7 +125,7 @@ export function SiteFooter() {
         <div className="grid gap-12 lg:grid-cols-[1.15fr_1.85fr] lg:gap-10">
           {/* brand block */}
           <div className="max-w-sm">
-            <Logo to="/home" />
+            <Logo to="/" />
             <p className="mt-4 text-sm leading-6 text-foreground/70">
               A home for the songs you actually want to hear — no ads, no
               clutter, and a queue that moves like you do.
@@ -204,7 +157,23 @@ export function SiteFooter() {
               className="mt-3"
             >
               {featuredOn.map((badge) => (
-                <FeaturedBadge key={badge.name} badge={badge} />
+                <a
+                  key={badge.name}
+                  href={badge.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`block shrink-0 border border-white/75 transition-all duration-200 hover:-translate-y-0.5 hover:border-white focus-visible:-translate-y-0.5 focus-visible:border-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgb(var(--tint))] ${badge.radius}`}
+                >
+                  <img
+                    src={badge.badge}
+                    alt={`Featured on ${badge.name}`}
+                    width={badge.width}
+                    height={badge.height}
+                    loading="lazy"
+                    decoding="async"
+                    className="block h-8 w-auto"
+                  />
+                </a>
               ))}
             </InfiniteSlider>
           </div>

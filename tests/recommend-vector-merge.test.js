@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { applyExclusions, mergeExtra, poolIds } from "../src/lib/recoMerge.ts";
 import { artistKey } from "../src/lib/notInterested.ts";
 import { readSource } from "./helpers/tailwind-css.js";

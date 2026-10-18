@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readSource } from "./helpers/tailwind-css.js";
 
 const admin = readSource("src/pages/Admin.tsx");
@@ -95,9 +95,7 @@ describe("the accounts table can be narrowed by sign-in method", () => {
   test("an account with two credentials for one method is counted once", () => {
     // `providers` holds one entry per linked auth account. Counting the raw
     // array made the label promise more rows than the filter can ever return.
-    // Optional grouping parens: the source is
-    // `new Set((u.providers ?? []) as string[])`. The claim is the dedupe.
-    expect(admin).toMatch(/const unique = new Set\(\(?u\.providers \?\? \[\]\)?\)/);
+    expect(admin).toMatch(/const unique = new Set\(u\.providers \?\? \[\]\)/);
     expect(admin).toMatch(/for \(const p of unique\)/);
   });
 

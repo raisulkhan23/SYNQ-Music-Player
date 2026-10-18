@@ -31,7 +31,6 @@
  */
 
 import { matchScore } from "./playbackFallback";
-import { isRetryableStatus, type TrackStatus } from "./eligibility";
 
 /** One row of an imported playlist, as stored on the playlist document. */
 export interface ImportedRow {
@@ -41,26 +40,6 @@ export interface ImportedRow {
   coverUrl: string;
   duration: number;
   youtubeId?: string;
-  /** Import lifecycle status. See `lib/eligibility`. */
-  status?: TrackStatus;
-}
-
-/**
- * The fields `mergeRepairs` reads off a stored row — and no more.
- *
- * `status` is a plain string here on purpose. A playlist document keeps
- * whatever an older or newer build wrote onto `trackSnapshots` (see
- * `convex/schema.ts`), so a signature demanding the `TrackStatus` union would
- * refuse the very rows this function exists to repair. `ImportedRow`, whose
- * status IS the union, stays assignable, so the client-side callers keep their
- * narrowing.
- */
-export interface RepairableRow {
-  id: string;
-  coverUrl: string;
-  duration: number;
-  youtubeId?: string;
-  status?: string;
 }
 
 /** A YouTube search result, reduced to the fields a repair can use. */
@@ -86,77 +65,6 @@ export interface RepairResult {
  * listener hears music and concludes the app worked.
  */
 export const MIN_REPAIR_MATCH = 0.5;
-
-/**
- * How much better the winner must be than the runner-up before it is allowed to
- * be applied without asking.
- *
- * A remix, a live version and the studio cut of one song all score within a few
- * hundredths of each other, and picking between them by a rounding difference is
- * exactly how an import "succeeds" and plays the wrong recording. When two
- * candidates are this close the row is left AMBIGUOUS and a human chooses.
- */
-export const AMBIGUOUS_MATCH_MARGIN = 0.12;
-
-/** How many alternatives an ambiguous row offers to choose between. */
-export const MAX_MATCH_CANDIDATES = 4;
-
-/**
- * Confidence-ranked candidates for one row, strongest first.
- *
- * Deterministic: ties break on the candidate's own id, so repeating the same
- * import cannot produce a different ordering and therefore cannot produce a
- * different automatic match.
- */
-export function rankRepairCandidates(
-  row: Pick<ImportedRow, "title" | "artist">,
-  candidates: readonly RepairCandidate[],
-): Array<{ candidate: RepairCandidate; score: number }> {
-  const scored: Array<{ candidate: RepairCandidate; score: number }> = [];
-  for (const candidate of candidates) {
-    if (!candidate?.id) continue;
-    // No length means the repair cannot fix the very thing it was called to
-    // fix, and an unidentified upload is not something we can write back.
-    if (!candidate.duration || candidate.duration <= 0) continue;
-    scored.push({
-      candidate,
-      score: matchScore(
-        { title: row.title, artist: row.artist },
-        { title: candidate.title, artist: candidate.artist },
-      ),
-    });
-  }
-  return scored.sort(
-    (a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id),
-  );
-}
-
-/**
- * Whether the best candidate is clear enough to apply on its own.
- *
- * Returns the winner, or null when the row needs a human: nothing confident
- * enough, or two confident candidates too close to separate.
- */
-export function decideRepair(
-  row: Pick<ImportedRow, "title" | "artist">,
-  candidates: readonly RepairCandidate[],
-):
-  | { outcome: "match"; candidate: RepairCandidate }
-  | { outcome: "ambiguous" }
-  | { outcome: "none" } {
-  const ranked = rankRepairCandidates(row, candidates);
-  const best = ranked[0];
-  if (!best || best.score < MIN_REPAIR_MATCH) return { outcome: "none" };
-  const runnerUp = ranked[1];
-  if (
-    runnerUp &&
-    runnerUp.score >= MIN_REPAIR_MATCH &&
-    best.score - runnerUp.score < AMBIGUOUS_MATCH_MARGIN
-  ) {
-    return { outcome: "ambiguous" };
-  }
-  return { outcome: "match", candidate: best.candidate };
-}
 
 /**
  * How many tracks one server call may look up.
@@ -221,39 +129,15 @@ export const REPAIR_MAX_PASSES = 8;
 export const REPAIR_EMPTY_STREAK_LIMIT = 2;
 
 /**
- * True when this row is still worth looking up.
+ * True when this row is missing something the detail screen has to show.
  *
- * Any one of the three missing fields is enough. A row with a `youtubeId` but no
- * cover still renders a black box, and a row with a cover but no length still
- * shows `0:00` — so this is deliberately not "is it playable".
- *
- * THE STATUS CHECK IS BUG FIX, NOT A REFINEMENT. Without it a row that upstream
- * had already answered — "no such song", "no confident match", "this is a
- * remix and there are four of them" — counted as unfinished for ever, so the
- * playlist re-searched the same fifty rows on every single visit, the header
- * announced "Looking up artwork and track lengths…" for ever, and the pass that
- * should have moved on to the rest of the list never did. A settled answer is
- * not a pending question.
+ * Any one of the three is enough. A row with a `youtubeId` but no cover still
+ * renders a black box, and a row with a cover but no length still shows
+ * `0:00` — so this is deliberately not "is it playable".
  */
 export function needsRepair(row: ImportedRow): boolean {
   if (!row.title.trim()) return false;
-  if (!isRetryableStatus(row.status)) return false;
-  // "Already has a source" is a PRESENCE check, not `isPlayable`.
-  //
-  // The two are not the same question and conflating them broke this function's
-  // contract: `isPlayable` also validates that an id LOOKS like a video id, so a
-  // row carrying a source this build does not recognise — a provider id, a
-  // legacy id, anything that is not 11 base64 characters — would have been
-  // declared unplayable and routed straight back into the search queue on every
-  // visit, for ever, next to a row that already has a working stream. Presence
-  // is what this function is about: does it have a source, a cover and a
-  // length? Whether that source is playable is `isPlayable`'s question, asked
-  // at the queue boundary where the answer actually decides something.
-  if (row.youtubeId?.trim()) {
-    // Has a source: only the presentation fields can still be missing.
-    return !row.coverUrl?.trim() || !(row.duration > 0);
-  }
-  return true;
+  return !row.youtubeId || !row.coverUrl?.trim() || !(row.duration > 0);
 }
 
 /** What to search YouTube for. Artist omitted when the import had none. */
@@ -275,8 +159,21 @@ export function pickRepair(
   row: Pick<ImportedRow, "title" | "artist">,
   candidates: readonly RepairCandidate[],
 ): RepairCandidate | null {
-  const decision = decideRepair(row, candidates);
-  return decision.outcome === "match" ? decision.candidate : null;
+  let best: { candidate: RepairCandidate; score: number } | null = null;
+  for (const candidate of candidates) {
+    if (!candidate?.id) continue;
+    // No length means the repair cannot fix the very thing it was called to
+    // fix, and an unidentified upload is not something we can write back.
+    if (!candidate.duration || candidate.duration <= 0) continue;
+    const score = matchScore(
+      { title: row.title, artist: row.artist },
+      { title: candidate.title, artist: candidate.artist },
+    );
+    if (best && score <= best.score) continue;
+    best = { candidate, score };
+  }
+  if (!best || best.score < MIN_REPAIR_MATCH) return null;
+  return best.candidate;
 }
 
 /**
@@ -289,11 +186,11 @@ export function pickRepair(
  * Returns the SAME array reference when nothing changed, which is what lets
  * the mutation skip the write (and the re-render) entirely.
  */
-export function mergeRepairs<T extends RepairableRow>(
-  snapshots: readonly T[],
+export function mergeRepairs(
+  snapshots: readonly ImportedRow[],
   repairs: readonly RepairResult[],
-): T[] {
-  if (repairs.length === 0) return snapshots as T[];
+): ImportedRow[] {
+  if (repairs.length === 0) return snapshots as ImportedRow[];
   const byId = new Map(repairs.map((repair) => [repair.id, repair]));
   let changed = false;
   const next = snapshots.map((snapshot) => {
@@ -313,9 +210,9 @@ export function mergeRepairs<T extends RepairableRow>(
       return snapshot;
     }
     changed = true;
-    return { ...snapshot, coverUrl, duration, youtubeId } as T;
+    return { ...snapshot, coverUrl, duration, youtubeId };
   });
-  return changed ? next : (snapshots as T[]);
+  return changed ? next : (snapshots as ImportedRow[]);
 }
 
 /**

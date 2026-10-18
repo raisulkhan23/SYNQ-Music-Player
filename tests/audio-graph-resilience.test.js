@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 
 /**
@@ -131,36 +131,30 @@ beforeEach(async () => {
   // A fresh module registry per test: the audio module memoises its decks,
   // its AudioContext and its element map for the life of the page, and this
   // file asserts on exactly that state.
-  //
-  // `vi.resetModules()` is what actually makes that true — without it the
-  // import below hands back the SAME instance for every test, `ensureGraph()`
-  // short-circuits as already-built, and eight of the tests in this file passed
-  // or failed on state left behind by whichever test ran first.
-  vi.resetModules();
   win = new Window({ url: "https://example.test/" });
   globalThis.window = win;
   globalThis.document = win.document;
-  try { Object.defineProperty(globalThis, 'navigator', { value: win.navigator, configurable: true, writable: true }); } catch (e) { Object.defineProperty(globalThis, 'navigator', { value: win.navigator, configurable: true }); } finally { Object.defineProperty(globalThis, 'navigator', { value: win.navigator, configurable: true }); }
+  globalThis.navigator = win.navigator;
   globalThis.HTMLElement = win.HTMLElement;
   globalThis.requestAnimationFrame = () => 0;
   globalThis.cancelAnimationFrame = () => {};
   globalThis.Audio = win.Audio;
   installAudioContext();
-  audio = await import('../src/lib/audio.ts');
+  audio = await import(`../src/lib/audio.ts?fresh=${Math.random()}`);
 });
 
 describe("a working graph", () => {
-  test("captures both decks and reaches the speakers", async () => {
-    expect(await audio.ensureGraph()).toBe(true);
+  test("captures both decks and reaches the speakers", () => {
+    expect(audio.ensureGraph()).toBe(true);
     expect(log.captured).toBe(2);
     expect(log.destinationWired).toBe(1);
     expect(audio.isGraphReady()).toBe(true);
   });
 
-  test("the chain is connected before anything is captured", async () => {
+  test("the chain is connected before anything is captured", () => {
     // Ordering is the whole fix. If a build ever captures first again, this
     // fails even though every other test in this file still passes.
-    expect(await audio.ensureGraph()).toBe(true);
+    expect(audio.ensureGraph()).toBe(true);
     expect(log.order).toEqual(["wired", "capture", "capture"]);
   });
 });
@@ -183,9 +177,9 @@ describe("a graph that fails to build", () => {
   ];
 
   for (const [kind] of FAILURES) {
-    test(`a ${kind} failure captures nothing and closes the context`, async () => {
+    test(`a ${kind} failure captures nothing and closes the context`, () => {
       failOn = kind;
-      expect(await audio.ensureGraph()).toBe(false);
+      expect(audio.ensureGraph()).toBe(false);
       expect(log.captured).toBe(0);
       expect(log.destinationWired).toBe(0);
       expect(log.closed).toBe(1);
@@ -193,50 +187,50 @@ describe("a graph that fails to build", () => {
     });
   }
 
-  test("a retry after a failure can still succeed", async () => {
+  test("a retry after a failure can still succeed", () => {
     failOn = "panner";
-    expect(await audio.ensureGraph()).toBe(false);
+    expect(audio.ensureGraph()).toBe(false);
     expect(log.captured).toBe(0);
 
     failOn = null;
-    expect(await audio.ensureGraph()).toBe(true);
+    expect(audio.ensureGraph()).toBe(true);
     expect(log.captured).toBe(2);
     expect(audio.isGraphReady()).toBe(true);
   });
 
-  test("an analyser failure no longer costs playback or blending", async () => {
+  test("an analyser failure no longer costs playback or blending", () => {
     // The analyser is inline in the chain, so it must degrade rather than abort:
     // audio still reaches the speakers, the decks are still captured, and a
     // crossfade is still schedulable. Losing a spectrum display the listener
     // cannot see must never cost them their music.
     failOn = "analyser";
-    expect(await audio.ensureGraph()).toBe(true);
+    expect(audio.ensureGraph()).toBe(true);
     expect(log.destinationWired).toBe(1);
     expect(log.captured).toBe(2);
     expect(audio.isGraphReady()).toBe(true);
     expect(audio.canCrossfadeNow()).toBe(true);
   });
 
-  test("a captured element is never re-captured on retry", async () => {
+  test("a captured element is never re-captured on retry", () => {
     // The retry that used to make this permanent: a second
     // createMediaElementSource for the same element throws InvalidStateError
     // in a real browser. If a failure left the element captured, every
     // subsequent attempt would fail here and audio could never come back.
     // Uses `gain`, a factory whose failure genuinely aborts the build.
     failOn = "gain";
-    expect(await audio.ensureGraph()).toBe(false);
+    expect(audio.ensureGraph()).toBe(false);
     expect(log.captured).toBe(0);
 
     failOn = null;
-    expect(await audio.ensureGraph()).toBe(true);
+    expect(audio.ensureGraph()).toBe(true);
     expect(log.captured).toBe(2);
   });
 
-  test("the deck elements stay usable for plain playback after a failure", async () => {
+  test("the deck elements stay usable for plain playback after a failure", () => {
     // The property the whole thing is protecting: with nothing captured, the
     // elements are ordinary <audio> elements again and sound directly.
     failOn = "panner";
-    expect(await audio.ensureGraph()).toBe(false);
+    expect(audio.ensureGraph()).toBe(false);
     audio.getAudio();
     audio.getSpareAudio();
     expect(log.captured).toBe(0);

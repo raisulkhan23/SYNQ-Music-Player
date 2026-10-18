@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { saveImported } from "../src/convex/playlists.ts";
 import { readSource } from "./helpers/tailwind-css.js";
 

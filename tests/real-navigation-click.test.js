@@ -15,9 +15,8 @@
  * If react-router, the environment or the shell ever breaks again, one of
  * these fails here rather than in the browser.
  */
-import { beforeAll, describe, expect, test, vi } from 'vitest';
+import { beforeAll, describe, expect, mock, test } from "bun:test";
 import { Window } from "happy-dom";
-import { setGlobal } from "./helpers/globals.js";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useNavigate } from "react-router";
@@ -28,7 +27,7 @@ beforeAll(() => {
   win = new Window({ url: "https://example.test/home" });
   globalThis.window = win;
   globalThis.document = win.document;
-  setGlobal("navigator", win.navigator);
+  globalThis.navigator = win.navigator;
   globalThis.location = win.location;
   globalThis.history = win.history;
   globalThis.HTMLElement = win.HTMLElement;
@@ -55,7 +54,7 @@ beforeAll(() => {
 
 const pendingAction = () => () => Promise.resolve({ items: [] });
 
-vi.mock("convex/react", () => ({
+mock.module("convex/react", () => ({
   useQuery: () => undefined,
   useAction: () => pendingAction(),
   useMutation: () => pendingAction(),
@@ -69,12 +68,12 @@ vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
 }));
 
-vi.mock("@convex-dev/auth/react", () => ({
+mock.module("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({ signIn: () => {}, signOut: () => {} }),
   ConvexAuthProvider: ({ children }) => children,
 }));
 
-vi.mock("@/hooks/use-auth", () => ({
+mock.module("@/hooks/use-auth", () => ({
   useAuth: () => ({
     isLoading: false,
     isAuthenticated: true,
@@ -117,29 +116,6 @@ async function settle() {
   // player store's timers keep the queue alive. A macrotask turn is enough for
   // the router update and the page's effects to land.
   await new Promise((resolve) => setTimeout(resolve, 100));
-}
-
-/**
- * Retry an assertion until it holds, or fail once the deadline passes.
- *
- * The post-click checks are not instantaneous: React still has to commit the
- * route swap. Under a full suite run (90 workers) that commit can take longer
- * than any fixed sleep, which is exactly how this file was failing while the
- * same test passed on its own. Polling leaves the assertion itself just as
- * strict — it still fails if the view never swaps — it only stops the test
- * failing because the machine happened to be busy.
- */
-async function waitFor(assert, { timeout = 5000, interval = 20 } = {}) {
-  const deadline = Date.now() + timeout;
-  for (;;) {
-    try {
-      assert();
-      return;
-    } catch (error) {
-      if (Date.now() >= deadline) throw error;
-      await new Promise((resolve) => setTimeout(resolve, interval));
-    }
-  }
 }
 
 function click(container, selector) {
@@ -192,11 +168,9 @@ describe("clicking through to an artist in a real DOM", () => {
 
     await click(container, `a[href="${ARTIST_HREF}"]`);
 
-    await waitFor(() => {
-      expect(win.location.pathname).toBe(ARTIST_HREF);
-      expect(container.textContent).not.toContain("YOUR LIBRARY");
-      expect(container.textContent).toContain("Charlie Puth");
-    });
+    expect(win.location.pathname).toBe(ARTIST_HREF);
+    expect(container.textContent).not.toContain("YOUR LIBRARY");
+    expect(container.textContent).toContain("Charlie Puth");
   }, 30000);
 
   test("the same click works inside the real AppShell + RequireAuth layout", async () => {
@@ -242,11 +216,9 @@ describe("clicking through to an artist in a real DOM", () => {
 
     await click(container, `a[href="${ARTIST_HREF}"]`);
 
-    await waitFor(() => {
-      expect(win.location.pathname).toBe(ARTIST_HREF);
-      expect(container.textContent).not.toContain("YOUR LIBRARY");
-      expect(container.textContent).toContain("Charlie Puth");
-    });
+    expect(win.location.pathname).toBe(ARTIST_HREF);
+    expect(container.textContent).not.toContain("YOUR LIBRARY");
+    expect(container.textContent).toContain("Charlie Puth");
   }, 30000);
 
   test("an artist card on Home navigates to the artist page", async () => {
@@ -294,11 +266,9 @@ describe("clicking through to an artist in a real DOM", () => {
 
     await click(container, `div[role="button"]`);
 
-    await waitFor(() => {
-      expect(win.location.pathname).toBe(ARTIST_HREF);
-      expect(container.textContent).not.toContain("YOUR SHELF");
-      expect(container.textContent).toContain("Charlie Puth");
-    });
+    expect(win.location.pathname).toBe(ARTIST_HREF);
+    expect(container.textContent).not.toContain("YOUR SHELF");
+    expect(container.textContent).toContain("Charlie Puth");
   }, 30000);
 
   test("a click still lands while a Shelf is on screen", async () => {
@@ -352,11 +322,9 @@ describe("clicking through to an artist in a real DOM", () => {
 
       await click(container, `a[href="${ARTIST_HREF}"]`);
 
-      await waitFor(() => {
-        expect(win.location.pathname).toBe(ARTIST_HREF);
-        expect(container.textContent).not.toContain("Recently played");
-        expect(container.textContent).toContain("Charlie Puth");
-      });
+      expect(win.location.pathname).toBe(ARTIST_HREF);
+      expect(container.textContent).not.toContain("Recently played");
+      expect(container.textContent).toContain("Charlie Puth");
       expect(logged.join(" ")).not.toContain("Maximum update depth exceeded");
     } finally {
       console.error = realError;

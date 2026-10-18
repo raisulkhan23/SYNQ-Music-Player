@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 
 /**
  * The YouTube IFrame must never be left playing UNDER the <audio> decks.

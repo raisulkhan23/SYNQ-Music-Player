@@ -1,4 +1,4 @@
-import { Download, Smartphone } from "lucide-react";
+import { Download, Loader2, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 
 import { usePwaInstall, manualInstallHint, planInstallBlock } from "@/lib/pwa";
@@ -32,19 +32,10 @@ import { cn } from "@/lib/utils";
 export function InstallAppButton({
   className,
   variant = "outline",
-  label = "Download app",
 }: {
   className?: string;
   /** `outline` sits beside a primary CTA; `solid` stands alone. */
   variant?: "outline" | "solid";
-  /**
-   * Button text. Overridable because this is no longer the only download
-   * affordance: on the landing page it now sits *beside* the Windows and
-   * Android installers, where a second button also reading "Download app"
-   * reads as the same button twice. There it is labelled for what it actually
-   * does — install the app in this browser.
-   */
-  label?: string;
 }) {
   const { state, install, installed } = usePwaInstall();
 
@@ -93,7 +84,7 @@ export function InstallAppButton({
     <button
       type="button"
       onClick={() => void handleClick()}
-      aria-label={label}
+      aria-label="Download SYNQ as an app"
       className={cn(
         "inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition-transform",
         variant === "solid"
@@ -102,17 +93,12 @@ export function InstallAppButton({
         className,
       )}
     >
-      {/* A permanent spinner here read as "still loading" on browsers that
-          will never offer the install (dev previews, non-HTTPS, iOS Safari),
-          which is exactly the "broken app" signal this component exists to
-          avoid. The icon now states the mode: ready to install, or the manual
-          browser route. */}
       {state === "ready" ? (
         <Download className="size-4" />
       ) : (
-        <Smartphone className="size-4" />
+        <Loader2 className="size-4" />
       )}
-      {label}
+      Download app
     </button>
   );
 }

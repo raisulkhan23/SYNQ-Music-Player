@@ -52,14 +52,10 @@ captures/
 # Comment next line if keeping position of elements in Navigation Editor is relevant for you
 .idea/navEditor.xml
 
-# Keystore files and their passwords. These are UNCOMMENTED on purpose: a
-# distribution key is the identity of the app, it cannot be rotated on Play, and
-# the passwords beside it would hand over publishing rights outright. Nothing in
-# this project should ever be committed from these patterns.
-*.jks
-*.keystore
-*.p12
-keystore.properties
+# Keystore files
+# Uncomment the following lines if you do not want to check your keystore files in.
+#*.jks
+#*.keystore
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild

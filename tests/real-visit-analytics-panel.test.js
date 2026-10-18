@@ -11,9 +11,8 @@
  * includes the "no data yet" state, which is the very first thing a real
  * admin sees on a fresh deployment and the easiest one to get wrong.
  */
-import { beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import { setGlobal } from "./helpers/globals.js";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { VisitAnalytics } from "../src/components/admin/VisitAnalytics.tsx";
@@ -40,7 +39,7 @@ let win;
 function installGlobals() {
   globalThis.window = win;
   globalThis.document = win.document;
-  setGlobal("navigator", win.navigator);
+  globalThis.navigator = win.navigator;
   globalThis.location = win.location;
   globalThis.HTMLElement = win.HTMLElement;
   globalThis.Element = win.Element;

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readSource } from "./helpers/tailwind-css.js";
 // queueOrder.ts is dependency-free.
 import { shuffleList } from "../src/lib/queueOrder.ts";

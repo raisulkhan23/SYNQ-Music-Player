@@ -39,9 +39,9 @@ export function LegalDoc({
       <div className="mx-auto w-full max-w-3xl px-5 sm:px-8">
         {/* document header */}
         <header className="flex items-center justify-between gap-4 py-6">
-          <Logo              to="/home" />
+          <Logo to="/" />
           <Link
-                         to="/home"
+            to="/"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />

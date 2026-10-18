@@ -11,7 +11,7 @@
  * action is driven end-to-end against a stubbed `fetch` rather than asserted
  * against its source text.
  */
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test } from "bun:test";
 import { searchJamendo } from "../src/convex/jamendo";
 import { readSource } from "./helpers/tailwind-css.js";
 import {

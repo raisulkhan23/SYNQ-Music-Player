@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readSource } from "./helpers/tailwind-css.js";
 
 const store = readSource("src/store/player.ts");
@@ -176,9 +176,7 @@ describe("the admin accounts table can be exported", () => {
   });
 
   test("the export respects the filters the admin is looking at", () => {
-    // The `as any[]` cast is part of the call today; the claim is that the
-    // export is handed the FILTERED rows, not the whole table.
-    expect(admin).toMatch(/toCsv\(filteredUsers(?:\s+as any\[\])?, \[/);
+    expect(admin).toMatch(/toCsv\(filteredUsers, \[/);
     expect(admin).toMatch(/header: "Sign-in"/);
     expect(admin).toMatch(/synq-accounts-\$\{stamp\}\.csv/);
     expect(admin).toMatch(/Couldn't export the accounts/);

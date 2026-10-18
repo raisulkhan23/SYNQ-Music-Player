@@ -75,7 +75,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           <Card className="min-w-[350px] border-white/10 bg-white/[0.04] pb-0 shadow-[0_30px_80px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
             <CardHeader className="text-center">
               <div className="mb-4 mt-4 flex justify-center">
-                <Logo to="/home" className="text-lg" />
+                <Logo to="/" className="text-lg" />
               </div>
               <CardTitle className="font-display text-xl">
                 Sign in or sign up
@@ -90,18 +90,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   production origin, so GitHub could authenticate and then
                   land the listener on the wrong site. */}
               <AuthForm
-                redirectTo={`${window.location.protocol}//${window.location.host}${redirect}`}
+                redirectTo={`${window.location.origin}${redirect}`}
                 onSuccess={() => navigate(redirect, { replace: true })}
               />
-              {/*
-                Desktop OAuth return path: when running in Electron the OAuth
-                flow must return to the app via synq://callback. We expose the
-                same redirect target so the desktop runtime can build a callback
-                URL that the browser hands back to the running app.
-              */}
-              {window.synq?.desktop && (
-                <span className="sr-only" data-desktop-redirect={redirect} />
-              )}
             </CardContent>
             <div className="border-t border-white/[0.07] bg-white/[0.02] px-6 py-4 text-center text-xs text-muted-foreground rounded-b-lg">
               Secured by{" "}

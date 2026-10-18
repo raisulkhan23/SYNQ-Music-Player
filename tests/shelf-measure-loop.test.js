@@ -19,7 +19,7 @@
  * Each test builds its own Window and installs its own globals, so this file
  * cannot pass by inheriting another test's environment.
  */
-import { expect, test } from 'vitest';
+import { expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -31,7 +31,7 @@ function installDom() {
   const win = new Window({ url: "https://example.test/home" });
   globalThis.window = win;
   globalThis.document = win.document;
-  try { Object.defineProperty(globalThis, 'navigator', { value: win.navigator, configurable: true, writable: true }); } catch (e) { Object.defineProperty(globalThis, 'navigator', { value: win.navigator, configurable: true }); }
+  globalThis.navigator = win.navigator;
   globalThis.location = win.location;
   globalThis.history = win.history;
   globalThis.HTMLElement = win.HTMLElement;

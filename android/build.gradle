@@ -17,19 +17,6 @@ buildscript {
 
 apply from: "variables.gradle"
 
-// Capacitor 8's capacitor-android module compiles with source/target 21. The
-// machine's default JDK is 17, so request a 21 toolchain for every project;
-// the foojay resolver (settings.gradle) downloads it if missing.
-allprojects {
-    plugins.withType(JavaBasePlugin) {
-        java {
-            toolchain {
-                languageVersion = JavaLanguageVersion.of(21)
-            }
-        }
-    }
-}
-
 allprojects {
     repositories {
         google()

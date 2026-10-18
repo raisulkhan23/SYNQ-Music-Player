@@ -33,11 +33,9 @@ import {
 import {
   DEFAULT_CROSSFADE,
   DEFAULT_GAPLESS,
-  GAPLESS_MIN_READY_STATE,
   GAPLESS_PRELOAD_LEAD_SECONDS,
   MANUAL_SKIP_FADE_SECONDS,
   canHandOffGapless,
-  isDeckSource,
   shouldStartNow,
   fadeGains,
   normalizeCrossfade,
@@ -77,14 +75,6 @@ import {
   writeNotificationsEnabled,
 } from "@/lib/notifications";
 import { toPlayableYoutube, type Playable } from "@/lib/playable";
-import { isPlayable } from "@/lib/eligibility";
-import {
-  publishPlaybackState,
-  publishTrackMetadata,
-  registerAudioRouteLossHandler,
-  registerMediaSessionActions,
-} from "@/lib/mediaSession";
-import { isAndroidShell } from "@/lib/nativeShell";
 import { localAudioUrl } from "@/lib/opfsSink";
 import { resolveViaPiped } from "@/lib/pipedResolve";
 import type { RecoCandidate } from "@/lib/recommend";
@@ -243,13 +233,25 @@ const resolveYoutubeStream = async (
   return url;
 };
 
-// `resolveWithDeadline` and its 1.2s `RESOLVE_RACE_MS` used to live here. They
-// were removed once the deck path stopped racing the resolver against a timer:
-// resolution normally takes longer than 1.2s, so the deadline expired first,
-// the deck was abandoned, and playback fell back to the IFrame — which is
-// exactly the "buffering forever at 0.0" failure the deck path exists to
-// avoid. The deck load now waits with a generous cap that only guards a hung
-// fetch (see `loadTrack`). Nothing referenced either one any more.
+/**
+ * Resolve, but never wait forever.
+ *
+ * `ytResolve` talks to a Convex action and then to a list of public Piped
+ * instances. Any of those can hang — and while it does, the track sits at
+ * `isBuffering: true` with position 0.0 and no sound, because the IFrame that
+ * could have played it has not been started yet. Resolution therefore loses a
+ * race against a short timer: the YouTube player is the only audio source that
+ * has ever reliably worked, so it must never be gated behind a best-effort
+ * lookup.
+ */
+const RESOLVE_RACE_MS = 1_200;
+
+function resolveWithDeadline(videoId: string): Promise<string | null> {
+  return Promise.race([
+    ytResolve(videoId),
+    new Promise<null>((r) => setTimeout(() => r(null), RESOLVE_RACE_MS)),
+  ]);
+}
 
 const ytResolveCache = new Map<string, Promise<string | null>>();
 
@@ -2020,17 +2022,6 @@ function audioElementIsSource(t: Playable | null | undefined): boolean {
     t.audioUrl.includes("videoplayback") ||
     t.audioUrl.includes("piped") ||
     t.audioUrl.includes("odycdn") ||
-    // A DOWNLOADED copy is played by the element and by nothing else.
-    //
-    // This case was missing, and its absence was the worst kind: a downloaded
-    // track has a `blob:` audioUrl AND a `youtubeId`, so it failed every branch
-    // above while the last clause excludes anything with a `youtubeId`. The
-    // track was therefore classified as IFrame-owned while an `<audio>` deck
-    // was in fact what played it — so the IFrame's `ended` and its ~250ms clock
-    // were treated as authoritative for a song it was not playing, and
-    // `crossfadePossible` refused to blend downloads at all. A blob URL is a
-    // local file: the element owns it, unambiguously.
-    t.audioUrl.startsWith("blob:") ||
     // A non-YouTube direct URL (catalog tracks) also plays via the element.
     (!t.youtubeId && /^https?:\/\//.test(t.audioUrl))
   );
@@ -2495,33 +2486,12 @@ function prepareIncoming(track: Playable): Promise<HTMLAudioElement | null> {
       if (!track.youtubeId) return null;
       url = (await ytResolve(track.youtubeId)) ?? "";
     }
-    // `blob:` is the object URL for a downloaded copy on disk, and it is as
-    // playable as any network URL.
-    //
-    // The THIRD copy of "is this playable" used to live here, written as
-    // `/^(https?:|blob:)/`, and it was the only one that accepted `blob:` — so
-    // the deck loaded a downloaded track happily while the gapless gate refused
-    // to hand off to it, and the crossfade called this function again mid-blend
-    // to reload a buffer that was already ready. One rule, three call sites.
-    if (!isDeckSource(url)) return null;
+    // `blob:` is the object URL for a downloaded copy on disk. It is as
+    // playable as any network URL, so the guard has to accept it.
+    if (!url || !/^(https?:|blob:)/.test(url)) return null;
     // The listener may have skipped while this was resolving; do not load a
     // track the queue has moved on from.
     if (transition !== t && t) return null;
-
-    // Already holding this exact source AND buffered? Leave it alone.
-    //
-    // Re-assigning `src` and calling `load()` discards the buffer and re-issues
-    // the request. On the transition path that is the worst possible moment to
-    // do it: a re-arm, or a second consumer asking for the track that is
-    // already prepared, turned a ready hand-off into a stall at the exact
-    // boundary the buffer exists to smooth over. The loaded buffer IS this
-    // function's product, so an unconditional reload was throwing away its own
-    // work.
-    if (el.currentSrc === url && el.readyState >= GAPLESS_MIN_READY_STATE) {
-      if (transition === t && t) t.preparedFor = track.id;
-      return el;
-    }
-
     el.src = url;
     el.preload = "auto";
     el.playbackRate = usePlayerStore.getState().rate;
@@ -2609,7 +2579,7 @@ async function maybeRunCrossfade(remaining: number): Promise<void> {
   // Make sure the incoming deck really is holding this track before fading to
   // it. If the resolver was slow or failed, fall back rather than fade to
   // silence.
-  if (!isDeckSource(incoming.currentSrc)) {
+  if (!incoming.currentSrc || !incoming.currentSrc.startsWith("http")) {
     const prepared = await prepareIncoming(t.track);
     if (!prepared || !transition || transition !== t) return;
     if (!canCrossfadeNow()) {
@@ -3205,112 +3175,44 @@ function wireYoutubeEngine() {
 }
 
 // --- media session (lock screen / hardware keys) ------------------------------
-//
-// The ONLY publisher of now-playing state to the operating system. Every
-// transport change in this store funnels through `syncMediaSession`, so the
-// notification, the lock screen and the in-app transport can never disagree
-// about what is playing. All of the platform work lives in
-// `@/lib/mediaSession`; this file only supplies the values and the button
-// behaviour.
-
-/**
- * True once the user has ended playback from the notification's Stop button.
- *
- * Android re-delivers `play` in situations the user did not ask for — audio
- * becoming available again after a route change is the common one. Without this
- * latch, "Stop" would be undone seconds later by the platform and music would
- * come back with no explanation. Cleared only when playback genuinely starts
- * again (`syncMediaSession(track, true)`), i.e. from the app or from a real
- * user play. This is the "do not auto-resume after the user stopped" rule.
- */
-let mediaSessionStopped = false;
 
 function syncMediaSession(track: Playable | null, playing: boolean) {
-  if (playing) mediaSessionStopped = false;
-  publishTrackMetadata(
-    track
-      ? {
-          title: track.title,
-          artistName: track.artistName,
-          albumName: track.albumName,
-          coverUrl: track.coverUrl,
-        }
-      : null,
-  );
-  publishPlaybackState(track ? (playing ? "playing" : "paused") : "none");
+  if (!("mediaSession" in navigator)) return;
+  if (!track) {
+    navigator.mediaSession.metadata = null;
+    return;
+  }
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: track.title,
+    artist: track.artistName,
+    album: track.albumName,
+    artwork: track.coverUrl ? [{ src: track.coverUrl, sizes: "512x512" }] : [],
+  });
+  navigator.mediaSession.playbackState = playing ? "playing" : "paused";
 }
 
-/**
- * Hardware media keys, Bluetooth remotes and lock-screen controls.
- *
- * Registered once, at store creation, and NOT keyed to any rendered component:
- * on Android each registration is a retained native callback, so a component
- * that unmounts (the player bar is replaced by the fullscreen player, the
- * layout switches between breakpoints) must not take the lock-screen buttons
- * with it. The handlers read the live store when a button is pressed.
- */
+/** Hardware media keys / lock-screen controls. */
 function wireMediaKeys() {
-  registerMediaSessionActions({
-    play: () => {
+  if (!("mediaSession" in navigator)) return;
+  const ms = navigator.mediaSession;
+  try {
+    ms.setActionHandler("play", () => usePlayerStore.getState().togglePlay());
+    ms.setActionHandler("pause", () => usePlayerStore.getState().togglePlay());
+    ms.setActionHandler("previoustrack", () =>
+      usePlayerStore.getState().prev(),
+    );
+    ms.setActionHandler("nexttrack", () => usePlayerStore.getState().next());
+    ms.setActionHandler("seekbackward", () => {
       const s = usePlayerStore.getState();
-      if (!s.current) return;
-      // A resume the user did not ask for is not a resume.
-      if (mediaSessionStopped) return;
-      if (!s.isPlaying) s.togglePlay();
-    },
-    pause: () => {
+      s.seek(Math.max(0, s.currentTime - 10));
+    });
+    ms.setActionHandler("seekforward", () => {
       const s = usePlayerStore.getState();
-      if (s.current && s.isPlaying) s.togglePlay();
-    },
-    nexttrack: () => usePlayerStore.getState().next(),
-    previoustrack: () => usePlayerStore.getState().prev(),
-    seekbackward: (offset) => {
-      const s = usePlayerStore.getState();
-      s.seek(Math.max(0, s.currentTime - offset));
-    },
-    seekforward: (offset) => {
-      const s = usePlayerStore.getState();
-      s.seek(s.currentTime + offset);
-    },
-    seekto: (time) => {
-      const s = usePlayerStore.getState();
-      const end = s.duration > 0 ? s.duration : time;
-      s.seek(Math.max(0, Math.min(end, time)));
-    },
-    // "Stop" is the user ending the listening session, not a pause: pause the
-    // current song, then take the session itself down. Publishing `none` is
-    // what stops the Android foreground service and removes the notification,
-    // so the app stops holding a running foreground service once there is
-    // nothing to control — which is exactly what Android's service rules ask
-    // for. `current` is deliberately left in place so the player bar still
-    // shows what was on, ready to be played again.
-    stop: () => {
-      const s = usePlayerStore.getState();
-      if (s.isPlaying) s.togglePlay();
-      mediaSessionStopped = true;
-      publishTrackMetadata(null);
-      publishPlaybackState("none");
-    },
-  });
-}
-
-/**
- * Headphones unplugged (or a Bluetooth speaker went away) is a pause, never a
- * resume and never a switch to the phone's loudspeaker.
- *
- * The event comes from the Android shell — `AudioManager`'s
- * `ACTION_AUDIO_BECOMING_NOISY` is not visible to any web API, so
- * `@/lib/mediaSession` bridges the native broadcast onto the page. This only
- * ever reads the live store and pauses; there is no path from here back to
- * "playing", which is what stops an unplug from looking like the app
- * spontaneously restarting the song.
- */
-function wireAudioRouteLoss() {
-  registerAudioRouteLossHandler(() => {
-    const s = usePlayerStore.getState();
-    if (!s.current || !s.isPlaying) return;
-    s.togglePlay();
-  });
+      s.seek(s.currentTime + 10);
+    });
+  } catch {
+    /* unsupported action types — fine */
+  }
 }
 
 // --- store --------------------------------------------------------------------
@@ -3319,7 +3221,6 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
   wireAudio();
   wireYoutubeEngine();
   wireMediaKeys();
-  wireAudioRouteLoss();
 
   const norm = (t: Playable): Playable => ({
     ...t,
@@ -3601,19 +3502,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       // the IFrame, `crossfadePossible()` returned false, and every plan
       // silently degraded to a cut. Asking for a crossfade now routes playback
       // the same way an effect preset already did.
-      // In the packaged Android app the deck path is also the only one that
-      // survives the screen going off. Chromium keeps AUDIO-ONLY media playing
-      // once the Activity is stopped, but a cross-origin YouTube IFrame is a
-      // video surface and gets suspended, so on Android the resolved stream is
-      // preferred outright. The IFrame is still the fallback when the resolver
-      // cannot produce a stream, so no track is lost to this preference — it is
-      // the same trade the effect-preset path has always made.
-      const wantBackgroundableEngine = isAndroidShell();
-      const wantDeckEngine =
-        wantFilter ||
-        get().crossfade > 0 ||
-        get().gapless ||
-        wantBackgroundableEngine;
+      const wantDeckEngine = wantFilter || get().crossfade > 0 || get().gapless;
       // The decks need a RUNNING AudioContext before a blend is possible, and
       // the context is only ever created lazily. Build it here, inside the
       // gesture that started playback, so a crossfade is not permanently
@@ -3839,42 +3728,8 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     // was running. In-queue navigation goes through playIndex, which leaves
     // radio alone, so clicking a row in the queue does not switch it off.
     if (get().radioActive) set({ radioActive: false, radioSource: null });
-    const rawList = list && list.length > 0 ? list.map(norm) : [norm(track)];
+    const list2 = list && list.length > 0 ? list.map(norm) : [norm(track)];
     const t = norm(track);
-    // ---------------------------------------------------------------------
-    // ONE eligibility gate, at the ONE place every queue is built.
-    //
-    // A queue is filtered to tracks with a VERIFIED playable source before it is
-    // stored. An imported playlist row is a title and an artist: it has no
-    // `youtubeId` and no stream, so queueing it produces a progress bar that
-    // advances over silence, a "next" that walks through more silence, and a
-    // listening-history row for a song nobody heard. Every entry point in the app
-    // — shelves, albums, playlists, radio, recommendations — funnels through
-    // here, which is why the rule lives here rather than being re-checked in each
-    // caller and forgotten in one of them.
-    const list2 = rawList.filter((candidate) => isPlayable(candidate));
-    if (!isPlayable(t)) {
-      // The listener asked for a track that cannot play. Say so instead of
-      // loading silence: this is the honest version of the button doing nothing.
-      set({ isBuffering: false, isPlaying: false });
-      toast.error(`"${t.title}" has no playable source yet`, {
-        id: "yt-fallback",
-        description:
-          "It is saved as metadata. Match it in the playlist to make it playable.",
-      });
-      return;
-    }
-    if (list2.length === 0) list2.push(t);
-    const skipped = rawList.length - list2.length;
-    if (skipped > 0) {
-      toast(
-        `${skipped} ${skipped === 1 ? "track" : "tracks"} in this list can't be played yet`,
-        {
-          id: "queue-filtered",
-          description: "They stay in your playlist — skip or match them there.",
-        },
-      );
-    }
     // Match by id OR youtubeId — history snapshots may carry a stored id that
     // differs from the live item id, which used to make findIndex fail and
     // silently play index 0 ("always the most recent song") instead.
@@ -4090,42 +3945,11 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
    */
   const advanceToIndex = (index: number) => {
     const s = get();
-    if (index < 0) return;
-
-    // Skipping is a LOOP, not a recursive call, and both reasons matter.
-    //
-    // Correctness: an imported playlist can be mostly or entirely
-    // metadata-only, so "the next eligible track" may be hundreds of entries
-    // away. Recursing once per skipped row would grow the stack with the length
-    // of the run of unavailable tracks — a 5,000-entry queue of unresolved
-    // imports would be 5,000 frames deep inside an audio callback, which is a
-    // crash rather than a skipped song.
-    //
-    // And the module's own rule stays enforceable: this remains the ONLY place
-    // that moves the queue pointer, so the deferred-auth suite can keep
-    // asserting that `advanceToIndex` has exactly one call site — the gated
-    // `playIndex`. A recursive call here would have been a second one, and the
-    // guard that test protects is worth more than the recursion saved.
-    let cursor = index;
-    while (cursor < s.queue.length) {
-      const target = s.queue[cursor];
-      if (!target) return;
-      if (isPlayable(target)) {
-        saveQueue(s.queue, cursor, target.id ?? null);
-        set({ queueIndex: cursor });
-        loadTrack(target);
-        maybeAutofillQueue();
-        return;
-      }
-      // A row that became unavailable AFTER it entered the queue: a stream that
-      // stopped resolving, or an import whose match was withdrawn. Skip it and
-      // carry on rather than stopping the music on a dead entry — but never
-      // pretend it played: the pointer is left where the last playable track
-      // was until an eligible one is actually found.
-      cursor += 1;
-    }
-    // Nothing playable from here to the end of the queue. The queue is left
-    // intact and the pointer is not moved onto a dead row.
+    if (index < 0 || index >= s.queue.length) return;
+    saveQueue(s.queue, index, s.queue[index]?.id ?? null);
+    set({ queueIndex: index });
+    loadTrack(s.queue[index]);
+    maybeAutofillQueue();
   };
 
   /**
@@ -4195,13 +4019,6 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
             .play(s.current.youtubeId, { volume: s.volume, muted: s.muted })
             .catch(() => undefined);
         }
-        // The IFrame branch used to return without telling the operating
-        // system anything, so a paused YouTube track kept a media session (and
-        // on Android a foreground service with a live notification) asserting
-        // "playing" over a silent player, with no way to resume from the lock
-        // screen. The deck branch below always published; this one now does
-        // too, and it publishes exactly what it just asked the engine to do.
-        syncMediaSession(s.current, !enginePlaying);
         return;
       }
       const audio = getAudio();
@@ -5075,28 +4892,14 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       // Changing the length mid-playback must never leave a half-finished
       // blend running, so any armed transition is recomputed from scratch.
       cancelTransition("setting-changed");
-      set({ crossfade: next, transitionNote: null });
+      set({ crossfade: next });
     },
     gapless: initialGapless,
-    toggleGapless: () => {
-      // An armed transition is discarded for the same reason `setCrossfade`
-      // discards one: a plan is a decision made under the OLD setting, and it
-      // must not be executed under the new one.
-      //
-      // Concretely, turning gapless OFF while a gapless hand-off is armed used
-      // to leave that plan intact, so the next boundary handed the next song
-      // over on the pre-buffered spare deck exactly as if gapless were still on.
-      // The switch said off and the app did it anyway — the one kind of
-      // mismatch between a setting and the engine that a listener cannot see
-      // and cannot work around. Dropping the plan costs nothing: `tickTransition`
-      // re-arms on the next position update, now under the correct setting.
-      cancelTransition("setting-changed");
+    toggleGapless: () =>
       set((state) => {
         writeSetting("ss.gapless", state.gapless ? "0" : "1");
-        cancelTransition("gapless-toggled");
-        return { gapless: !state.gapless, transitionNote: null };
-      });
-    },
+        return { gapless: !state.gapless };
+      }),
     unshuffledQueue: null,
     unshuffledIndex: -1,
     repeat: initialRepeat,

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { compileClasses, readSource } from "./helpers/tailwind-css.js";
 
 const cssSource = readSource("src/index.css");

@@ -1,10 +1,9 @@
-import { beforeAll, describe, expect, test, vi } from 'vitest';
+import { beforeAll, describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import {
   canHandOffGapless,
   fadeGains,
   GAPLESS_MIN_READY_STATE,
-  isDeckSource,
 } from "../src/lib/transition.ts";
 
 /**
@@ -191,7 +190,7 @@ BareAudioContext.prototype.createAnalyser = undefined;
 const win = new Window({ url: "https://example.test/" });
 globalThis.window = win;
 globalThis.document = win.document;
-try { Object.defineProperty(globalThis, 'navigator', { value: win.navigator, configurable: true, writable: true }); } catch (e) { Object.defineProperty(globalThis, 'navigator', { value: win.navigator, configurable: true }); }
+globalThis.navigator = win.navigator;
 globalThis.localStorage = win.localStorage;
 globalThis.HTMLElement = win.HTMLElement;
 globalThis.Element = win.Element;
@@ -205,23 +204,13 @@ win.AudioContext = FakeAudioContext;
 // A fresh module instance: `decks` is memoised at module scope, so sharing an
 // instance with another test file would hand back elements belonging to a
 // document that no longer exists.
-//
-// `vi.resetModules()` between imports, not a cache-busted
-// `import(\`../src/lib/audio.ts?fresh=${Math.random()}\`)`: a template-literal
-// specifier is a VARIABLE dynamic import, which the bundler refuses to resolve
-// ("Unknown variable dynamic import") so the file never loaded at all.
-// Dropping the module registry gives the same thing on purpose — each import
-// below re-evaluates `audio.ts` into its own instance.
-vi.resetModules();
-const audio = await import("../src/lib/audio.ts");
+const audio = await import(`../src/lib/audio.ts?fresh=${Math.random()}`);
 
 /** A SECOND, independent instance, driven by the API-less context above. */
-vi.resetModules();
-const audioBare = await import("../src/lib/audio.ts");
+const audioBare = await import(`../src/lib/audio.ts?fresh=${Math.random()}`);
 
 /** A THIRD instance that never builds a graph, to observe the "no graph" reason. */
-vi.resetModules();
-const audioNoGraph = await import("../src/lib/audio.ts");
+const audioNoGraph = await import(`../src/lib/audio.ts?fresh=${Math.random()}`);
 
 /**
  * The two per-deck transition GainNodes, found by CREATION ORDER:
@@ -425,33 +414,12 @@ describe("an executed gapless hand-off", () => {
       expect(out.because).toBe("nothing preloaded");
     });
 
-    test("an unresolved source is refused, and says why", () => {
-      // `"stream"` stays in this list on purpose: it is a MARKER meaning
-      // "resolve this", not a URL. An element's `currentSrc` is never literally
-      // that, so seeing it means the source genuinely was never resolved.
-      for (const src of [null, "", undefined, "stream", "  "]) {
+    test("an unresolved or non-http source is refused", () => {
+      for (const src of [null, "", "blob:https://example.test/abc", "stream"]) {
         const out = canHandOffGapless({ ...ready, currentSrc: src });
         expect(out.ready).toBe(false);
         expect(out.because).toBe("no resolved src");
       }
-    });
-
-    test("a DOWNLOADED copy is a resolved source", () => {
-      // This assertion used to be the opposite, and the old expectation was the
-      // bug rather than the specification: a `blob:` URL is the object URL for
-      // a copy of the track the app already downloaded to disk. It is fully
-      // buffered, it is local, and it is played by the same `<audio>` element
-      // as any streamed track — so refusing to hand off to it meant gapless
-      // silently never applied to a single downloaded song, which is precisely
-      // the music a listener expects to run seamlessly.
-      //
-      // It is not a weakening of the gate: the deck must still have been
-      // prepared AND still be buffered, which the surrounding tests assert.
-      const out = canHandOffGapless({
-        ...ready,
-        currentSrc: "blob:https://example.test/8f2a-1c",
-      });
-      expect(out.ready).toBe(true);
     });
 
     test("a buffer below HAVE_CURRENT_DATA is refused", () => {
@@ -467,24 +435,6 @@ describe("an executed gapless hand-off", () => {
           .ready,
       ).toBe(true);
       expect(canHandOffGapless({ ...ready, readyState: 4 }).ready).toBe(true);
-    });
-
-    test("the source predicate is ONE rule, shared by both consumers", () => {
-      // The defect this pins: the gapless gate and the crossfade readiness
-      // check each had their own copy of "is this a real source", written as
-      // `startsWith("http")`, while `prepareIncoming` used a third that also
-      // accepted `blob:`. They disagreed, and nothing compared them — so a
-      // downloaded track was refused at the boundary while being loaded
-      // perfectly well beforehand.
-      expect(isDeckSource("https://media.example.test/a")).toBe(true);
-      expect(isDeckSource("http://localhost:8787/audio-proxy?id=a")).toBe(true);
-      expect(isDeckSource("blob:https://example.test/8f2a-1c")).toBe(true);
-      // A marker, not a URL. An element's currentSrc is never literally this.
-      expect(isDeckSource("stream")).toBe(false);
-      expect(isDeckSource("")).toBe(false);
-      expect(isDeckSource("   ")).toBe(false);
-      expect(isDeckSource(null)).toBe(false);
-      expect(isDeckSource(undefined)).toBe(false);
     });
   });
 

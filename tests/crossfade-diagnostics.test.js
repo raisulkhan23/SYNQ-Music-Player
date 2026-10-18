@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 
 /**
@@ -21,7 +21,7 @@ const win = new Window({ url: "https://example.test/" });
 globalThis.window = win;
 globalThis.document = win.document;
 globalThis.localStorage = win.localStorage;
-try { Object.defineProperty(globalThis, 'navigator', { value: win.navigator, configurable: true, writable: true }); } catch (e) { Object.defineProperty(globalThis, 'navigator', { value: win.navigator, configurable: true }); }
+globalThis.navigator = win.navigator;
 globalThis.HTMLElement = win.HTMLElement;
 globalThis.Element = win.Element;
 globalThis.Node = win.Node;

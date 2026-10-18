@@ -13,16 +13,13 @@
  *    recommendation engine keeps working from live provider data, untouched,
  *    and the heaviest new code cannot end up on a click-to-play path.
  */
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { readSource } from "./helpers/tailwind-css.js";
 
-// `import.meta.dirname`, not Bun's `import.meta.dir`: under vitest the latter is
-// `undefined`, so every path join below threw "The \"path\" argument must be of
-// type string" before a single assertion ran.
-const root = join(import.meta.dirname, "..");
+const root = join(import.meta.dir, "..");
 const read = (relative) => readFileSync(join(root, relative), "utf8");
 
 describe("discover route", () => {
@@ -52,13 +49,9 @@ describe("discover route", () => {
     expect(artistIndex).toBeGreaterThan(-1);
     // It must not have been appended after the authenticated group's closing
     // brace, which would put it outside RequireAuth/AppShell.
-    // Anchored on the first PUBLIC route that follows the authenticated group,
-    // by declaration order rather than by indentation: a route appended after
-    // the group's closing tag lands past `/support` and fails here, and unlike
-    // the old `'</Route>\n                <Route path="/support"'` anchor this
-    // does not break when main.tsx is re-indented.
-    const groupEnd = main.indexOf('<Route path="/support"');
-    expect(groupEnd).toBeGreaterThan(-1);
+    const groupEnd = main.lastIndexOf(
+      '</Route>\n                <Route path="/support"',
+    );
     expect(discoverIndex).toBeLessThan(groupEnd);
   });
 });

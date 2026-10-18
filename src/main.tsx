@@ -11,7 +11,6 @@ import { MotionConfig } from "framer-motion";
 import { createRoot } from "react-dom/client";
 import {
   BrowserRouter,
-  HashRouter,
   Link,
   Navigate,
   Route,
@@ -24,13 +23,7 @@ import {
 } from "@/lib/cardTransparency";
 import { usePlayerStore } from "@/store/player";
 import { applyAnimationLevel, readAnimationLevel } from "@/lib/motion";
-import { installImageFallback } from "@/lib/imageFallback";
 import "./index.css";
-
-// Remote artwork (covers, avatars, badges) can fail to load: URLs expire, hosts
-// rate-limit. Install the fallback before anything renders so a dead cover
-// shows a neutral panel instead of the browser's broken-image glyph.
-installImageFallback();
 
 // SYNQ defaults to dark; restore the user's theme mode before first paint.
 document.documentElement.classList.add("dark");
@@ -105,7 +98,6 @@ import Album from "./pages/Album.tsx";
 import Liked from "./pages/Liked.tsx";
 import Playlists from "./pages/Playlists.tsx";
 import PlaylistDetail from "./pages/PlaylistDetail.tsx";
-import PlaylistLink from "./pages/PlaylistLink.tsx";
 import Admin from "./pages/Admin.tsx";
 import Stats from "./pages/Stats.tsx";
 import Recap from "./pages/Recap.tsx";
@@ -296,43 +288,7 @@ class RootErrorBoundary extends React.Component<
   }
 }
 
-// The Convex client is created lazily so the app shell still renders when no
-// deployment URL is configured at build time (e.g. a packaged build made from
-// a checkout without .env.local). With no URL the app degrades: auth, library
-// and search show their offline states instead of crashing at startup.
-// VITE_CONVEX_URL is a public (CLI-embedded) address, never a secret.
-let convex: import("convex/react").ConvexReactClient = null as any;
-let convexUrl: string | undefined;
-function getConvex(): import("convex/react").ConvexReactClient {
-  if (convex && convexUrl) return convex;
-  const url = (import.meta.env.VITE_CONVEX_URL as string | undefined)?.trim();
-  if (!url) {
-    console.warn(
-      "[SYNQ] VITE_CONVEX_URL is not set — running without the Convex backend. " +
-        "Auth, library and search will be unavailable.",
-    );
-    // Return a stand-in so the app shell still renders without crashing.
-    // Auth, library and search will be unavailable until a real URL is configured.
-    convexUrl = "https://about.blank.internal"; // https => wss, allowed from https:// page contexts
-    convex = new ConvexReactClient(convexUrl, {
-      skipConvexDeploymentUrlCheck: true,
-    } as any);
-    return convex;
-  }
-  try {
-    convexUrl = url;
-    convex = new ConvexReactClient(url);
-    return convex;
-  } catch (err) {
-    console.error("[SYNQ] failed to create Convex client", err);
-    // Same stand-in to avoid a render crash while preserving the app shell.
-    convexUrl = "https://about.blank.internal"; // https => wss, allowed from https:// page contexts
-    convex = new ConvexReactClient(convexUrl, {
-      skipConvexDeploymentUrlCheck: true,
-    } as any);
-    return convex;
-  }
-}
+const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
 /** Keeps \`html.perf-lite\` in sync with the store.
  *
@@ -340,14 +296,6 @@ function getConvex(): import("convex/react").ConvexReactClient {
  *  expensive surfaces are on the public pages: the landing hero, the auth card
  *  and the support pages all render outside the signed-in shell, and a class
  *  only AppShell ever sets leaves every one of them running at full cost. */
-// Over file:// (the packaged Electron/Capacitor load) BrowserRouter cannot
-// match the OS path, so every route renders the 404 page. HashRouter keeps
-// routing inside the URL fragment and works identically there.
-const Router =
-  typeof window !== "undefined" && window.location.protocol === "file:"
-    ? HashRouter
-    : BrowserRouter;
-
 function PerformanceModeSync() {
   const performanceMode = usePlayerStore((s) => s.performanceMode);
   const animationLevel = usePlayerStore((s) => s.animationLevel);
@@ -414,248 +362,232 @@ createRoot(document.getElementById("root")!).render(
       <ToolbarErrorBoundary>
         <VlyToolbar />
       </ToolbarErrorBoundary>
-      {getConvex() ? (
-        <ConvexAuthProvider client={convex}>
-          <Router>
-            <RouteSyncer />
-            <PerformanceModeSync />
-            <ScrollToTop />
-            <MotionPrefs>
-              <Suspense fallback={<RouteLoading />}>
-                <Routes>
-                  <Route path="/" element={<Landing />} />
-                  <Route
-                    path="/auth"
-                    element={<AuthPage redirectAfterAuth="/home" />}
-                  />
-                  <Route path="/t/:trackId" element={<TrackLink />} />
-                  {/*
-                    A shared playlist link. Deliberately an UNGUARDED route,
-                    and outside the app shell: the whole point of a share link
-                    is that it opens for somebody who has no account yet. The
-                    page asks for one at the moment they want to keep the
-                    playlist, not before they are allowed to look at it.
+      <ConvexAuthProvider client={convex}>
+        <BrowserRouter>
+          <RouteSyncer />
+          <PerformanceModeSync />
+          <ScrollToTop />
+          <MotionPrefs>
+            <Suspense fallback={<RouteLoading />}>
+              <Routes>
+                <Route path="/" element={<Landing />} />
+                <Route
+                  path="/auth"
+                  element={<AuthPage redirectAfterAuth="/home" />}
+                />
+                <Route path="/t/:trackId" element={<TrackLink />} />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <RequireAuth>
+                      <Navigate to="/home" replace />
+                    </RequireAuth>
+                  }
+                />
+                {/*
+                  DEFERRED AUTHENTICATION.
+                  This shell is no longer behind a blanket `<RequireAuth>`.
+                  A visitor can open /home, browse, search and explore artists
+                  and albums without an account, and is asked to sign in at the
+                  moment they do something that genuinely needs an identity —
+                  playing a song, liking it, saving it to their library. That
+                  is the flow every major music service uses, and it is the
+                  only one where somebody understands the product before being
+                  asked to create an account.
 
-                    This comment must not name the guard component: the
-                    deferred-auth suite attributes guards to routes by splitting
-                    the source on the route boundary, so a guard's NAME sitting
-                    in prose between two routes is read as that route being
-                    guarded.
-                  */}
-                  <Route path="/p/:token" element={<PlaylistLink />} />
+                  The genuinely PRIVATE routes further down (/liked, /playlists,
+                  /playlist/:id, /stats, /recent, /social, /profile,
+                  /settings, /admin) keep their own `<RequireAuth>` each. They
+                  show a signed-in person's library and history; there is
+                  nothing there for a stranger, and rendering them empty would
+                  be worse than redirecting.
+
+                  This is a UX change only. Every Convex mutation that needs an
+                  identity still calls `getAuthUserId` and still throws without
+                  one — the backend remains the authority, and the client-side
+                  gate is a courtesy, not a security control.
+                */}
+                <Route element={<AppShell />}>
                   <Route
-                    path="/dashboard"
+                    path="/home"
+                    element={
+                      <PageBoundary>
+                        <Home />
+                      </PageBoundary>
+                    }
+                  />
+                  <Route
+                    path="/search"
+                    element={
+                      <PageBoundary>
+                        <Search />
+                      </PageBoundary>
+                    }
+                  />
+                  <Route
+                    path="/discover"
+                    element={
+                      <PageBoundary>
+                        <Discover />
+                      </PageBoundary>
+                    }
+                  />
+                  <Route
+                    path="/downloads"
+                    element={
+                      <PageBoundary>
+                        <DownloadHub />
+                      </PageBoundary>
+                    }
+                  />
+                  <Route
+                    path="/import"
+                    element={
+                      <PageBoundary>
+                        <ImportHub />
+                      </PageBoundary>
+                    }
+                  />
+                  <Route
+                    path="/artist/:artist"
+                    element={
+                      <PageBoundary>
+                        <Artist />
+                      </PageBoundary>
+                    }
+                  />
+                  <Route
+                    path="/album/:artist/:album"
+                    element={
+                      <PageBoundary>
+                        <Album />
+                      </PageBoundary>
+                    }
+                  />
+                  <Route
+                    path="/liked"
                     element={
                       <RequireAuth>
-                        <Navigate to="/home" replace />
+                        <PageBoundary>
+                          <Liked />
+                        </PageBoundary>
                       </RequireAuth>
                     }
                   />
-                  {/*
-                    DEFERRED AUTHENTICATION.
-                    This shell is no longer behind a blanket `<RequireAuth>`.
-                    A visitor can open /home, browse, search and explore artists
-                    and albums without an account, and is asked to sign in at the
-                    moment they do something that genuinely needs an identity —
-                    playing a song, liking it, saving it to their library. That
-                    is the flow every major music service uses, and it is the
-                    only one where somebody understands the product before being
-                    asked to create an account.
+                  <Route
+                    path="/playlists"
+                    element={
+                      <RequireAuth>
+                        <PageBoundary>
+                          <Playlists />
+                        </PageBoundary>
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/playlist/:id"
+                    element={
+                      <RequireAuth>
+                        <PageBoundary>
+                          <PlaylistDetail />
+                        </PageBoundary>
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/stats"
+                    element={
+                      <RequireAuth>
+                        <PageBoundary>
+                          <Stats />
+                        </PageBoundary>
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/recent"
+                    element={
+                      <RequireAuth>
+                        <PageBoundary>
+                          <Recent />
+                        </PageBoundary>
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/recap"
+                    element={
+                      <RequireAuth>
+                        <PageBoundary>
+                          <Recap />
+                        </PageBoundary>
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/social"
+                    element={
+                      <RequireAuth>
+                        <PageBoundary>
+                          <Social />
+                        </PageBoundary>
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/profile"
+                    element={
+                      <RequireAuth>
+                        <PageBoundary>
+                          <Profile />
+                        </PageBoundary>
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/settings"
+                    element={
+                      <RequireAuth>
+                        <PageBoundary>
+                          <Settings />
+                        </PageBoundary>
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/admin"
+                    element={
+                      <RequireAuth>
+                        <PageBoundary>
+                          <Admin />
+                        </PageBoundary>
+                      </RequireAuth>
+                    }
+                  />
+                </Route>
+                <Route path="/support" element={<Support />} />
+                <Route path="/privacy" element={<Privacy />} />
+                <Route path="/terms" element={<Terms />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+            {/* Deferred-auth bridge. Inside `ConvexAuthProvider` because it
+                reads the session from it, and inside `BrowserRouter` because
+                the prompt uses `useLocation` to return the visitor to the exact
+                page they were on. It sits OUTSIDE `<Routes>` so it is not tied
+                to any one route and survives navigation.
 
-                    The genuinely PRIVATE routes further down (/liked, /playlists,
-                    /playlist/:id, /stats, /recent, /social, /profile,
-                    /settings, /admin) keep their own `<RequireAuth>` each. They
-                    show a signed-in person's library and history; there is
-                    nothing there for a stranger, and rendering them empty would
-                    be worse than redirecting.
-
-                    This is a UX change only. Every Convex mutation that needs an
-                    identity still calls `getAuthUserId` and still throws without
-                    one — the backend remains the authority, and the client-side
-                    gate is a courtesy, not a security control.
-                  */}
-                  <Route element={<AppShell />}>
-                    <Route
-                      path="/home"
-                      element={
-                        <PageBoundary>
-                          <Home />
-                        </PageBoundary>
-                      }
-                    />
-                    <Route
-                      path="/search"
-                      element={
-                        <PageBoundary>
-                          <Search />
-                        </PageBoundary>
-                      }
-                    />
-                    <Route
-                      path="/discover"
-                      element={
-                        <PageBoundary>
-                          <Discover />
-                        </PageBoundary>
-                      }
-                    />
-                    <Route
-                      path="/downloads"
-                      element={
-                        <PageBoundary>
-                          <DownloadHub />
-                        </PageBoundary>
-                      }
-                    />
-                    <Route
-                      path="/import"
-                      element={
-                        <PageBoundary>
-                          <ImportHub />
-                        </PageBoundary>
-                      }
-                    />
-                    <Route
-                      path="/artist/:artist"
-                      element={
-                        <PageBoundary>
-                          <Artist />
-                        </PageBoundary>
-                      }
-                    />
-                    <Route
-                      path="/album/:artist/:album"
-                      element={
-                        <PageBoundary>
-                          <Album />
-                        </PageBoundary>
-                      }
-                    />
-                    <Route
-                      path="/liked"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <Liked />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/playlists"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <Playlists />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/playlist/:id"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <PlaylistDetail />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/stats"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <Stats />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/recent"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <Recent />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/recap"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <Recap />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/social"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <Social />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/profile"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <Profile />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/settings"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <Settings />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/admin"
-                      element={
-                        <RequireAuth>
-                          <PageBoundary>
-                            <Admin />
-                          </PageBoundary>
-                        </RequireAuth>
-                      }
-                    />
-                  </Route>
-                  <Route path="/support" element={<Support />} />
-                  <Route path="/privacy" element={<Privacy />} />
-                  <Route path="/terms" element={<Terms />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </Suspense>
-              {/* Deferred-auth bridge. Inside `ConvexAuthProvider` because it
-                  reads the session from it, and inside `BrowserRouter` because
-                  the prompt uses `useLocation` to return the visitor to the exact
-                  page they were on. It sits OUTSIDE `<Routes>` so it is not tied
-                  to any one route and survives navigation.
-
-                  It deliberately does NOT sit outside the router on the theory
-                  that an OAuth round-trip might unmount it. That reasoning was
-                  wrong: OAuth replaces the entire document, so no React position
-                  could survive it — the pending intent survives because it is
-                  JSON in `sessionStorage`, not because of where this component
-                  is mounted. */}
-              <AuthGateProvider />
-            </MotionPrefs>
-          </Router>
-          <Toaster />
-        </ConvexAuthProvider>
-      ) : null}{/* end convex */}
+                It deliberately does NOT sit outside the router on the theory
+                that an OAuth round-trip might unmount it. That reasoning was
+                wrong: OAuth replaces the entire document, so no React position
+                could survive it — the pending intent survives because it is
+                JSON in `sessionStorage`, not because of where this component
+                is mounted. */}
+            <AuthGateProvider />
+          </MotionPrefs>
+        </BrowserRouter>
+        <Toaster />
+      </ConvexAuthProvider>
     </RootErrorBoundary>
   </StrictMode>,
 );

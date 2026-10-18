@@ -8,7 +8,7 @@
  * Convex handlers (Convex exposes the inner function as `_handler`) so the
  * gate is proven by behaviour rather than by reading the source.
  */
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import {
   deleteVectors,
   myRole,

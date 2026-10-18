@@ -10,18 +10,14 @@ import {
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
-  decideRepair,
   mergeRepairs,
-  rankRepairCandidates,
+  pickRepair,
   repairQuery,
-  MAX_MATCH_CANDIDATES,
   REPAIR_BATCH_SIZE,
   REPAIR_SEARCH_ATTEMPTS,
   REPAIR_SEARCH_GAP_MS,
   type RepairCandidate,
 } from "../lib/importRepair";
-import { type TrackStatus } from "../lib/eligibility";
-import { accessFor } from "./playlistSharing";
 
 /** A cancellable pause between two upstream searches. */
 const delay = (ms: number) =>
@@ -37,27 +33,7 @@ const trackSnapshotValidator = v.object({
   coverUrl: v.optional(v.string()),
   duration: v.optional(v.number()),
   youtubeId: v.optional(v.string()),
-  status: v.optional(v.string()),
-  matchCandidates: v.optional(
-    v.array(
-      v.object({
-        youtubeId: v.string(),
-        title: v.string(),
-        artist: v.string(),
-        duration: v.number(),
-        thumbnail: v.string(),
-      }),
-    ),
-  ),
 });
-
-type MatchCandidate = {
-  youtubeId: string;
-  title: string;
-  artist: string;
-  duration: number;
-  thumbnail: string;
-};
 
 type TrackSnapshot = {
   id: string;
@@ -67,61 +43,10 @@ type TrackSnapshot = {
   coverUrl: string;
   duration: number;
   youtubeId?: string;
-  status?: string;
-  matchCandidates?: MatchCandidate[];
 };
-
-/**
- * The statuses the server is willing to persist for an imported row.
- *
- * An allow-list rather than `v.string()` blind trust: the status is read by the
- * playback-eligibility rule, so a value the client invented must never be able
- * to mark a row playable (or, worse, silently exempt it from the rule).
- * `pending`/`resolving` are deliberately absent — they describe work this
- * device is doing right now, not something worth storing.
- */
-const STORABLE_STATUSES = new Set<string>([
-  "playable",
-  "unavailable",
-  "metadata_only",
-  "ambiguous",
-  "failed",
-]);
-
-function normalizeStatus(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  return STORABLE_STATUSES.has(value) ? value : undefined;
-}
-
-function normalizeCandidates(value: unknown): MatchCandidate[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const out: MatchCandidate[] = [];
-  for (const entry of value.slice(0, MAX_MATCH_CANDIDATES)) {
-    if (!entry || typeof entry !== "object") continue;
-    const candidate = entry as Record<string, unknown>;
-    const youtubeId =
-      typeof candidate.youtubeId === "string" ? candidate.youtubeId : "";
-    if (!youtubeId) continue;
-    out.push({
-      youtubeId,
-      title: typeof candidate.title === "string" ? candidate.title : "",
-      artist: typeof candidate.artist === "string" ? candidate.artist : "",
-      duration:
-        typeof candidate.duration === "number" &&
-        Number.isFinite(candidate.duration)
-          ? candidate.duration
-          : 0,
-      thumbnail:
-        typeof candidate.thumbnail === "string" ? candidate.thumbnail : "",
-    });
-  }
-  return out.length > 0 ? out : undefined;
-}
 
 /** Coerce a client-supplied snapshot into the exact shape stored on a doc. */
 function normalizeSnapshot(track: TrackSnapshot): TrackSnapshot {
-  const status = normalizeStatus(track.status);
-  const matchCandidates = normalizeCandidates(track.matchCandidates);
   return {
     id: track.id,
     title: track.title,
@@ -135,8 +60,6 @@ function normalizeSnapshot(track: TrackSnapshot): TrackSnapshot {
     ...(typeof track.youtubeId === "string" && track.youtubeId
       ? { youtubeId: track.youtubeId }
       : {}),
-    ...(status ? { status } : {}),
-    ...(matchCandidates ? { matchCandidates } : {}),
   };
 }
 
@@ -260,18 +183,10 @@ export const addTrack = mutation({
   },
   handler: async (ctx, { playlistId, trackId, detail, track }) => {
     const userId = await requireUser(ctx);
-    const access = await accessFor(ctx, playlistId, userId);
-    if (!access) throw new ConvexError("Playlist not found");
-    // Owner or editor. A viewer holding a share must not be able to add tracks,
-    // and "the UI hid the button" is not an access control.
-    if (access.role !== "owner" && access.role !== "editor") {
-      throw new ConvexError("You do not have permission to edit this playlist");
+    const playlist = await ctx.db.get(playlistId);
+    if (playlist === null || playlist.userId !== userId) {
+      throw new ConvexError("Playlist not found");
     }
-    const playlist = access.playlist as unknown as {
-      trackIds: string[];
-      trackSnapshots?: TrackSnapshot[];
-      name: string;
-    };
     if (!playlist.trackIds.includes(trackId)) {
       const snapshots = playlist.trackSnapshots ?? [];
       const nextSnapshots = track
@@ -285,14 +200,7 @@ export const addTrack = mutation({
         ...(nextSnapshots.length > 0 ? { trackSnapshots: nextSnapshots } : {}),
         updatedAt: Date.now(),
       });
-      await logEvent(
-        ctx,
-        access.playlist.userId as Id<"users">,
-        playlistId,
-        playlist.name,
-        "added",
-        detail,
-      );
+      await logEvent(ctx, userId, playlistId, playlist.name, "added", detail);
     }
   },
 });
@@ -308,16 +216,10 @@ export const removeTrack = mutation({
   },
   handler: async (ctx, { playlistId, trackId, detail }) => {
     const userId = await requireUser(ctx);
-    const access = await accessFor(ctx, playlistId, userId);
-    if (!access) throw new ConvexError("Playlist not found");
-    if (access.role !== "owner" && access.role !== "editor") {
-      throw new ConvexError("You do not have permission to edit this playlist");
+    const playlist = await ctx.db.get(playlistId);
+    if (playlist === null || playlist.userId !== userId) {
+      throw new ConvexError("Playlist not found");
     }
-    const playlist = access.playlist as unknown as {
-      trackIds: string[];
-      trackSnapshots?: TrackSnapshot[];
-      name: string;
-    };
     const removed = playlist.trackIds.includes(trackId);
     const snapshots = playlist.trackSnapshots?.filter(
       (track) => track.id !== trackId,
@@ -330,14 +232,7 @@ export const removeTrack = mutation({
       updatedAt: Date.now(),
     });
     if (removed)
-      await logEvent(
-        ctx,
-        access.playlist.userId as Id<"users">,
-        playlistId,
-        playlist.name,
-        "removed",
-        detail,
-      );
+      await logEvent(ctx, userId, playlistId, playlist.name, "removed", detail);
   },
 });
 
@@ -451,14 +346,6 @@ export const saveImported = mutation({
           typeof track.duration === "number" && Number.isFinite(track.duration)
             ? track.duration
             : 0,
-        // EXPLICITLY `pending`, never assumed playable.
-        //
-        // An imported row is a title and an artist. It has no audio: Spotify,
-        // Apple Music and Tidal are catalog APIs with no stream for third-party
-        // apps, so whether this song can be played at all is a question nobody
-        // has asked yet. Storing it as anything other than "not resolved" is
-        // how a 107-track import became a queue of silence.
-        status: "pending",
       };
       if (seen.has(snapshot.id)) continue;
       seen.add(snapshot.id);
@@ -535,17 +422,7 @@ export const myPlaylists = query({
 });
 
 /**
- * A single playlist, for an account that may read it.
- *
- * Was owner-only, and is now owner-or-shared. The authorization moved into
- * `accessFor` rather than being widened here, because "who may read this" is one
- * question and it must have one answer: a sign-in check plus an inline
- * `userId === playlist.userId` comparison in each of a dozen call sites is how a
- * private playlist eventually gets read by the wrong account.
- *
- * The `role` is returned alongside the document so the screen can hide what the
- * caller may not do. The ROLE is a hint for the UI; every mutation re-derives it
- * server-side, so a client that ignores it gains nothing.
+ * A single playlist owned by the signed-in user.
  */
 export const get = query({
   args: { playlistId: v.id("playlists") },
@@ -554,9 +431,11 @@ export const get = query({
     if (userId === null) {
       return null;
     }
-    const access = await accessFor(ctx, playlistId, userId);
-    if (!access) return null;
-    return { ...access.playlist, role: access.role };
+    const playlist = await ctx.db.get(playlistId);
+    if (playlist === null || playlist.userId !== userId) {
+      return null;
+    }
+    return playlist;
   },
 });
 
@@ -605,22 +484,6 @@ export const resolveImportedTracks = action({
       thumbnail: string;
     }>;
     /**
-     * Rows with more than one plausible match, and the candidates to choose
-     * between. Never applied automatically: a remix and a live version of the
-     * same song score within a hair of each other, and picking one by a rounding
-     * difference is how an import "succeeds" and plays the wrong recording.
-     */
-    ambiguous: Array<{
-      id: string;
-      candidates: Array<{
-        youtubeId: string;
-        title: string;
-        artist: string;
-        duration: number;
-        thumbnail: string;
-      }>;
-    }>;
-    /**
      * Rows whose search came back with results, whether or not one of them
      * matched confidently.
      *
@@ -643,16 +506,6 @@ export const resolveImportedTracks = action({
       youtubeId: string;
       duration: number;
       thumbnail: string;
-    }> = [];
-    const ambiguous: Array<{
-      id: string;
-      candidates: Array<{
-        youtubeId: string;
-        title: string;
-        artist: string;
-        duration: number;
-        thumbnail: string;
-      }>;
     }> = [];
     const answered: string[] = [];
     let empty = 0;
@@ -691,27 +544,8 @@ export const resolveImportedTracks = action({
         continue;
       }
       answered.push(track.id);
-      // Ambiguity is decided HERE, against the whole result set, rather than by
-      // taking the top hit: the caller then has a settleable answer for every
-      // row it asked about, which is what stops the playlist re-asking for ever.
-      const decision = decideRepair(track, items);
-      if (decision.outcome === "ambiguous") {
-        ambiguous.push({
-          id: track.id,
-          candidates: rankRepairCandidates(track, items)
-            .slice(0, MAX_MATCH_CANDIDATES)
-            .map(({ candidate }) => ({
-              youtubeId: candidate.id,
-              title: candidate.title,
-              artist: candidate.artist,
-              duration: candidate.duration,
-              thumbnail: candidate.thumbnail,
-            })),
-        });
-        continue;
-      }
-      if (decision.outcome !== "match") continue;
-      const best = decision.candidate;
+      const best = pickRepair(track, items);
+      if (!best) continue;
       resolved.push({
         id: track.id,
         youtubeId: best.id,
@@ -719,86 +553,7 @@ export const resolveImportedTracks = action({
         thumbnail: best.thumbnail,
       });
     }
-    return { resolved, ambiguous, answered, empty };
-  },
-});
-
-/**
- * Settle rows the last lookup answered but could not match.
- *
- * Without this there is no terminal state for "we asked and there is no such
- * song", so every visit re-searched the same rows, the header repeated the same
- * loading sentence for ever, and the rows that COULD still be resolved never got
- * their turn. This is the write that makes an import finish.
- */
-export const settleImportedRows = mutation({
-  args: {
-    playlistId: v.id("playlists"),
-    rows: v.array(
-      v.object({
-        id: v.string(),
-        status: v.string(),
-        matchCandidates: v.optional(
-          v.array(
-            v.object({
-              youtubeId: v.string(),
-              title: v.string(),
-              artist: v.string(),
-              duration: v.number(),
-              thumbnail: v.string(),
-            }),
-          ),
-        ),
-      }),
-    ),
-  },
-  handler: async (ctx, { playlistId, rows }) => {
-    const userId = await requireUser(ctx);
-    const playlist = await ctx.db.get(playlistId);
-    if (playlist === null || playlist.userId !== userId) {
-      throw new ConvexError("Playlist not found");
-    }
-    const snapshots = playlist.trackSnapshots ?? [];
-    if (snapshots.length === 0 || rows.length === 0) return 0;
-
-    const incoming = new Map<
-      string,
-      { status: string; candidates?: MatchCandidate[] }
-    >();
-    for (const row of rows) {
-      const status = normalizeStatus(row.status);
-      if (!status) continue;
-      const candidates = normalizeCandidates(row.matchCandidates);
-      incoming.set(row.id, {
-        status,
-        ...(candidates ? { candidates } : {}),
-      });
-    }
-    if (incoming.size === 0) return 0;
-
-    let changed = 0;
-    const next = snapshots.map((snapshot) => {
-      const update = incoming.get(snapshot.id);
-      if (!update) return snapshot;
-      // Never downgrade a row that already has a verified source. A late
-      // "unavailable" from a throttled retry must not take away a song that
-      // plays.
-      if (snapshot.youtubeId) return snapshot;
-      if (snapshot.status === update.status) return snapshot;
-      changed += 1;
-      const { candidates, status } = update;
-      return {
-        ...snapshot,
-        status,
-        ...(candidates ? { matchCandidates: candidates } : {}),
-      };
-    });
-    if (changed === 0) return 0;
-    await ctx.db.patch(playlistId, {
-      trackSnapshots: next,
-      updatedAt: Date.now(),
-    });
-    return changed;
+    return { resolved, answered, empty };
   },
 });
 
@@ -831,110 +586,10 @@ export const applyImportedRepairs = mutation({
     if (snapshots.length === 0 || repairs.length === 0) return 0;
     const merged = mergeRepairs(snapshots, repairs);
     if (merged === snapshots) return 0;
-    // Mark every repaired row PLAYABLE in the same write. The status and the
-    // verified id are one fact — a row that has a real `youtubeId` and still
-    // says `pending` is exactly the inconsistency that let a playable song be
-    // filtered out of its own playlist's shuffle.
-    const repaired = new Set(repairs.map((repair) => repair.id));
-    const withStatus = merged.map((snapshot) =>
-      repaired.has(snapshot.id)
-        ? { ...snapshot, status: "playable" as TrackStatus }
-        : snapshot,
-    );
     await ctx.db.patch(playlistId, {
-      trackSnapshots: withStatus,
+      trackSnapshots: merged,
       updatedAt: Date.now(),
     });
     return repairs.length;
-  },
-});
-
-/**
- * Pick a specific match for a row that the search left ambiguous.
- *
- * Owner-only, and it validates the chosen id against the candidates that were
- * actually offered, so a client cannot hand-write an arbitrary video id onto a
- * row (or onto someone else's playlist).
- */
-export const chooseImportedMatch = mutation({
-  args: {
-    playlistId: v.id("playlists"),
-    rowId: v.string(),
-    youtubeId: v.string(),
-  },
-  handler: async (ctx, { playlistId, rowId, youtubeId }) => {
-    const userId = await requireUser(ctx);
-    const playlist = await ctx.db.get(playlistId);
-    if (playlist === null || playlist.userId !== userId) {
-      throw new ConvexError("Playlist not found");
-    }
-    const snapshots = playlist.trackSnapshots ?? [];
-    const index = snapshots.findIndex((snapshot) => snapshot.id === rowId);
-    if (index < 0) throw new ConvexError("Track not found in this playlist");
-    const row = snapshots[index]!;
-    const candidates = row.matchCandidates ?? [];
-    const chosen = candidates.find(
-      (candidate) => candidate.youtubeId === youtubeId,
-    );
-    if (!chosen) {
-      throw new ConvexError("That match is not one of the offered options");
-    }
-    const next = [...snapshots];
-    next[index] = {
-      ...row,
-      youtubeId: chosen.youtubeId,
-      duration: chosen.duration > 0 ? chosen.duration : row.duration,
-      coverUrl: row.coverUrl?.trim() ? row.coverUrl : chosen.thumbnail,
-      status: "playable",
-      matchCandidates: undefined,
-    };
-    await ctx.db.patch(playlistId, {
-      trackSnapshots: next,
-      updatedAt: Date.now(),
-    });
-    return true;
-  },
-});
-
-/**
- * Reset the rows a listener explicitly asked to retry.
- *
- * "Retry failed matching without reimporting the entire playlist" needs a way
- * to clear a settled status; otherwise the retry is a no-op by construction,
- * because `needsRepair` skips every non-retryable row.
- */
-export const retryImportedRows = mutation({
-  args: {
-    playlistId: v.id("playlists"),
-    /** Omitted means "every settled-but-unplayable row in this playlist". */
-    rowIds: v.optional(v.array(v.string())),
-  },
-  handler: async (ctx, { playlistId, rowIds }) => {
-    const userId = await requireUser(ctx);
-    const playlist = await ctx.db.get(playlistId);
-    if (playlist === null || playlist.userId !== userId) {
-      throw new ConvexError("Playlist not found");
-    }
-    const snapshots = playlist.trackSnapshots ?? [];
-    if (snapshots.length === 0) return 0;
-    const wanted = rowIds ? new Set(rowIds) : null;
-    let reset = 0;
-    const next = snapshots.map((snapshot) => {
-      if (snapshot.youtubeId) return snapshot;
-      if (wanted && !wanted.has(snapshot.id)) return snapshot;
-      if (!snapshot.status || snapshot.status === "pending") return snapshot;
-      reset += 1;
-      return {
-        ...snapshot,
-        status: "pending" as const,
-        matchCandidates: undefined,
-      };
-    });
-    if (reset === 0) return 0;
-    await ctx.db.patch(playlistId, {
-      trackSnapshots: next,
-      updatedAt: Date.now(),
-    });
-    return reset;
   },
 });

@@ -1,5 +1,4 @@
 // ---------------------------------------------------------------------------
-import { publicAsset } from "@/lib/publicAsset";
 // YouTube IFrame Player engine.
 //
 // YouTube bot-blocks datacenter IPs that try to resolve raw stream URLs, but
@@ -411,7 +410,7 @@ function ensureShields(): void {
     const logo = document.createElement("img");
     // Versioned for the same reason as the in-app Logo: a /public asset keeps
     // its URL, so an unversioned one can be served stale from cache.
-    logo.src = publicAsset("logo.svg?v=2");
+    logo.src = "/logo.svg?v=2";
     logo.style.cssText = "width:56px;opacity:.5;";
     logo.onerror = () => {
       logo.style.display = "none";

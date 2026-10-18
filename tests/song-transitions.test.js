@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import {
   clampFade,
   CROSSFADE_CHOICES,
@@ -672,15 +672,6 @@ describe("settings use the existing storage system", () => {
     );
     expect(playerSource).toMatch(
       /writeSetting\("ss\.gapless", state\.gapless \? "0" : "1"\)/,
-    );
-  });
-
-  test("changing either setting cancels any armed transition under the old setting", () => {
-    expect(playerSource).toMatch(
-      /cancelTransition\("setting-changed"\)/,
-    );
-    expect(playerSource).toMatch(
-      /cancelTransition\("gapless-toggled"\)/,
     );
   });
 

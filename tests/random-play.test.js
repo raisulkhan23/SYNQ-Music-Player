@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readSource } from "./helpers/tailwind-css.js";
 
 const homeSource = readSource("src/pages/Home.tsx");
@@ -61,10 +61,7 @@ describe("I'm feeling lucky builds the mix it promises", () => {
 
   test("it queues a mix rather than a single track", () => {
     expect(feelingLucky).toMatch(/playListOrdered\(selected, queue\)/);
-    // The annotation is optional in the pattern: the source declares
-    // `const queue: Playable[] = shuffleList(`, and pinning the un-annotated
-    // form made a type annotation look like a missing shuffle.
-    expect(feelingLucky).toMatch(/const queue(?:\s*:\s*Playable\[\])? = shuffleList\(/);
+    expect(feelingLucky).toMatch(/const queue = shuffleList\(/);
     expect(feelingLucky).not.toMatch(/playTrack\(toPlayableYoutube\(/);
   });
 });

@@ -263,16 +263,6 @@ export async function registerServiceWorker(
   callbacks: PwaCallbacks = {},
 ): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === "undefined") return null;
-  // Wrapped shells do not get a service worker:
-  //
-  //  - Packaged desktop app (`file://`): service workers are not available on
-  //    the file scheme, `/sw.js` would resolve to the root of the drive, and a
-  //    caching layer in front of an on-disk bundle has nothing to gain.
-  //  - Capacitor Android: the WebView serves the bundle from its own origin, and
-  //    a service worker there is what makes an updated APK keep running the
-  //    previous build — the stale-bundle failure this module exists to avoid.
-  if (window.location.protocol === "file:") return null;
-  if ("Capacitor" in window) return null;
   if (!("serviceWorker" in navigator)) return null;
   if (!import.meta.env.PROD) return null;
   // A service worker needs a secure context. localhost counts; plain http on a

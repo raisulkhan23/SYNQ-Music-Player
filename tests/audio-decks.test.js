@@ -1,6 +1,5 @@
-import { beforeAll, describe, expect, test, vi } from 'vitest';
+import { beforeAll, describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import { setGlobal } from "./helpers/globals.js";
 
 /**
  * The crossfade mechanism itself, in a real DOM.
@@ -20,7 +19,7 @@ beforeAll(async () => {
   win = new Window({ url: "https://example.test/" });
   globalThis.window = win;
   globalThis.document = win.document;
-  setGlobal("navigator", win.navigator);
+  globalThis.navigator = win.navigator;
   globalThis.HTMLElement = win.HTMLElement;
   globalThis.requestAnimationFrame = () => 0;
   globalThis.cancelAnimationFrame = () => {};
@@ -42,15 +41,9 @@ beforeAll(async () => {
   // This became reachable once gapless (on by default) started routing
   // playback through the decks, so `ensureGraph()` — and therefore
   // `ensureDecks()` — now runs on the first track load instead of only when an
-  // EQ or effect preset was configured. `audio-graph-resilience.test.js` needs
-  // the same fresh instance for the same reason.
-  //
-  // `vi.resetModules()` + a static specifier, not a cache-busted
-  // `import(\`../src/lib/audio.ts?fresh=${Math.random()}\`)`: that template
-  // literal is a VARIABLE dynamic import, which the bundler refuses to resolve
-  // ("Unknown variable dynamic import") and the file never loads at all.
-  vi.resetModules();
-  audio = await import("../src/lib/audio.ts");
+  // EQ or effect preset was configured. The same `?fresh=` pattern is already
+  // used by `audio-graph-resilience.test.js` for the same reason.
+  audio = await import(`../src/lib/audio.ts?fresh=${Math.random()}`);
 });
 
 describe("two playback decks", () => {

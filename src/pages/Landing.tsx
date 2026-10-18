@@ -1,8 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router";
 import { Logo } from "@/components/brand/Logo";
-import { AppDownloadButtons } from "@/components/downloads/AppDownloadButtons";
 import { InstallAppButton } from "@/components/pwa/InstallAppButton";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import {
@@ -28,7 +27,6 @@ import {
   Waves,
   Zap,
 } from "lucide-react";
-import { publicAsset } from "@/lib/publicAsset";
 
 /**
  * The features added in this build. Kept as data so the section renders from
@@ -99,111 +97,6 @@ const fadeUp = {
   transition: { duration: 0.55, ease: "easeOut" as const },
 };
 
-/**
- * Jump to a section of this page.
- *
- * A bare `href="#download"` is not enough. Over `file://` — the packaged
- * Electron and Capacitor builds — the app runs on HashRouter, where the hash
- * IS the route. Clicking such a link sets `location.hash`, HashRouter sees a
- * navigation to a route that does not exist, and the visitor lands on the 404
- * page instead of the downloads. So the scroll is done in JS and the default is
- * prevented, while the `href` stays for semantics and the no-JS case.
- *
- * The URL is deliberately left alone: rewriting the hash would trip the same
- * router.
- */
-/**
- * Bring a section into view, retrying while the page is still finding its
- * final height.
- *
- * A deep link (`/#download`) runs this the moment the page mounts, before
- * remote images and web fonts have given the document its real height. The
- * first `scrollIntoView` then clamps to an offset the document has not grown
- * into yet and the page quietly stays at the top — which is what happened
- * before this retry loop existed. Each retry re-checks whether the section
- * actually landed and gives up after a few short attempts.
- *
- * Sections carry `scroll-mt-20` so the sticky header never covers the top of
- * whatever was scrolled to.
- */
-function scrollToSection(id: string, attempts = 8) {
-  const attempt = (remaining: number) => {
-    const target = document.getElementById(id);
-    if (!target) return;
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
-    if (remaining <= 0) return;
-    window.setTimeout(() => {
-      const rect = target.getBoundingClientRect();
-      // 80px is the sticky header; anything within a few px of it has arrived.
-      const arrived = rect.top >= -8 && rect.top <= 88;
-      if (!arrived) attempt(remaining - 1);
-    }, 120);
-  };
-  attempt(attempts);
-}
-
-function SectionLink({
-  to,
-  className,
-  children,
-}: {
-  to: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <a
-      href={`#${to}`}
-      className={className}
-      onClick={(event) => {
-        const target = document.getElementById(to);
-        if (!target) return;
-        event.preventDefault();
-        scrollToSection(to);
-      }}
-    >
-      {children}
-    </a>
-  );
-}
-
-/**
- * Every fragment this page can scroll to, in one place so the nav, the
- * deep-link handler and the section markup cannot drift apart.
- */
-const SECTION_IDS = [
-  "whats-new",
-  "features",
-  "experience",
-  "shortcuts",
-  "download",
-] as const;
-
-/**
- * Honour a `#section` fragment on arrival.
- *
- * This is what makes `/#download` a shareable link: open it and the page lands
- * on the downloads instead of the top. It deliberately does nothing else — the
- * fragment is read, never rewritten, so the router is never handed a hash it
- * would try to interpret as a route.
- */
-function useDeepLinkScroll() {
-  useEffect(() => {
-    const scrollToFragment = () => {
-      const id = window.location.hash.replace(/^#/, "");
-      if (!id) return;
-      // Over `file://` the app runs on HashRouter, where the hash is the ROUTE
-      // (`#/`, `#/search`) and never a section, so a route hash is left alone.
-      if (!(SECTION_IDS as readonly string[]).includes(id)) return;
-      scrollToSection(id);
-    };
-
-    scrollToFragment();
-    window.addEventListener("hashchange", scrollToFragment);
-    return () => window.removeEventListener("hashchange", scrollToFragment);
-  }, []);
-}
-
 const modeContent = {
   focus: {
     label: "Deep focus",
@@ -242,7 +135,7 @@ function CoverArt({ className = "size-16" }: { className?: string }) {
       className={`relative shrink-0 overflow-hidden rounded-2xl ${className}`}
     >
       <img
-        src={publicAsset("show-me-love-cover.svg")}
+        src="/show-me-love-cover.svg"
         alt="SYNQ cover art"
         className="size-full object-cover"
       />
@@ -304,7 +197,7 @@ function ListeningExperience() {
           >
             <div className="relative size-full overflow-hidden rounded-full border border-white/10">
               <img
-                src={publicAsset("show-me-love-cover.svg")}
+                src="/show-me-love-cover.svg"
                 alt=""
                 className="size-full object-cover"
               />
@@ -564,81 +457,49 @@ const featureCards = [
 ];
 
 export default function Landing() {
-  useDeepLinkScroll();
-
-  /* `overflow-x-clip`, not `overflow-x-hidden`. Both guard against sideways
-     overflow from the oversized blur orbs below, but `hidden` on one axis makes
-     the other compute to `auto`, which turns this element into a scroll
-     container — and a `position: sticky` header then sticks to THIS element,
-     which never scrolls, so it silently scrolls away with the page. `clip`
-     clips without creating a scroll container, so sticky works against the
-     viewport, where it was meant to. */
   return (
-    <div className="relative min-h-dvh overflow-x-clip bg-background pt-[env(safe-area-inset-top)] text-foreground">
+    <div className="relative min-h-dvh overflow-x-hidden bg-background pt-[env(safe-area-inset-top)] text-foreground">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[720px]">
         <div className="absolute left-1/2 top-[-240px] h-[600px] w-[900px] -translate-x-1/2 rounded-full bg-brand/15 blur-3xl" />
         <div className="absolute top-[300px] right-[-140px] h-[360px] w-[360px] rounded-full bg-violet-500/10 blur-3xl" />
         <div className="absolute top-[400px] left-[-160px] h-[320px] w-[320px] rounded-full bg-cyan-500/10 blur-3xl" />
       </div>
 
-      {/* Sticky: the download entry point has to stay reachable from anywhere on
-          a page this long. The outer element is the full-bleed bar (so the blur
-          and hairline span the whole viewport instead of stopping at the
-          content width) and the inner one is the original centred container, so
-          the layout is otherwise unchanged. */}
-      <header className="sticky top-0 z-30 border-b border-white/5 bg-background/70 backdrop-blur-md">
-        <div className="mx-auto flex h-20 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Logo to="/" />
-          <nav className="hidden items-center gap-7 text-sm font-medium text-muted-foreground md:flex">
-            <SectionLink
-              to="whats-new"
-              className="transition-colors hover:text-foreground"
-            >
-              What&apos;s new
-            </SectionLink>
-            <SectionLink
-              to="features"
-              className="transition-colors hover:text-foreground"
-            >
-              Features
-            </SectionLink>
-            <SectionLink
-              to="experience"
-              className="transition-colors hover:text-foreground"
-            >
-              Experience
-            </SectionLink>
-            <SectionLink
-              to="download"
-              className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-            >
-              <Download className="size-3.5" />
-              Get the app
-            </SectionLink>
-          </nav>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/auth"
-              className="hidden rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
-            >
-              Sign in
-            </Link>
-            {/* Present at every breakpoint: the nav links are md+ only, so on a
-                phone this is the one always-visible route to the downloads. */}
-            <SectionLink
-              to="download"
-              className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:border-brand/50"
-            >
-              <Download className="size-3.5" />
-              Get the app
-            </SectionLink>
-            <Link
-              to="/home"
-              className="hidden rounded-full bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground shadow-[0_6px_24px_rgb(203_244_143/0.35)] transition-transform hover:scale-105 sm:inline-block"
-            >
-              Start listening
-            </Link>
-          </div>
+      <header className="relative z-20 mx-auto flex h-20 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+        <Logo to="/" />
+        <nav className="hidden items-center gap-7 text-sm font-medium text-muted-foreground md:flex">
+          <a
+            href="#whats-new"
+            className="transition-colors hover:text-foreground"
+          >
+            What&apos;s new
+          </a>
+          <a
+            href="#features"
+            className="transition-colors hover:text-foreground"
+          >
+            Features
+          </a>
+          <a
+            href="#experience"
+            className="transition-colors hover:text-foreground"
+          >
+            Experience
+          </a>
+        </nav>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/auth"
+            className="hidden rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
+          >
+            Sign in
+          </Link>
+          <Link
+            to="/home"
+            className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground shadow-[0_6px_24px_rgb(203_244_143/0.35)] transition-transform hover:scale-105"
+          >
+            Start listening
+          </Link>
         </div>
       </header>
 
@@ -686,23 +547,13 @@ export default function Landing() {
               Start listening free{" "}
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
             </Link>
-            {/* Goes to the downloads section, NOT the PWA install prompt.
-                "Download app" used to fire the browser's install flow, which
-                on a desktop browser does nothing (or errors) and never shows
-                the Windows/Android builds at all. */}
-            <SectionLink
-              to="download"
-              className="inline-flex items-center gap-2 rounded-full border border-brand/30 bg-brand/10 px-5 py-3 text-sm font-semibold text-foreground transition-colors hover:border-brand/50"
-            >
-              <Download className="size-4" />
-              Download app
-            </SectionLink>
-            <SectionLink
-              to="experience"
+            <InstallAppButton />
+            <a
+              href="#experience"
               className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
             >
               See how it flows
-            </SectionLink>
+            </a>
           </motion.div>
           <motion.div
             initial={{ opacity: 0 }}
@@ -729,14 +580,14 @@ export default function Landing() {
 
       <section
         id="experience"
-        className="relative z-10 mx-auto w-full max-w-6xl scroll-mt-20 px-4 py-12 sm:px-6 sm:py-16"
+        className="relative z-10 mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-16"
       >
         <ListeningExperience />
       </section>
 
       <section
         id="features"
-        className="relative z-10 mx-auto w-full max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6 sm:py-28"
+        className="relative z-10 mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-28"
       >
         <motion.div {...fadeUp} className="mx-auto max-w-2xl text-center">
           <span className="text-[10px] font-bold tracking-[0.24em] text-brand uppercase">
@@ -828,7 +679,7 @@ export default function Landing() {
           hiding it leaves no dead anchor behind. */}
       <section
         id="shortcuts"
-        className="relative z-10 mx-auto hidden w-full max-w-6xl scroll-mt-20 px-4 py-12 sm:px-6 sm:py-20 lg:block"
+        className="relative z-10 mx-auto hidden w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-20 lg:block"
       >
         <div className="grid overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0c11]/80 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="relative p-7 sm:p-12">
@@ -909,7 +760,7 @@ export default function Landing() {
       */}
       <section
         id="whats-new"
-        className="relative z-10 mx-auto w-full max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6 sm:py-28"
+        className="relative z-10 mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-28"
       >
         <motion.div {...fadeUp} className="mx-auto max-w-2xl text-center">
           <span className="inline-flex items-center gap-2 text-[10px] font-bold tracking-[0.24em] text-brand uppercase">
@@ -952,48 +803,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Native downloads. Deliberately its own section rather than more buttons
-          in the hero: the hero's job is "start listening", and stacking two
-          platform buttons next to that dilutes the primary action. This sits
-          below the feature tour, where someone who has already decided SYNQ is
-          for them goes looking for the installer. */}
-      <section
-        id="download"
-        className="relative z-10 mx-auto w-full max-w-6xl scroll-mt-20 px-4 pt-2 pb-6 sm:px-6"
-      >
-        <motion.div
-          {...fadeUp}
-          className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-10 sm:px-10 sm:py-12"
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(70%_120%_at_85%_0%,rgb(196_42_214/0.12),transparent_70%)]" />
-          <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-md">
-              <span className="inline-flex items-center gap-2 text-[10px] font-bold tracking-[0.22em] text-brand uppercase">
-                <Download className="size-3.5" /> Get the app
-              </span>
-              <h2 className="mt-4 font-display text-2xl font-bold tracking-tight sm:text-3xl">
-                Take SYNQ with you.
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground sm:text-base">
-                The same library, queue and offline downloads — in a native
-                window on Windows, or full screen on Android.
-              </p>
-            </div>
-            <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">
-              <AppDownloadButtons className="lg:justify-end" />
-              {/* The in-browser (PWA) install still exists — it is simply no
-                  longer the only thing "Download app" does. It lives here,
-                  beside the native builds, where someone who wants "the app"
-                  can pick the one their machine actually supports. */}
-              <InstallAppButton
-                className="self-start lg:self-end"
-                label="Install in this browser"
-              />
-            </div>
-          </div>
-        </motion.div>
-      </section>
-
       <section className="relative z-10 mx-auto w-full max-w-6xl px-4 py-20 sm:px-6">
         <motion.div
           {...fadeUp}
@@ -1020,19 +829,13 @@ export default function Landing() {
                 Start listening{" "}
                 <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
               </Link>
-              <SectionLink
-                to="download"
-                className="inline-flex items-center gap-2 rounded-full border border-brand/30 bg-brand/10 px-5 py-3 text-sm font-semibold text-foreground transition-colors hover:border-brand/50"
-              >
-                <Download className="size-4" />
-                Download app
-              </SectionLink>
-              <SectionLink
-                to="features"
+              <InstallAppButton />
+              <a
+                href="#features"
                 className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
               >
                 Explore features
-              </SectionLink>
+              </a>
             </div>
           </div>
         </motion.div>

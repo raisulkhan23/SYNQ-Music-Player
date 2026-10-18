@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { isEmbedBlocked, isFatalError } from "../src/lib/youtubePlayer.ts";
 import { readSource } from "./helpers/tailwind-css.js";
 

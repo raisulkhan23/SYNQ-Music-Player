@@ -32,7 +32,7 @@ export function InfoPage({
       <header className="relative z-10 mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-6 sm:px-6">
         <Logo to="/" />
         <Link
-          to="/home"
+          to="/"
           className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-white/25 hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" />

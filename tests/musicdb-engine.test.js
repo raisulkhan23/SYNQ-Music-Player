@@ -5,7 +5,7 @@
  * MUSIC for a real query, because a vector database that typechecks and
  * returns plausible-looking nonsense is worse than one that does not compile.
  */
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import {
   HashingEmbedder,
   MemoryVectorStore,

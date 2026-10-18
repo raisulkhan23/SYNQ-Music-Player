@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readSource } from "./helpers/tailwind-css.js";
 // Both modules are dependency-free, so the behaviour is tested for real
 // rather than asserted against source text.

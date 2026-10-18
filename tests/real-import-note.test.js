@@ -15,9 +15,8 @@
  * `detectServiceUrl`. That covers the whole chain that can actually break:
  * link -> detection -> capability -> rendered text.
  */
-import { beforeAll, describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import { setGlobal } from "./helpers/globals.js";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { canDirectImport, detectServiceUrl } from "../src/lib/sources.ts";
@@ -29,7 +28,7 @@ beforeAll(() => {
   win = new Window({ url: "https://example.test/settings" });
   globalThis.window = win;
   globalThis.document = win.document;
-  setGlobal("navigator", win.navigator);
+  globalThis.navigator = win.navigator;
   globalThis.location = win.location;
   globalThis.history = win.history;
   globalThis.HTMLElement = win.HTMLElement;

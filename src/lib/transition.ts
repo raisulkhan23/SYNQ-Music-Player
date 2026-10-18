@@ -380,47 +380,6 @@ export function prepareLead(plan: TransitionPlan): number {
  */
 export const GAPLESS_MIN_READY_STATE = 2;
 
-/**
- * Can this URL be handed to an `<audio>` element at all?
- *
- * `https:` is the streamed case and `blob:` is a DOWNLOADED copy — an object
- * URL from the file the app already stored on disk. Both are real, playable
- * sources and there is no meaningful difference between them at a track
- * boundary: one is a local read and the other is a network read.
- *
- * WHY THIS EXISTS, because it was a genuine defect and not a tidy-up. The two
- * consumers of this question each had their own copy of the rule, written as
- * `url.startsWith("http")`, and `prepareIncoming` had a third written as
- * `/^(https?:|blob:)/`. They disagreed, and the disagreement was invisible
- * because nothing compared them:
- *
- *  - the gapless hand-off refused every downloaded track, reporting
- *    "no resolved src" for a source that was sitting on disk and fully
- *    buffered — so gapless silently never applied to a single downloaded song,
- *    which is exactly the music a listener most expects to be seamless;
- *  - the crossfade's readiness check did the same, and worse: having concluded
- *    the incoming deck was empty it called `prepareIncoming` again, which
- *    re-assigns `src` and calls `load()` on a deck that already held the track.
- *    Re-loading mid-transition restarts the buffer, so the blend it was trying
- *    to protect became the stall it was trying to avoid.
- *
- * One predicate, used by both, so they cannot drift apart again.
- *
- * `"stream"` is deliberately NOT accepted. It is a MARKER meaning "resolve
- * this", not a URL, and an element's `currentSrc` is never literally that — if
- * it ever is, the source really was never resolved and refusing is correct.
- */
-export function isDeckSource(url: string | null | undefined): boolean {
-  if (typeof url !== "string") return false;
-  const value = url.trim();
-  if (!value) return false;
-  return (
-    value.startsWith("http://") ||
-    value.startsWith("https://") ||
-    value.startsWith("blob:")
-  );
-}
-
 export interface GaplessReadinessRequest {
   /** The track the spare deck was prepared for, if any. */
   preparedFor: string | null;
@@ -456,7 +415,7 @@ export function canHandOffGapless(
   if (req.preparedFor !== req.trackId) {
     return { ready: false, because: "nothing preloaded" };
   }
-  if (!isDeckSource(req.currentSrc)) {
+  if (!req.currentSrc || !req.currentSrc.startsWith("http")) {
     return { ready: false, because: "no resolved src" };
   }
   if (!(req.readyState >= GAPLESS_MIN_READY_STATE)) {

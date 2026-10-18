@@ -11,8 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { HaloSwitch } from "@/components/ui/halo-switch";
-import { AppDownloadButtons } from "@/components/downloads/AppDownloadButtons";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
@@ -112,7 +110,6 @@ import {
   IMAGE_WALLPAPER_MARKER,
   LIVE_WALLPAPER_MARKER,
 } from "@/lib/wallpaperStorage";
-import { publicAsset } from "@/lib/publicAsset";
 
 const MAX_WALLPAPER_BYTES = 100_000_000;
 const MAX_LIVE_WALLPAPER_BYTES = 100_000_000;
@@ -2468,10 +2465,6 @@ export function SettingsDialog({
             App
           </p>
           <InstallAppRow />
-          {/* Native installers. The in-app install above is the PWA; these are
-              the real Windows and Android builds, for anyone who wants the app
-              outside a browser. */}
-          <AppDownloadButtons variant="rows" />
         </section>
 
         <Separator className="bg-white/[0.07]" />
@@ -2552,7 +2545,7 @@ function InstallAppRow() {
     return (
       <div className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5">
         <img
-          src={publicAsset("icons/icon-192.png")}
+          src="/icons/icon-192.png"
           alt=""
           width={36}
           height={36}
@@ -2586,7 +2579,7 @@ function InstallAppRow() {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5">
       <img
-        src={publicAsset("icons/icon-192.png")}
+        src="/icons/icon-192.png"
         alt=""
         width={36}
         height={36}
@@ -2703,32 +2696,31 @@ function ToggleRow({
   on: boolean;
   onToggle: () => void;
 }) {
-  /*
-   * The whole row stays a single tap target, but the two halves are siblings
-   * rather than nested: a real switch inside a <button> is invalid HTML and
-   * breaks keyboard and screen-reader behaviour (a button may not contain
-   * another control). So the label text is its own button and the HaloSwitch
-   * is the control, exactly as it would be in any platform settings list.
-   */
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 transition-colors hover:bg-white/[0.05]">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="min-w-0 flex-1 text-left"
-      >
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.05]"
+    >
+      <span className="min-w-0">
         <span className="block text-sm font-medium">{label}</span>
         <span className="block text-xs text-muted-foreground">
           {description}
         </span>
-      </button>
-      <HaloSwitch
-        aria-label={label}
-        checked={on}
-        onCheckedChange={() => onToggle()}
-        size="sm"
-        translucent
-      />
-    </div>
+      </span>
+      <span
+        className={cn(
+          "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+          on ? "bg-[rgb(var(--tint))]" : "bg-white/15",
+        )}
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 size-4 rounded-full bg-white shadow transition-all",
+            on ? "left-[18px]" : "left-0.5",
+          )}
+        />
+      </span>
+    </button>
   );
 }

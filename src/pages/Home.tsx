@@ -492,13 +492,16 @@ export default function Home() {
     ],
   );
 
-  // Playing a mix is exactly playing a shelf: the first track starts and the
-  // rest of the mix becomes the queue, so autoplay, repeat and shuffle all
-  // keep working through the existing player. No separate mix engine exists.
+  // Playing a mix is exactly playing a shelf: the whole mix becomes the queue,
+  // so autoplay, repeat and shuffle all keep working through the existing player.
+  // No separate mix engine exists.
   const playMix = (mix: Mix) => {
-    const [first, ...rest] = mix.items;
-    if (!first) return;
-    playRemoteItem(first, rest);
+    const playable: Playable[] = mix.items.map(
+      (item) =>
+        toPlayableYoutube(item, `https://youtu.be/${item.id}`, []),
+    );
+    if (playable.length === 0) return;
+    playTrack(playable[0], playable.slice(1));
   };
 
   // "Play something random" — random seed, random pick.
@@ -597,13 +600,14 @@ export default function Home() {
         // shuffled HERE and played with `playListOrdered`, rather than
         // switching the app's global shuffle preference on — a one-off button
         // press should not leave shuffle latched for the rest of the session.
-        const queue: Playable[] = shuffleList(
-          (pool as YtItem[]).slice(0, 15)
+        const queue = shuffleList(
+          pool
+            .slice(0, 15)
             .map((item) =>
               toPlayableYoutube(item, `https://youtu.be/${item.id}`),
             ),
         );
-        const selected: Playable | undefined = queue.find((t) => t.id === song.id) ?? queue[0];
+        const selected = queue.find((t) => t.id === song.id) ?? queue[0];
         if (!selected) return;
         playListOrdered(selected, queue);
       })

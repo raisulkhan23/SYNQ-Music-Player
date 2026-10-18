@@ -7,7 +7,6 @@ import {
   Play,
   Radio,
   Search as SearchIcon,
-  Share2,
   Shuffle,
   Trash2,
   X,
@@ -15,42 +14,23 @@ import {
 import { toast } from "sonner";
 
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { SharePlaylistDialog } from "@/components/playlists/SharePlaylistDialog";
 import { RemoteTrackRow } from "@/components/tracks/RemoteTrackRow";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { formatTime } from "@/lib/format";
 import {
   chunkRepairBatches,
-  MIN_REPAIR_MATCH,
   needsRepair,
-  pickRepair,
   REPAIR_EMPTY_STREAK_LIMIT,
   REPAIR_MAX_PASSES,
-  REPAIR_SEARCH_GAP_MS,
   type ImportedRow,
   type RepairResult,
 } from "@/lib/importRepair";
-import {
-  describeProgress,
-  isPlayable,
-  isUnplayableStatus,
-  summarizeEligibility,
-  type TrackStatus,
-} from "@/lib/eligibility";
 import { toPlayableYoutube, type Playable } from "@/lib/playable";
 import { shuffleList } from "@/lib/queueOrder";
 import { cleanArtistName, type YtItem } from "@/lib/youtube";
 import { cn } from "@/lib/utils";
 import { usePlayerStore } from "@/store/player";
-
-interface MatchCandidate {
-  youtubeId: string;
-  title: string;
-  artist: string;
-  duration: number;
-  thumbnail: string;
-}
 
 interface PlaylistRow {
   id: string;
@@ -60,36 +40,6 @@ interface PlaylistRow {
   duration: number;
   youtubeId?: string;
   hasSnapshot: boolean;
-  /** Import lifecycle status. See `lib/eligibility`. */
-  status?: TrackStatus;
-  matchCandidates?: MatchCandidate[];
-}
-
-/**
- * What the row's status means, in one word, for the list badge.
- *
- * `undefined` is deliberately absent: a playlist of natively-added songs has no
- * import statuses at all, and badging every one of them would be noise. The
- * badge appears only where there is something honest to say.
- */
-function statusBadge(status: TrackStatus | undefined, playable: boolean) {
-  if (playable) return undefined;
-  switch (status) {
-    case "ambiguous":
-      return "Choose match";
-    case "unavailable":
-      return "Unavailable";
-    case "metadata_only":
-      return "No audio";
-    case "failed":
-      return "Couldn't check";
-    case "resolving":
-      return "Checking…";
-    case "pending":
-      return "Not checked yet";
-    default:
-      return "Not playable";
-  }
 }
 
 export default function PlaylistDetail() {
@@ -104,9 +54,6 @@ export default function PlaylistDetail() {
   const searchYt = useAction(api.youtube.searchYoutube);
   const resolveImported = useAction(api.playlists.resolveImportedTracks);
   const applyRepairs = useMutation(api.playlists.applyImportedRepairs);
-  const settleRows = useMutation(api.playlists.settleImportedRows);
-  const retryRows = useMutation(api.playlists.retryImportedRows);
-  const chooseMatch = useMutation(api.playlists.chooseImportedMatch);
   const playTrack = usePlayerStore((s) => s.playTrack);
   const playListOrdered = usePlayerStore((s) => s.playListOrdered);
   const startPlaylistRadio = usePlayerStore((s) => s.startPlaylistRadio);
@@ -118,18 +65,15 @@ export default function PlaylistDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [repairing, setRepairing] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
-  /** Pass name so the reader can map an id back to a song to choose between. */
-  const [choosingFor, setChoosingFor] = useState<string | null>(null);
 
   // Rows straight off the document, before the display mapping below. The
   // repair pass reads THESE, because it needs to know exactly what is still
   // missing rather than what the screen chose to render.
   const storedRows = useMemo<ImportedRow[]>(() => {
-    const snapshots: any[] = playlist?.trackSnapshots ?? [];
+    const snapshots = playlist?.trackSnapshots ?? [];
     const byId = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]));
     return (playlist?.trackIds ?? []).map((trackId) => {
-      const snapshot: any = byId.get(trackId);
+      const snapshot = byId.get(trackId);
       return {
         id: trackId,
         title: snapshot?.title ?? "",
@@ -137,22 +81,9 @@ export default function PlaylistDetail() {
         coverUrl: snapshot?.coverUrl ?? "",
         duration: snapshot?.duration ?? 0,
         ...(snapshot?.youtubeId ? { youtubeId: snapshot.youtubeId } : {}),
-        ...(snapshot?.status ? { status: snapshot.status as TrackStatus } : {}),
       };
     });
   }, [playlist]);
-
-  /**
-   * The honest summary of this playlist, recalculated from the stored rows.
-   *
-   * Every number here is counted, never assumed: `playable` is the count that
-   * passes the shared eligibility rule, `unresolved` is the count still open, and
-   * `unavailable` is the count upstream has settled. The header used to say one
-   * fixed sentence for all three states, which is why 107 unresolved songs and 1
-   * looked identical — and why it read as stuck.
-   */
-  const summary = useMemo(() => summarizeEligibility(storedRows), [storedRows]);
-  const progressLine = useMemo(() => describeProgress(summary), [summary]);
 
   /**
    * Fill in what an older import never stored: cover art, length, and a real
@@ -186,35 +117,8 @@ export default function PlaylistDetail() {
   }, [storedRows]);
   const [repairedCount, setRepairedCount] = useState(0);
 
-  /**
-   * The resolved playlist's id and revision, as SCALARS.
-   *
-   * The repair loop used to depend on the whole `playlist` object, and that was
-   * a real defect rather than a style point: a Convex query result is a fresh
-   * object on every write, and this loop writes on every batch, so each batch
-   * cancelled the run that produced it and started a new one. The work still
-   * advanced (the answered-rows set lived in a ref) but the `repairing` flag was
-   * set again and again with the spinner text reset each time, which is exactly
-   * what a permanently "Looking up artwork and track lengths…" looks like from
-   * the outside. Depending on the two scalars that actually change means a batch
-   * landing no longer restarts the loop it belongs to.
-   */
-  const playlistId = playlist?._id;
-  const playlistRevision = playlist?.updatedAt;
-
-  /**
-   * What the caller may do here.
-   *
-   * `playlists.get` returns the role it derived from the share grant, and the
-   * screen uses it to stop offering actions that would be rejected. That is
-   * presentation only — every mutation re-derives the same role on the server,
-   * so hiding a button is a courtesy and not the control.
-   */
-  const role = (playlist as { role?: string } | null | undefined)?.role;
-  const isViewer = role === "viewer";
-
   useEffect(() => {
-    if (!playlistId || isViewer || repairInFlight.current) return;
+    if (!playlist || repairInFlight.current) return;
     let cancelled = false;
 
     const run = async () => {
@@ -231,7 +135,6 @@ export default function PlaylistDetail() {
         setRepairing(true);
         let result: {
           resolved: RepairResult[];
-          ambiguous: Array<{ id: string; candidates: MatchCandidate[] }>;
           answered: string[];
           empty: number;
         } | null = null;
@@ -251,11 +154,6 @@ export default function PlaylistDetail() {
             resolved: settled.flatMap((outcome) =>
               outcome.status === "fulfilled"
                 ? (outcome.value?.resolved ?? [])
-                : [],
-            ),
-            ambiguous: settled.flatMap((outcome) =>
-              outcome.status === "fulfilled"
-                ? (outcome.value?.ambiguous ?? [])
                 : [],
             ),
             // Only rows upstream actually ANSWERED are marked done. A row
@@ -286,40 +184,13 @@ export default function PlaylistDetail() {
         if (!result || cancelled) return;
 
         for (const id of result.answered) repairAttempted.current.add(id);
-
         if (result.resolved.length > 0) {
           try {
-            await applyRepairs({ playlistId, repairs: result.resolved });
+            await applyRepairs({
+              playlistId: playlist._id,
+              repairs: result.resolved,
+            });
             setRepairedCount((count) => count + result!.resolved.length);
-          } catch {
-            return;
-          }
-        }
-
-        // -------------------------------------------------------------------
-        // Settle everything upstream ANSWERED but could not match.
-        //
-        // This write is what makes an import finish. Without it the rows whose
-        // search came back with no acceptable match kept `pending` for ever,
-        // `needsRepair` kept returning true for them, and every visit re-asked
-        // the same questions while the header repeated its loading sentence. A
-        // question that has been answered is not still loading.
-        // -------------------------------------------------------------------
-        const matchedIds = new Set(result.resolved.map((repair) => repair.id));
-        const ambiguousById = new Map(
-          result.ambiguous.map((entry) => [entry.id, entry.candidates]),
-        );
-        const toSettle = result.answered
-          .filter((id) => !matchedIds.has(id))
-          .map((id) => {
-            const candidates = ambiguousById.get(id);
-            return candidates && candidates.length > 0
-              ? { id, status: "ambiguous", matchCandidates: candidates }
-              : { id, status: "unavailable" };
-          });
-        if (toSettle.length > 0) {
-          try {
-            await settleRows({ playlistId, rows: toSettle });
           } catch {
             return;
           }
@@ -331,21 +202,7 @@ export default function PlaylistDetail() {
         // the backlog on their own, so the next visit resumes from here.
         emptyStreak = result.empty > 0 ? emptyStreak + 1 : 0;
         if (emptyStreak >= REPAIR_EMPTY_STREAK_LIMIT) return;
-        if (
-          result.resolved.length === 0 &&
-          toSettle.length === 0 &&
-          result.empty > 0
-        ) {
-          return;
-        }
-        // Paced between batches for the same reason the server paces between
-        // rows: a burst is throttled and comes back empty, which looks exactly
-        // like "this song does not exist".
-        if (pending.length > 0) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, REPAIR_SEARCH_GAP_MS / 4),
-          );
-        }
+        if (result.resolved.length === 0 && result.empty > 0) return;
       }
     };
 
@@ -355,7 +212,7 @@ export default function PlaylistDetail() {
     return () => {
       cancelled = true;
     };
-  }, [playlistId, playlistRevision, isViewer, resolveImported, applyRepairs, settleRows]);
+  }, [playlist, resolveImported, applyRepairs]);
 
   if (playlist === undefined) {
     return (
@@ -393,7 +250,7 @@ export default function PlaylistDetail() {
     (playlist.trackSnapshots ?? []).map((snapshot) => [snapshot.id, snapshot]),
   );
   const rows: PlaylistRow[] = playlist.trackIds.map((trackId) => {
-    const snapshot: any = snapshots.get(trackId);
+    const snapshot = snapshots.get(trackId);
     return {
       id: trackId,
       title: snapshot?.title ?? "Playlist song",
@@ -402,14 +259,6 @@ export default function PlaylistDetail() {
       duration: snapshot?.duration ?? 0,
       youtubeId: snapshot?.youtubeId,
       hasSnapshot: snapshot !== undefined,
-      // The row's import state travels with it to the list. Without this the
-      // data was on the document but never reached the badge, so an unresolved
-      // import rendered identically to a fully playable playlist.
-      ...(snapshot?.status ? { status: snapshot.status as TrackStatus } : {}),
-      ...(Array.isArray(snapshot?.matchCandidates) &&
-      snapshot.matchCandidates.length > 0
-        ? { matchCandidates: snapshot.matchCandidates as MatchCandidate[] }
-        : {}),
     };
   });
   const total = rows.reduce(
@@ -438,9 +287,6 @@ export default function PlaylistDetail() {
     // `resolveLegacyRow`, the search-based fallback was never reached for
     // imported tracks at all.
     if (!row.hasSnapshot || !row.youtubeId) return null;
-    // A row the import settled as unplayable does not become playable again
-    // because an old id is still sitting on the document.
-    if (isUnplayableStatus(row.status)) return null;
     const item: YtItem = {
       id: row.youtubeId,
       title: row.title,
@@ -461,44 +307,24 @@ export default function PlaylistDetail() {
   ): Promise<Playable | null> => {
     const direct = directPlayable(row);
     if (direct) return direct;
-
-    // A row with no stored metadata at all is an orphan from the id-only era.
-    // The only search available is the id itself, so an EXACT id match is the
-    // only result that is certainly this song.
-    if (!row.hasSnapshot) {
-      const { items } = await searchYt({ query: row.id });
-      const exact = items.find((item) => item.id === row.id);
-      return exact
-        ? toPlayableYoutube(exact, `https://youtu.be/${exact.id}`)
-        : null;
-    }
-
-    const { items } = await searchYt({
-      query: `${row.title} ${row.artist}`.trim(),
-    });
-    // Confidence, not convenience. This used to end in `items[0]`, which meant
-    // a 0.2-similarity cover of the requested title played as if it were the
-    // requested song. `pickRepair` returns null unless the match clears the
-    // shared threshold and is clearly ahead of the runner-up, and the caller
-    // already handles null by saying so.
-    const best = pickRepair(
-      { title: row.title, artist: row.artist },
-      items.map((item) => ({
-        id: item.id,
-        title: item.title,
-        artist: item.artist,
-        duration: item.duration,
-        thumbnail: item.thumbnail,
-      })),
-    );
-    if (!best) return null;
-    const match = items.find((item) => item.id === best.id);
-    if (!match) return null;
-    return toPlayableYoutube(
-      match,
-      `https://youtu.be/${match.id}`,
-      items.filter((item) => item.id !== match.id),
-    );
+    const searchQuery = row.hasSnapshot
+      ? `${row.title} ${row.artist}`.trim()
+      : row.id;
+    const { items } = await searchYt({ query: searchQuery });
+    const best =
+      items.find((item) => item.id === row.youtubeId || item.id === row.id) ??
+      items.find(
+        (item) =>
+          item.title.toLocaleLowerCase() === row.title.toLocaleLowerCase(),
+      ) ??
+      items[0];
+    return best
+      ? toPlayableYoutube(
+          best,
+          `https://youtu.be/${best.id}`,
+          items.filter((item) => item.id !== best.id),
+        )
+      : null;
   };
 
   const playRow = async (row: PlaylistRow, options?: { shuffle?: boolean }) => {
@@ -674,27 +500,18 @@ export default function PlaylistDetail() {
               {playlist.description}
             </p>
           )}
-          {role && role !== "owner" && (
-            <p className="mt-2 text-xs font-medium text-[rgb(var(--tint))]">
-              {role === "editor"
-                ? "Shared with you — you can edit this playlist"
-                : "Shared with you"}
-            </p>
-          )}
           <p className="mt-2 text-sm text-muted-foreground">
             {rows.length} {rows.length === 1 ? "song" : "songs"}
             {total > 0 && ` · ${formatTime(total)}`}
           </p>
-          {/* Counted, not asserted. The old line was one fixed sentence shown
-              whenever anything was unfinished, so 107 open rows and 1 read the
-              same — and, because it never changed as work completed, it read as
-              stuck. `describeProgress` reports the real counts and returns null
-              as soon as there is nothing left to say. */}
-          {progressLine && (
+          {/* The repair pass is silent by design: it is bookkeeping, not an
+              event. It is only worth mentioning while it is actually running,
+              and only when this playlist is the kind that needed it. */}
+          {repairing && storedRows.some(needsRepair) && (
             <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              {repairing && <Loader2 className="size-3 animate-spin" />}
-              {progressLine}
-              {repairedCount > 0 && ` · ${repairedCount} filled in`}
+              <Loader2 className="size-3 animate-spin" />
+              Looking up artwork and track lengths
+              {repairedCount > 0 ? ` · ${repairedCount} found` : "…"}
             </p>
           )}
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -741,33 +558,23 @@ export default function PlaylistDetail() {
                 {resolvingId === "__radio__" ? "Loading…" : "Radio"}
               </button>
             )}
+            {/* Delete stays available even for an empty playlist. */}
             <button
               type="button"
-              onClick={() => setShareOpen(true)}
-              className="flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.05] px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-white/[0.1]"
+              aria-label="Delete playlist"
+              disabled={deleting}
+              onClick={() => void handleDelete()}
+              onBlur={() => setConfirmDelete(false)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors disabled:opacity-60",
+                confirmDelete
+                  ? "border-red-500 bg-red-500/20 text-red-300"
+                  : "border-white/10 text-muted-foreground hover:border-red-500/40 hover:text-red-400",
+              )}
             >
-              <Share2 className="size-4" />
-              Share
+              <Trash2 className="size-4" />
+              {confirmDelete ? "Click to confirm" : "Delete"}
             </button>
-            {/* Delete is the owner's alone; the server enforces it too. */}
-            {(!role || role === "owner") && (
-              <button
-                type="button"
-                aria-label="Delete playlist"
-                disabled={deleting}
-                onClick={() => void handleDelete()}
-                onBlur={() => setConfirmDelete(false)}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors disabled:opacity-60",
-                  confirmDelete
-                    ? "border-red-500 bg-red-500/20 text-red-300"
-                    : "border-white/10 text-muted-foreground hover:border-red-500/40 hover:text-red-400",
-                )}
-              >
-                <Trash2 className="size-4" />
-                {confirmDelete ? "Click to confirm" : "Delete"}
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -800,18 +607,16 @@ export default function PlaylistDetail() {
                 onPlay={() => void playRow(track)}
                 source="youtube"
                 menuItems={
-                  isViewer ? undefined : (
-                    <DropdownMenuItem
-                      className="gap-2"
-                      onSelect={(event) => {
-                        event.stopPropagation();
-                        void handleRemove(track);
-                      }}
-                    >
-                      <X className="size-4" />
-                      Remove from playlist
-                    </DropdownMenuItem>
-                  )
+                  <DropdownMenuItem
+                    className="gap-2"
+                    onSelect={(event) => {
+                      event.stopPropagation();
+                      void handleRemove(track);
+                    }}
+                  >
+                    <X className="size-4" />
+                    Remove from playlist
+                  </DropdownMenuItem>
                 }
               />
             ))
@@ -833,13 +638,6 @@ export default function PlaylistDetail() {
       )}
 
       <ChangeHistory playlistId={playlist._id} />
-
-      <SharePlaylistDialog
-        open={shareOpen}
-        onOpenChange={setShareOpen}
-        playlistId={playlist._id}
-        playlistName={playlist.name}
-      />
     </div>
   );
 }

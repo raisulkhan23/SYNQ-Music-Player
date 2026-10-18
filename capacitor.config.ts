@@ -20,14 +20,8 @@ const config: CapacitorConfig = {
   appName: "SYNQ",
   webDir: "dist",
   android: {
-    // Released builds must not ship a debuggable WebView, so this is OFF unless
-    // it is asked for explicitly — the same opt-in shape as
-    // `CAPACITOR_SERVER_URL` below, and for the same reason: an ambient setting
-    // must never be able to leave a shipped build inspectable. A debug build
-    // sets it to attach Chrome DevTools over `adb forward` when the background
-    // playback behaviour has to be observed inside the real WebView, which is
-    // not something the release APK should ever allow.
-    webContentsDebuggingEnabled: process.env.CAPACITOR_DEBUG_WEBVIEW === "1",
+    // Released builds must not ship a debuggable WebView.
+    webContentsDebuggingEnabled: false,
   },
   server: {
     androidScheme: "https",

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import { readSource } from "./helpers/tailwind-css.js";
 
@@ -506,15 +506,7 @@ describe("the prompt is SYNQ's own UI, not a generic one", () => {
   test("it returns the visitor to the exact page after OAuth", () => {
     // Without this the server picks its own default origin and a listener can
     // land on a completely different site after authenticating.
-    //
-    // The origin is now assembled from `protocol` + `host` instead of read off
-    // `window.location.origin`: over file:// (the packaged desktop/Android
-    // load) `.origin` is the string "null", so the redirect target would be
-    // unusable there. Both forms are absolute and same-site, which is the
-    // claim — so both are accepted.
-    expect(dialog).toMatch(
-      /window\.location\.origin\}|window\.location\.protocol\}\/\/\$\{window\.location\.host\}/,
-    );
+    expect(dialog).toMatch(/window\.location\.origin\}/);
     expect(dialog).toMatch(/location\.pathname/);
   });
 
@@ -629,42 +621,25 @@ describe("queue building is NOT gated, on purpose", () => {
     // Requirement: hardware/browser media controls must not be a way around
     // the gate. `next`/`prev`/`togglePlay` all delegate to the gated
     // `playIndex`, so a media key cannot start audio for a guest either.
-    //
-    // The platform call itself now lives in `@/lib/mediaSession` (one module
-    // talks to the OS, for the browser API and the Android bridge alike), so
-    // this pins the STORE's side of it: the handlers are wired once and each
-    // one calls the gated store action, reading the live store rather than
-    // capturing state.
     const store = readSource("src/store/player.ts");
-    const wiring = store.slice(store.indexOf("function wireMediaKeys()"));
-    expect(wiring).toMatch(
-      /nexttrack: \(\) => usePlayerStore\.getState\(\)\.next\(\)/,
+    expect(store).toMatch(
+      /setActionHandler\("nexttrack", \(\) => usePlayerStore\.getState\(\)\.next\(\)\)/,
     );
-    expect(wiring).toMatch(
-      /previoustrack: \(\) => usePlayerStore\.getState\(\)\.prev\(\)/,
+    expect(store).toMatch(
+      /setActionHandler\("play", \(\) => usePlayerStore\.getState\(\)\.togglePlay\(\)\)/,
     );
-    expect(wiring).toMatch(/play: \(\) => \{[\s\S]{0,200}?togglePlay\(\)/);
-    // And no handler may reach for a load path of its own — that is the hole
-    // the gate exists to close.
-    const handlers = wiring.slice(0, wiring.indexOf("wireAudioRouteLoss"));
-    expect(handlers).not.toMatch(/loadTrack|playViaStream/);
   });
 });
 
 describe("the bridge is mounted somewhere it can actually work", () => {
-  test("it is inside the app's router, because the prompt uses useLocation", () => {
+  test("it is inside BrowserRouter, because the prompt uses useLocation", () => {
     // This is a real crash, not a style preference. `useLocation` throws
     // "may be used only in the context of a <Router> component" when called
     // outside one, and the throw happens on EVERY render of the dialog — so
-    // mounting the provider as a sibling of the router took down the whole app
-    // the moment the prompt appeared.
-    //
-    // `<Router>`, not `<BrowserRouter>`: main.tsx chooses HashRouter over
-    // file:// (packaged Electron / Capacitor) and BrowserRouter otherwise, and
-    // renders whichever was chosen under one name. Either way the provider has
-    // to be INSIDE it.
-    const routerOpen = main.indexOf("<Router>");
-    const routerClose = main.indexOf("</Router>");
+    // mounting the provider as a sibling of `</BrowserRouter>` took down the
+    // whole app the moment the prompt appeared.
+    const routerOpen = main.indexOf("<BrowserRouter>");
+    const routerClose = main.indexOf("</BrowserRouter>");
     const mount = main.indexOf("<AuthGateProvider />");
     expect(mount).toBeGreaterThan(-1);
     expect(routerOpen).toBeGreaterThan(-1);
@@ -704,7 +679,7 @@ describe("the bridge is mounted somewhere it can actually work", () => {
     const usesRouter = /useLocation|useNavigate|Link/.test(dialogSource);
     if (usesRouter) {
       const mount = main.indexOf("<AuthGateProvider />");
-      expect(main.lastIndexOf("<Router>", mount)).toBeGreaterThan(-1);
+      expect(main.lastIndexOf("<BrowserRouter>", mount)).toBeGreaterThan(-1);
     }
   });
 });
@@ -812,25 +787,13 @@ describe("SYNQ can be downloaded from the landing page", () => {
 
   test("the landing page renders the install button", () => {
     expect(landing).toMatch(/import \{ InstallAppButton \}/);
-    // The tag now carries a className and a label, so the assertion accepts
-    // attributes instead of requiring the bare `<InstallAppButton />`.
-    expect(landing).toMatch(/<InstallAppButton[\s/>]/);
+    expect(landing).toMatch(/<InstallAppButton \/>/);
   });
 
   test("it appears in more than one spot, not just the footer", () => {
-    // A single entry point is easy to miss on a long marketing page, so the
-    // requirement is >1 reachable download path — not >1 literal
-    // `<InstallAppButton />` tag. The hero's "Download app" used to fire the
-    // browser install prompt, which on a desktop browser does nothing and
-    // never shows the Windows/Android builds; it is now a `to="download"`
-    // link to the section that offers BOTH the native builds and the browser
-    // install. Each of the three is asserted, so dropping any one fails here.
-    const installs = (landing.match(/<InstallAppButton[\s/>]/g) ?? []).length;
-    const nativeBuilds = (landing.match(/<AppDownloadButtons[\s/>]/g) ?? []).length;
-    const heroLink = (landing.match(/to="download"/g) ?? []).length;
-    expect(installs).toBeGreaterThanOrEqual(1);
-    expect(nativeBuilds).toBeGreaterThanOrEqual(1);
-    expect(heroLink).toBeGreaterThanOrEqual(1);
+    // A single instance is easy to miss on a long marketing page.
+    const count = (landing.match(/<InstallAppButton \/>/g) ?? []).length;
+    expect(count).toBeGreaterThanOrEqual(2);
   });
 
   test("it reuses the real install hook, not a second implementation", () => {
@@ -865,11 +828,9 @@ describe("the What's New section tells the truth", () => {
   const landing = readSource("src/pages/Landing.tsx");
 
   test("it exists, is anchored, and is linked from the nav", () => {
-    // A section nobody can reach is not published copy. The nav link is a
-    // `SectionLink to="whats-new"`, which renders `href="#whats-new"`, so
-    // either form is accepted — as long as something actually links to it.
+    // A section nobody can reach is not published copy.
     expect(landing).toMatch(/id="whats-new"/);
-    expect(landing).toMatch(/(?:href="#whats-new"|to="whats-new")/);
+    expect(landing).toMatch(/href="#whats-new"/);
   });
 
   test("it is driven by data, not repeated markup", () => {

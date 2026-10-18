@@ -3,7 +3,6 @@ import { Link } from "react-router";
 import { PlaylistCard } from "@/components/playlists/PlaylistCard";
 import { PlaylistDialog } from "@/components/playlists/PlaylistDialog";
 import { LikedSongsCard } from "@/components/playlists/LikedSongsCard";
-import { SharedWithMe } from "@/components/playlists/SharedWithMe";
 import { SmartPlaylists } from "@/components/playlists/SmartPlaylists";
 import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
@@ -102,8 +101,6 @@ export default function Playlists() {
           );
         })}
       </nav>
-
-      <SharedWithMe />
 
       <SmartPlaylists />
 

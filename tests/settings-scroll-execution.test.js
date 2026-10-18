@@ -1,6 +1,5 @@
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import { setGlobal } from "./helpers/globals.js";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -66,7 +65,7 @@ beforeAll(async () => {
   win = new Window({ url: "https://example.test/settings" });
   globalThis.window = win;
   globalThis.document = win.document;
-  setGlobal("navigator", win.navigator);
+  globalThis.navigator = win.navigator;
   globalThis.location = win.location;
   globalThis.HTMLElement = win.HTMLElement;
   globalThis.Element = win.Element;

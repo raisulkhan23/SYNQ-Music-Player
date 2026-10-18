@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { parsePlaylistImport } from "../src/lib/importPlaylist";
 
 const titles = (text) => parsePlaylistImport(text)?.tracks.map((t) => t.title);

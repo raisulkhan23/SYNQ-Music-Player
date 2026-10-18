@@ -143,90 +143,12 @@ const schema = defineSchema(
             coverUrl: v.string(),
             duration: v.number(),
             youtubeId: v.optional(v.string()),
-            //
-            // Import lifecycle status, one of lib/eligibility.ts TrackStatus.
-            // Optional and free-form on purpose: an older row has no status
-            // and must keep loading, and a status written by a newer build must
-            // not make an older one refuse to read its own playlist. Unknown
-            // values are treated as unplayable by `isPlayable`, which fails
-            // safe — a row that cannot be trusted does not enter a queue.
-            status: v.optional(v.string()),
-            // The candidate ids an AMBIGUOUS row is choosing between, so a
-            // "choose match" action has something to offer without re-running
-            // the search. Never used for playback until one is chosen.
-            matchCandidates: v.optional(
-              v.array(
-                v.object({
-                  youtubeId: v.string(),
-                  title: v.string(),
-                  artist: v.string(),
-                  duration: v.number(),
-                  thumbnail: v.string(),
-                }),
-              ),
-            ),
           }),
         ),
       ),
-      /**
-       * Who may see this playlist.
-       *
-       *   "private" — owner and explicitly shared users only (the default, and
-       *               what an absent value means, so every existing playlist
-       *               keeps exactly the access it already had).
-       *   "link"    — anyone holding the current share token, plus the above.
-       *   "public"  — listed, readable by any signed-in user.
-       *
-       * Enforced by the queries themselves, never by the UI. A UI-only check is
-       * not a permission: the playlist id is guessable enough that the server
-       * has to be the authority.
-       */
-      visibility: v.optional(v.string()),
-      /**
-       * The share-link token. Unguessable, and separate from the document id,
-       * which is why possession of `_id` is never treated as authorization to
-       * read a private playlist. Cleared to revoke a link.
-       */
-      shareToken: v.optional(v.string()),
-      shareTokenCreatedAt: v.optional(v.number()),
       createdAt: v.number(),
       updatedAt: v.number(),
-    })
-      .index("by_user", ["userId"])
-      .index("by_shareToken", ["shareToken"]),
-
-    /**
-     * A playlist granted to another account: a direct share.
-     *
-     * Ownership does NOT move. The row records a grant, so revoking it, or the
-     * recipient removing it from their own library, can never touch the owner's
-     * playlist — which is the failure mode a copy-based "share" has.
-     *
-     * `hiddenByRecipient` is the recipient's own dismissal. It has to live on
-     * the grant rather than deleting the row, because the owner must still be
-     * able to see who they shared with, and because the recipient must be able
-     * to get it back without asking the owner to share again.
-     */
-    playlistShares: defineTable({
-      playlistId: v.id("playlists"),
-      ownerId: v.id("users"),
-      recipientId: v.id("users"),
-      /** "viewer" (default) or "editor" for collaborative playlists. */
-      role: v.string(),
-      /**
-       * "pending" until an invitation is accepted, "accepted" for a direct
-       * share. Kept as a string so an older build reading a newer value does not
-       * crash; the authorization helper only honours "accepted".
-       */
-      status: v.string(),
-      hiddenByRecipient: v.optional(v.boolean()),
-      createdAt: v.number(),
-      updatedAt: v.number(),
-    })
-      .index("by_playlist", ["playlistId"])
-      .index("by_recipient", ["recipientId"])
-      .index("by_playlist_recipient", ["playlistId", "recipientId"])
-      .index("by_owner", ["ownerId"]),
+    }).index("by_user", ["userId"]),
 
     // listening history: one row per user+track, updated on every play.
     // Covers ALL sources — remote plays store a title/artist/cover snapshot.

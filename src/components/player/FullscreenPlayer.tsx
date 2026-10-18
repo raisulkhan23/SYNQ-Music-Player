@@ -57,6 +57,7 @@ import {
   Share2,
   Loader2,
   MicVocal,
+  Monitor,
   Moon,
   Repeat,
   Scissors,
@@ -71,7 +72,10 @@ import { formatRemaining, useSleepCountdown } from "@/lib/sleepTimer";
 import {
   IMAGE_WALLPAPER_MARKER,
   LIVE_WALLPAPER_MARKER,
+  listWallpaperFiles,
+  wallpaperMarker,
 } from "@/lib/wallpaperStorage";
+import { RAW_WALLPAPER_KEY } from "@/store/player";
 
 const SLEEP_OPTIONS: { label: string; value: number | "end" | "queue" }[] = [
   { label: "5 minutes", value: 5 },
@@ -528,6 +532,7 @@ export function FullscreenPlayer() {
   const setRate = usePlayerStore((s) => s.setRate);
   const audioFilter = usePlayerStore((s) => s.audioFilter);
   const setAudioFilter = usePlayerStore((s) => s.setAudioFilter);
+  const toggleVideo = usePlayerStore((s) => s.toggleVideo);
 
   const a = accent ?? { r: 196, g: 246, b: 152 };
 
@@ -913,23 +918,8 @@ export function FullscreenPlayer() {
         />
 
         <div className="relative z-10 flex h-full flex-col px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-10 sm:pt-6 sm:pb-5">
-          {/* top row
-
-              The album name is pinned to the row's true centre instead of
-              being laid out between the two flanking clusters. Riding the
-              flow made it `justify-between`'s leftover space, and the two
-              clusters are NOT the same width — the icon stack is a good 50px
-              wider than the Minimize button — so the album name it is
-              centred against sat ~27px left of the centre line that the
-              artwork, the lyric stack and the song title all share. The
-              header looked crooked next to everything under it, and which
-              way it leaned changed with the window.
-
-              Taking it out of the flow (`absolute` + `left-1/2`) puts it on
-              that centre line at every width, and the `max-w-` keeps a long
-              album name from running under the icons. `min-w-0` + `truncate`
-              still keep it from overflowing its own box. */}
-          <div className="relative flex items-center justify-between">
+          {/* top row */}
+          <div className="flex items-center justify-between">
             <button
               type="button"
               aria-label="Exit full-screen player"
@@ -939,13 +929,16 @@ export function FullscreenPlayer() {
               <ChevronDown className="size-5" />
               <span className="hidden sm:inline">Minimize</span>
             </button>
-            <div className="pointer-events-none absolute top-1/2 left-1/2 hidden w-[min(22rem,40%)] -translate-x-1/2 -translate-y-1/2 flex-col text-center sm:flex">
+            {/* `min-w-0` + `truncate`: a long album name used to push this
+                block into the two flanking clusters and the Minimize button
+                and the action icons ended up sitting on top of the text. */}
+            <div className="hidden min-w-0 text-center sm:block">
               {current.albumName && (
-                <p className="w-full truncate font-display text-sm font-semibold tracking-tight">
+                <p className="truncate font-display text-sm font-semibold tracking-tight">
                   {current.albumName}
                 </p>
               )}
-              <p className="w-full truncate text-xs text-muted-foreground">
+              <p className="truncate text-xs text-muted-foreground">
                 Live session
               </p>
             </div>
@@ -1041,32 +1034,19 @@ export function FullscreenPlayer() {
               is open (desktop) so the lyrics never cover the video */}
           <div
             className={cn(
-              // NO `transition-all` here on purpose. The padding below is a
-              // LAYOUT axis: transitioning it meant this container, the lyric
-              // stack and the metadata block each animated their own
-              // `padding-right` on their own clock, so opening or closing the
-              // panel caught them at different offsets — the artwork and the
-              // title visibly off the centre line the lyrics sat on — and a
-              // transition that starts while the tab is hidden (or a browser
-              // that is not compositing) can freeze at its start value, which
-              // left them shifted with no panel open at all. The panel's own
-              // open/close animation is unaffected; the video frame still
-              // animates its own width.
-              "flex min-h-0 flex-1 items-center justify-center py-3 sm:py-6",
-              lyricsOpen && "hidden md:flex", // lyrics overlay covers on small screens
-              // The panel is `max-w-md`, so from `md` up it is exactly 28rem
-              // wide and the overlay can reserve precisely that much: the
-              // video then stays centred in the space the panel leaves,
-              // aligned with the lyrics and the title below it. Below `md`
-              // the panel is the whole screen, so it simply covers this.
-              lyricsOpen && "md:pr-[28rem]",
+              "flex min-h-0 flex-1 items-center justify-center py-3 transition-all duration-300 sm:py-6",
+              lyricsOpen && "hidden lg:flex", // lyrics overlay covers on small screens
+              // Lyrics panel is 28rem wide — reserve exactly that so the
+              // video stays centered in the remaining space (a touch right
+              // of center overall, aligned with the title below).
+              lyricsOpen && "lg:pr-[28rem]",
             )}
           >
             {isYoutube && videoEnabled ? (
               <div
                 ref={videoFrameRef}
                 className="fade-rise relative aspect-video w-[min(72vh,640px)] max-w-full overflow-hidden rounded-2xl bg-black shadow-[0_30px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/10 transition-all duration-300"
-                style={lyricsOpen ? { width: "min(48vh, 480px, 100%)" } : undefined}
+                style={lyricsOpen ? { width: "min(48vh, 480px)" } : undefined}
               >
                 {/* Shield: absorbs clicks so YouTube's in-frame UI (title bar,
                     watch-later, share, end-screen links) can't be triggered. */}
@@ -1122,108 +1102,56 @@ export function FullscreenPlayer() {
               <motion.img
                 src={current.coverUrl}
                 alt={`${current.title} cover art`}
-                className={cn(
-                  "size-[min(38vh,340px)] rounded-2xl object-cover shadow-[0_30px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/10",
-                  // Never wider than the space left beside the open panel —
-                  // at `md` widths that space is narrower than 38vh.
-                  lyricsOpen && "max-w-full",
-                )}
-                animate={{ y: [0, -12, 0] }}
-                transition={{
-                  duration: 7,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
+                className="size-[min(32vh,280px)] rounded-2xl object-cover shadow-[0_30px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/10"
+                animate={{ y: [0, 0, 0] }}
+                transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
               />
             )}
           </div>
 
-          {/* The line being sung right now, in the dead space between the
-              artwork and the title.
-
-              Three lines: the one before, the one now, the one after. The
-              neighbours are what make it read as a lyric rather than a
-              caption — and they cost nothing, because the hook already knows
-              which line comes next.
-
-              Spacing is the other half of this. The block sits on its own
-              `my-4` / `my-5` air inside a column that already has `gap-3`,
-              because the first version of this sat directly on top of the
-              song title and the two read as one collided block of text.
-
-              The whole stack is NOT rendered when there is no line yet (before
-              the first lyric, or a track with no lyrics at all) — an empty
-              placeholder would reintroduce the gap it is meant to fill, and a
-              skeleton would be noise on the many songs that have no lyrics.
-              It is also hidden while the panel is open on a phone, where the
-              panel covers the screen and two copies of the same line would
-              be showing at once. */}
+          {/* Lyric line, kept compact and centred under the cover art. */}
           <div
             aria-live="off"
             className={cn(
-              "w-full flex-col items-center overflow-hidden",
-              // One branch, no contradictory utilities fighting each other:
-              // nothing at all without a line; hidden on a phone while the
-              // panel covers the screen; visible everywhere else.
+              "flex flex-col items-center justify-center overflow-hidden",
               !lyrics.activeLine
                 ? "hidden"
                 : lyricsOpen
-                  ? "hidden md:flex"
+                  ? "hidden lg:flex"
                   : "flex",
-              // Real air above and below, on top of the column's own gap-3.
-              lyrics.activeLine && "my-4 sm:my-5",
-              // THE BUG THIS FIXES. The artwork and the metadata block both
-              // reserve the panel's width so they slide left and stay clear
-              // of it. This stack was missing that, so when the panel opened
-              // it stayed centred across the FULL viewport — putting the
-              // lyrics behind the panel while the title and the controls
-              // correctly moved out from under it. Same `md` gate as the
-              // other two: the panel only reserves space once it is exactly
-              // 28rem wide.
-              lyricsOpen && "md:pr-[28rem]",
+              lyrics.activeLine && "my-2",
+              lyricsOpen && "lg:pr-[28rem]",
             )}
           >
-            {/* The neighbours slide as well, so the whole stack drifts upward on the
-                beat instead of only the middle line jumping. They are keyed on
-                their own text, which gives each a transition; a tiny offset
-                (less than a line) keeps it as a supporting motion rather than
-                a second focal point. */}
+            {/* The neighbours are dim support lines. Keep the whole block compact
+                and a single readable height: one narrow neighbor above, one below,
+                both clamped to one line. */}
             <motion.p
               key={lyrics.prevLine}
               initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-              animate={
-                reduceMotion
-                  ? { opacity: 1 }
-                  : { opacity: 1, y: 0 }
-              }
+              animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
               transition={
                 reduceMotion
                   ? { duration: 0.15 }
                   : { type: "spring", stiffness: 320, damping: 36, mass: 0.7 }
               }
               className={cn(
-                "line-clamp-1 w-full max-w-[32rem] text-center text-xs leading-tight text-balance text-foreground/25 sm:text-[13px]",
+                "line-clamp-1 w-full max-w-[26rem] text-center text-xs leading-tight text-balance text-foreground/25 sm:text-[12px]",
                 !lyrics.prevLine && "invisible",
               )}
             >
               {lyrics.prevLine}
             </motion.p>
 
-            {/* The line rises. `mode="wait"` is deliberately NOT used: it finishes
-                the outgoing line before starting the incoming one, which reads
-                as a flicker between two words. Letting both exist at once —
-                the old one travelling up and out, the new one arriving from
-                below — is what makes it feel like the lyric is scrolling
-                rather than swapping. The slight scale difference adds depth so
-                the two lines read as one moving past the other.
-                `prefers-reduced-motion` drops it to a plain fade. */}
+            {/* The line being sung right now. One line only, no multi-line clamp,
+                no large vertical breathing room around it. */}
             <AnimatePresence initial={false}>
               <motion.p
                 key={lyrics.activeLine}
                 initial={
                   reduceMotion
                     ? { opacity: 0 }
-                    : { opacity: 0, y: 16, scale: 0.96 }
+                    : { opacity: 0, y: 8, scale: 0.98 }
                 }
                 animate={
                   reduceMotion
@@ -1233,7 +1161,7 @@ export function FullscreenPlayer() {
                 exit={
                   reduceMotion
                     ? { opacity: 0 }
-                    : { opacity: 0, y: -16, scale: 0.96 }
+                    : { opacity: 0, y: -8, scale: 0.98 }
                 }
                 transition={
                   reduceMotion
@@ -1241,12 +1169,7 @@ export function FullscreenPlayer() {
                     : { type: "spring", stiffness: 320, damping: 34, mass: 0.7 }
                 }
                 className={cn(
-                  // `my-2` is what separates this from the title below it and
-                  // from its own neighbours above.
-                  "my-2 line-clamp-2 w-full max-w-[34rem] text-center text-[0.95rem] leading-snug font-semibold text-balance sm:text-lg",
-                  // Only real timings can be followed; on time-distributed
-                  // guesses the line jumps a phrase at a time and reads as
-                  // broken, so those tracks never animate here.
+                  "line-clamp-1 w-full max-w-[26rem] text-center text-[0.95rem] leading-snug font-semibold text-balance sm:text-base",
                   lyrics.synced ? "text-foreground/90" : "text-foreground/55",
                 )}
               >
@@ -1264,7 +1187,7 @@ export function FullscreenPlayer() {
                   : { type: "spring", stiffness: 320, damping: 36, mass: 0.7 }
               }
               className={cn(
-                "line-clamp-1 w-full max-w-[32rem] text-center text-xs leading-tight text-balance text-foreground/25 sm:text-[13px]",
+                "line-clamp-1 w-full max-w-[26rem] text-center text-xs leading-tight text-balance text-foreground/25 sm:text-[12px]",
                 !lyrics.nextLine && "invisible",
               )}
             >
@@ -1273,17 +1196,13 @@ export function FullscreenPlayer() {
           </div>
 
           {/* metadata + controls — slide left alongside the video when the
-              lyrics panel is open */}
+              lyrics panel is open on desktop */}
           <div
             className={cn(
-              // Opacity only: the reserved padding is the axis this block is
-              // centred on, so it must snap. Animating it is what let the
-              // title and the controls drift off that axis (and stay there
-              // when the transition was interrupted).
-              "flex w-full flex-col items-center gap-3 transition-opacity duration-300",
+              "flex w-full flex-col items-center gap-3 transition-all duration-300",
               // Match the video's reserved space so title/controls center on it.
-              lyricsOpen ? "md:pr-[28rem]" : "mx-auto max-w-2xl",
-              lyricsOpen && "opacity-0 md:opacity-100", // lyrics overlay covers on small screens
+              lyricsOpen ? "lg:pr-[28rem]" : "mx-auto max-w-2xl",
+              lyricsOpen && "opacity-0 lg:opacity-100", // lyrics overlay covers on small screens
             )}
           >
             {/* Hovering the metadata expands the clamped title/artist so a long
@@ -1509,6 +1428,27 @@ export function FullscreenPlayer() {
                 <MicVocal className="size-3.5" />
                 Lyrics
               </button>
+
+              {/* Turn the live video overlay on/off without leaving fullscreen. Only
+                  visible when the global "Video preview" preference is on, because an
+                  in-player toggle is only meaningful when the feature can actually
+                  present (YouTube tracks + embeds allowed). */}
+              {videoEnabled && (
+                <button
+                  type="button"
+                  title={videoEnabled ? "Hide video in fullscreen" : "Show video in fullscreen"}
+                  onClick={() => toggleVideo()}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-white/[0.08] sm:px-3 sm:py-1 sm:tracking-wide sm:uppercase",
+                    videoEnabled
+                      ? "border-[rgb(var(--tint)_/_0.5)] text-[rgb(var(--tint))]"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  <Monitor className="size-3.5" />
+                  {videoEnabled ? "Video on" : "Video off"}
+                </button>
+              )}
             </div>
           </div>
         </div>

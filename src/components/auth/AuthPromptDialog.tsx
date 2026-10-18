@@ -73,7 +73,7 @@ export function AuthPromptDialog() {
   // server falls back to its own default origin and the listener can land on
   // a different site entirely.
   const returnTo = `${location.pathname}${location.search}`;
-  const redirectTo = `${window.location.protocol}//${window.location.host}${returnTo}`;
+  const redirectTo = `${window.location.origin}${returnTo}`;
 
   // Never show the prompt to someone who is already signed in, and never
   // show a half-styled dialog while the session is still resolving.
@@ -115,12 +115,6 @@ export function AuthPromptDialog() {
               </Button>
             </div>
           </>
-        )}
-        {/* Desktop OAuth return path: the dialog uses the same redirect target
-            as the full-page auth screen, so the desktop runtime can hand the
-            browser's callback back to the app. */}
-        {window.synq?.desktop && (
-          <span className="sr-only" data-desktop-redirect={returnTo} />
         )}
       </DialogContent>
     </Dialog>

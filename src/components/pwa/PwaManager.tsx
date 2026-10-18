@@ -14,7 +14,6 @@ import {
 } from "@/lib/pwa";
 import { usePlayerStore } from "@/store/player";
 import { cn } from "@/lib/utils";
-import { publicAsset } from "@/lib/publicAsset";
 
 /**
  * Progressive Web App plumbing for the signed-in shell.
@@ -146,7 +145,7 @@ export function PwaManager() {
         <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] bg-white/[0.03] px-4 py-2">
           <span className="flex min-w-0 items-center gap-2">
             <img
-              src={publicAsset("icons/icon-192.png")}
+              src="/icons/icon-192.png"
               alt=""
               width={22}
               height={22}

@@ -11,11 +11,11 @@
  * project, and `renderToString` never runs effects, so a navigation cannot be
  * driven through it.
  */
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, mock } from "bun:test";
 import { matchRoutes } from "react-router";
 import { artistPath, albumPath } from "../src/lib/artistLinks.ts";
 
-vi.mock("convex/react", () => ({
+mock.module("convex/react", () => ({
   useAction: () => () => Promise.resolve({ items: [] }),
   useQuery: () => undefined,
   useMutation: () => () => Promise.resolve(),

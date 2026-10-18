@@ -23,7 +23,7 @@
  *   bun scripts/audit.backend.ts [deploymentUrl]
  */
 
-const BASE = (process.argv[2] ?? "https://impartial-ptarmigan-116.convex.cloud").replace(
+const BASE = (process.argv[2] ?? "https://frugal-lobster-91.convex.cloud").replace,
   /\/$/,
   "",
 );

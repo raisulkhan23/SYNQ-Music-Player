@@ -6,7 +6,6 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { useAuth } from "@/hooks/use-auth";
-import { isDesktopRuntime, startDesktopOAuth } from "@/lib/desktop-auth";
 import { ArrowRight, Loader2, Mail } from "lucide-react";
 import { useState } from "react";
 
@@ -96,40 +95,10 @@ export function AuthForm({
     setIsLoading(true);
     setError(null);
     try {
-      // Desktop: the consent screen must open in the user's own browser, so the
-      // attempt goes out through synq://callback and comes back through the main
-      // process. `startDesktopOAuth` resolves once the callback is validated.
-      // Reached only when the Electron preload bridge exists; the hosted web
-      // build takes the branch below unchanged.
-      if (isDesktopRuntime()) {
-        const result = await startDesktopOAuth(provider, (callbackUrl) =>
-          signIn(provider, { redirectTo: callbackUrl }),
-        );
-
-        if (result?.code) {
-          // Exchange the code using the verifier the SDK stored when the flow
-          // started. Convex Auth then stores the session and the app's auth
-          // state updates on its own.
-          await signIn(undefined as unknown as string, { code: result.code });
-          onSuccess?.();
-          return;
-        }
-
-        if (result?.error === "access_denied") {
-          setError("Sign-in was cancelled.");
-        } else if (result) {
-          setError("Sign-in could not be completed. Please try again.");
-        } else {
-          setError(
-            "That sign-in didn't finish. Finish it in your browser, or try again.",
-          );
-        }
-        setIsLoading(false);
-        return;
-      }
-
+      // Send OAuth back to the origin the user is actually using.
       await signIn(provider, { redirectTo });
     } catch (err) {
+      console.error(`${provider} sign-in error:`, err);
       setError(
         err instanceof Error
           ? err.message

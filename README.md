@@ -1,396 +1,84 @@
-<!--
-SYNQ repository README.
+## Overview
 
-This file is intentionally a product README first and a project note second.
-The developer-ops notes that used to live here have been preserved below the
-product section for anyone working on the code itself.
--->
-
-<div align="center">
-
-  ![SYNQ logo](public/logo.png){ width="180" }
-
-  # SYNQ
-
-  ### Your music, uninterrupted.
-
-  [![Latest release](https://img.shields.io/github/v/release/raisulkhan23/synqmusic?style=for-the-badge&labelColor=0d1117&color=1a1a1a&logo=github&logoColor=white&label=Latest%20release)](https://github.com/raisulkhan23/synqmusic/releases)
-  [![License](https://img.shields.io/github/license/raisulkhan23/synqmusic?style=for-the-badge&labelColor=0d1117&color=1a1a1a&logo=github&logoColor=white&label=License)](LICENSE.txt)
-  [![Releases](https://img.shields.io/github/downloads/raisulkhan23/synqmusic/total?style=for-the-badge&labelColor=0d1117&color=1a1a1a&logo=github&logoColor=white&label=Downloads)](https://github.com/raisulkhan23/synqmusic/releases)
-
-  [Website](https://synqmusic.freebuff.app) · [Features](#features) · [Screenshots](#screenshots) · [Download](#download) · [Installation](#installation) · [Releases](#releases) · [Contributing](#contributing)
-
-</div>
-
-SYNQ is a modern music player focused on discovery, smooth playback, and a cleaner listening experience. It is designed to get out of the way: search and recommendations up front, a persistent player that behaves like a player should, and a queue that moves the way a listener does.
-
-- Browse and search without signing in.
-- Sign in when you want to play, save, or sync.
-- Crossfade and gapless playback when the track supports it.
-- A fullscreen player, a smart queue, and a living listening history.
-- A PWA you can install, a Windows desktop build, and an Android app.
-
-> SYNQ is an independent project. It streams music from third-party public sources at your request and does not host, cache, or redistribute any music catalog. You remain responsible for the terms of service of any source or account you connect to it.
-
-![SYNQ banner](assets/readme/synq-banner.png)
-
-## Features
-
-SYNQ is built around listening first. The details below reflect what the app is trying to be, not every piece of infrastructure behind it.
-
-| What you get | What it means |
-| --- | --- |
-| **Persistent player** | A player that stays put while you browse, search, and move around the app. |
-| **Smart queue** | Add tracks, reorder them, and let the app continue when the queue runs out. |
-| **Play Next** | Cut to the next track you actually want instead of waiting on the current one. |
-| **Crossfade & gapless** | Tracks blend into one another where supported, with no dead air between songs by default. |
-| **Music-first search** | Search that is built for music, with artist and track discovery front and center. |
-| **Recommendations** | Personalized suggestions based on what you listen to. |
-| **Recently played & continue listening** | Easy picks for when you want to pick up where you left off. |
-| **Liked songs** | A simple place to keep the tracks you return to. |
-| **Playlists** | Your own playlists, saved and synced to your account. |
-| **Listening history** | A record of what you have played, available when you are signed in. |
-| **Fullscreen player** | A dedicated fullscreen view for focused listening. |
-| **Lyrics** | Lyrics support where available. |
-| **Visualizer** | A live visualizer in the player. |
-| **Theme presets** | Visual themes and dynamic artwork colors for the surfaces you already look at. |
-| **Responsive interface** | Built to work on both desktop and mobile. |
-| **Desktop app** | A Windows desktop build that runs the same app outside the browser. |
-| **Android app** | An Android app for installed listening on mobile. |
-| **Installable app (PWA)** | Install the web app to a device and use it offline when the shell is available. |
-| **Deferred sign-in** | Browse first and sign in when you do something that needs an account. |
-| **Account control** | Sign in, sign out, and switch accounts from the places you already use. |
-
-### Audio
-
-- Crossfade lengths of `0 / 2 / 4 / 6 / 8 / 10` seconds, configured in **Settings → Audio**.
-- Equal-power fade curve, so the blend stays steady through the transition.
-- Gapless playback on by default.
-- Preloading for the incoming track before it is needed.
-- Two-deck audio architecture, so one track can overlap the next where the browser and source allow it.
-
-### Library
-
-- Liked songs.
-- Playlists you create and name yourself.
-- Playlist import from other music services where supported.
-- Listening history for signed-in accounts.
-
-### Discovery
-
-- Home, discover, search, and artist pages that prioritize music over clutter.
-- Recommendations driven by listening signals.
-- Recently played and continue listening for easy returns.
-
-### Experience
-
-- Fullscreen player.
-- Lyrics panel where supported.
-- Live visualizer.
-- Theme presets and dynamic artwork colors.
-- Installable as a PWA.
-- Windows desktop build and Android app.
-
-### Authenticated experience
-
-- Account sync for settings and player preferences.
-- Authorized downloads where the service allows them.
-- Listening history and recommendations tied to your account.
-
-### Honest limitations
-
-- Gapless is **not sample-accurate**. A small scheduler-level seam can remain.
-- The YouTube IFrame cannot be crossfaded through Web Audio. When a track is forced onto the IFrame, transitions fall back to gapless rather than pretending to blend.
-- Some YouTube videos cannot be played through the embed path and depend on direct-stream resolution succeeding.
-- The install flow requires a published build because service workers in front of a dev server can cache module URLs that are rehashed on every dependency re-optimization.
-
-## Screenshots
-
-A few representative views of SYNQ.
-
-| | |
-| --- | --- |
-| ![Home and discovery](assets/readme/synq-banner.png) | The main SYNQ experience. |
-
-If you want more screenshots here, add real captures of the app under `assets/readme/screenshots/` and reference them from this section. Preferred shots:
-
-- Home and discovery
-- Search
-- Library and playlists
-- Mini player
-- Fullscreen player
-- Lyrics or visualizer
-- Settings and personalization
-- Windows desktop app
-- Android app
-
-> This section currently uses the project banner and logo assets as stand-ins. Replace them with app screenshots when you have them.
-
-## Download
-
-<div align="center">
-
-  ## Download SYNQ
-
-  ![Android](https://img.shields.io/badge/Android-APK-34A853?style=for-the-badge&logo=android&logoColor=white&labelColor=0d1117)
-  ![Windows](https://img.shields.io/badge/Windows-NSIS%20installer-0078D4?style=for-the-badge&logo=windows&logoColor=white&labelColor=0d1117)
-  ![Windows portable](https://img.shields.io/badge/Windows-Portable-0078D4?style=for-the-badge&logo=windows&logoColor=white&labelColor=0d1117)
-
-  [Android APK](https://github.com/raisulkhan23/synqmusic/releases)
-  [`SYNQ-1.0.0-x64.exe`](https://github.com/raisulkhan23/synqmusic/releases)
-  [`SYNQ-1.0.0-x64-Portable.exe`](https://github.com/raisulkhan23/synqmusic/releases)
-
-  Latest version: **1.0.0**
-
-  Built packages exist for Windows and Android. Published release downloads are posted on the [releases page](https://github.com/raisulkhan23/synqmusic/releases) once they are published.
-
-  [View all releases](https://github.com/raisulkhan23/synqmusic/releases)
-
-</div>
-
-SYNQ ships as a website you can install, a Windows desktop app, and an Android app. The exact download to use depends on what you want to run.
-
-| Platform | What to use |
-| --- | --- |
-| Web | [https://synqmusic.freebuff.app](https://synqmusic.freebuff.app) |
-| Installable app | Install the PWA from the website when available. |
-| Windows | Desktop installer or portable build. |
-| Android | Android APK. |
-
-### Download buttons
-
-| Android | Windows | Windows |
-| --- | --- | --- |
-| ![Android](https://img.shields.io/badge/Android-APK-34A853?style=for-the-badge&logo=android&logoColor=white&labelColor=0d1117) | ![Windows installer](https://img.shields.io/badge/Windows-NSIS%20installer-0078D4?style=for-the-badge&logo=windows&logoColor=white&labelColor=0d1117) | ![Windows portable](https://img.shields.io/badge/Windows-Portable-0078D4?style=for-the-badge&logo=windows&logoColor=white&labelColor=0d1117) |
-| [APK](https://github.com/raisulkhan23/synqmusic/releases) | [Installer](https://github.com/raisulkhan23/synqmusic/releases) | [Portable](https://github.com/raisulkhan23/synqmusic/releases) |
-
-Links go to the releases page because published assets are posted there. If a build for your platform is not yet published, the releases page is the place to watch.
-
-## Installation
-
-### Web
-
-1. Open [https://synqmusic.freebuff.app](https://synqmusic.freebuff.app).
-2. Browse, search, and play.
-3. Install as a PWA from the browser or from the in-app install strip when prompted.
-
-Installing as a PWA gives you a standalone app experience with home-screen shortcuts and offline caching where supported.
-
-### Windows
-
-1. Download the Windows installer or portable build from the [releases page](https://github.com/raisulkhan23/synqmusic/releases).
-2. Run the installer and follow the prompts, or extract the portable build and run `SYNQ.exe` directly.
-3. Launch SYNQ and sign in when you are ready to save or sync.
-
-The Windows build is an Electron app that runs the same SYNQ interface outside the browser. SmartScreen or other OS warnings may appear for an unpublished or unsigned build; this is expected for a project build and does not mean the app is unsafe.
-
-### Android
-
-1. Download `SYNQ-1.0.0-release.apk` from the [releases page](https://github.com/raisulkhan23/synqmusic/releases) when it is published.
-2. Install the APK outside an app store.
-3. Allow installation from this source when your device asks.
-
-Minimum supported Android version is determined by the app build configuration in `android/app/build.gradle`. If you install an APK built outside the release signing setup, it may be unsigned and not installable.
-
-### Account
-
-You can browse a lot of SYNQ before signing in. Sign in when you want to:
-
-- Play tracks that need an account.
-- Save likes and playlists.
-- Sync settings and preferences.
-- Use history and recommendations tied to your account.
-
-### Troubleshooting
-
-- If a track will not play, try a different source or wait a moment and retry.
-- Some YouTube videos cannot be played through the embed path and depend on direct-stream resolution.
-- If the app looks broken after an install, make sure you are running a published build, not a dev-server build.
-
-## Releases
-
-SYNQ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
-
-| | |
-| --- | --- |
-| **Current release in the repo:** | **1.0.0** |
-| **Releases page:** | [https://github.com/raisulkhan23/synqmusic/releases](https://github.com/raisulkhan23/synqmusic/releases) |
-| **Changelog:** | [CHANGELOG.md](CHANGELOG.md) |
-
-### Release artifacts
-
-When a release is published, it should include:
-
-- Windows installer
-- Windows portable build
-- Android APK
-
-Built packages exist in the repository for Windows and Android. Published release artifacts are posted on the releases page when available.
-
-### Verifying a build
-
-For the Windows installer, the build metadata in `desktop-dist/latest.yml` includes a SHA-512 for the installer. Use that to verify the file you downloaded is the one the build produced.
-
-The following SHA-256 values are for the built copies currently in the repository. If a file changes, these values change too.
-
-| Artifact | SHA-256 |
-| --- | --- |
-| `SYNQ-1.0.0-x64.exe` | `7382149212fed6c69961b154bc055210d50c3e7c9c16d7b8d11171df5e9bcf94` |
-| `SYNQ-1.0.0-x64-Portable.exe` | `13123067d37b954d6f5f72977ec5a36d7ddea13e78ee447fbc35c2bd9b626a23` |
-| `SYNQ-1.0.0-release.apk` | `5813d9e382379e4a7d918cd3798f20d83368abf1b75be9601469b86d382c1771` |
-
-## Contributing
-
-If you want to work on SYNQ:
-
-- [Open an issue](https://github.com/raisulkhan23/synqmusic/issues) for bugs and feature ideas.
-- [Open a pull request](https://github.com/raisulkhan23/synqmusic/pulls) for changes.
-- Read [CHANGELOG.md](CHANGELOG.md) before proposing a change, so you know what the project is already tracking.
-
-If you are new here, the project conventions live in the source tree and in the project docs. Start from the code and the changelog, not from assumptions about what the app should do.
-
-## Support
-
-- Use [GitHub Issues](https://github.com/raisulkhan23/synqmusic/issues) for bugs and suggestions.
-- Use [GitHub Discussions](https://github.com/raisulkhan23/synqmusic/discussions) if the repository has them enabled.
-
-Do not message the maintainer through unofficial channels unless they have said they are available there.
-
-## License
-
-SYNQ is released under the terms in [LICENSE.txt](LICENSE.txt).
-
-> This repository currently includes a license file, but the repository license metadata has not been confirmed on GitHub. If you are viewing this on GitHub and the license badge or license metadata looks wrong, check `LICENSE.txt` directly.
-
-## Project notice
-
-SYNQ is an independent music player project.
-
-- It streams music from third-party public sources at your request.
-- It does not host, cache, or redistribute any music catalog.
-- You remain responsible for the terms of service of any source or account you connect to it.
-
-No third party is endorsing SYNQ by virtue of it being able to play content from their services.
-
----
-
-## Developer notes
-
-> These notes are for people working on the code. They are preserved from the
-> previous project README and are not part of the product-facing section above.
-
-### Tech stack
-
+This project uses the following tech stack:
 - Vite
-- TypeScript
-- React Router v7, importing from `react-router` rather than `react-router-dom`
-- React 19 for frontend components
-- Tailwind v4 for styling
-- Shadcn UI for UI components
-- Lucide Icons
-- Convex for backend and database
-- Convex Auth for authentication
-- Framer Motion for animations
-- Three.js for 3D graphics
+- Typescript
+- React Router v7 (all imports from `react-router` instead of `react-router-dom`)
+- React 19 (for frontend components)
+- Tailwind v4 (for styling)
+- Shadcn UI (for UI components library)
+- Lucide Icons (for icons)
+- Convex (for backend & database)
+- Convex Auth (for authentication)
+- Framer Motion (for animations)
+- Three js (for 3d models)
 
-All relevant source files live in `src/`.
+All relevant files live in the 'src' directory.
 
-Use `bun` for the package manager.
+Use bun for the package manager.
 
-### Setup
+## Setup
 
-The project is already configured to run in its cloud environment and against a Convex development sandbox.
+This project is set up already and running on a cloud environment, as well as a convex development in the sandbox.
 
-### Environment variables
+## Environment Variables
 
-The client uses project-specific `CONVEX_DEPLOYMENT` and `VITE_CONVEX_URL` values.
+The project is set up with project specific CONVEX_DEPLOYMENT and VITE_CONVEX_URL environment variables on the client side.
 
-The Convex server uses its own environment variables, including auth-specific keys such as `JWKS`, `JWT_PRIVATE_KEY`, and `SITE_URL`.
+The convex server has a separate set of environment variables that are accessible by the convex backend.
 
-### Android release signing
+Currently, these variables include auth-specific keys: JWKS, JWT_PRIVATE_KEY, and SITE_URL.
 
-The release APK and the Play bundle are signed with a key that lives outside this repository. `android/app/build.gradle` reads `android/keystore.properties` when it exists; when it does not, a release build still completes but produces an unsigned, uninstallable APK and says so:
 
-```
-SYNQ: android/keystore.properties is missing, so this release build will be UNSIGNED ...
-```
+# Using Authentication (Important!)
 
-One-time setup:
+You must follow these conventions when using authentication.
 
-```bash
-npm run android:keystore          # creates android/<name>.jks + keystore.properties
-```
+## Auth is already set up.
 
-or do it by hand, following `android/keystore.properties.example`. Both files are gitignored (`android/.gitignore` and the root `.gitignore`), and both should be backed up somewhere that is not this working copy. Losing the key means the app can never be updated on Google Play again, and committing it means anyone can publish as you.
+All convex authentication functions are already set up. The auth currently uses email OTP and anonymous users, but can support more.
 
-Then build as usual:
+The email OTP configuration is defined in `src/convex/auth/emailOtp.ts`. DO NOT MODIFY THIS FILE.
 
-```bash
-npm run android:release   # APK  → android/app/build/outputs/apk/release/app-release.apk
-npm run android:aab       # AAB  → android/app/build/outputs/bundle/release/app-release.aab
-```
+Also, DO NOT MODIFY THESE AUTH FILES: `src/convex/auth.config.ts` and `src/convex/auth.ts`.
 
-Verify what you got:
+## Using Convex Auth on the backend
 
-```bash
-cd android && ./gradlew :app:signingReport
-```
+On the `src/convex/users.ts` file, you can use the `getCurrentUser` function to get the current user's data.
 
-The `release` variant must show your own keystore and alias. If it says `Config: null`, the properties file is missing or was not picked up.
+## Using Convex Auth on the frontend
 
-### Authentication
+The `/auth` page is already set up to use auth. Navigate to `/auth` for all log in / sign up sequences.
 
-Convex authentication is already set up.
-
-- The email OTP configuration is defined in `src/convex/auth/emailOtp.ts`. **Do not modify this file.**
-- Do not modify `src/convex/auth.config.ts` or `src/convex/auth.ts`.
-
-Use the `useAuth` hook to get user data:
-
+You MUST use this hook to get user data. Never do this yourself without the hook:
 ```typescript
 import { useAuth } from "@/hooks/use-auth";
 
 const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
 ```
 
-Protected routes should redirect signed-out users to `/auth?returnTo=<current route>`. The default post-auth redirect is `/dashboard`; update it when the product’s main authenticated route is different.
+## Protected Routes
 
-### Frontend conventions
+The starter `/dashboard` route is protected with `RequireAuth`, which sends
+signed-out users to `/auth?returnTo=<current route>`. Extend that page for the
+product's authenticated experience, and reuse `RequireAuth` when adding another
+protected route.
 
-- Pages go in `src/pages`.
-- Components go in `src/components`.
-- Shadcn primitives live in `src/components/ui` and should be used by default.
-- Make apps mobile responsive.
-- Avoid nested cards and avoid shadows unless there is a clear reason for them.
+## Auth Page
 
-Use `cursor-pointer` on clickable elements.
-Use `tracking-tight font-bold` for title text.
+The auth page is defined in `src/pages/Auth.tsx`. Send sign-in and sign-up actions
+to `/auth`.
 
-### Animation
+## Authorization
 
-Use Framer Motion to animate components. Fade in/out, slide in/out, and interactive UI feedback are all expected.
+You can perform authorization checks on the frontend and backend.
 
-### Theming
+On the frontend, you can use the `useAuth` hook to get the current user's data and authentication state.
 
-Override colors in `src/index.css`. The project uses the `oklch` color format for Tailwind v4.
+You should also be protecting queries, mutations, and actions at the base level, checking for authorization securely.
 
-Use the project’s theme variable names. Set themes using `dark` or `light` classes on a parent element.
+## Adding a redirect after auth
 
-### Toasts
-
-Use Sonner for toasts:
-
-```typescript
-import { toast } from "sonner";
-```
-
-### Convex backend
-
-The Convex schema lives in `src/convex/schema.ts`.
-
-Use `_id` and `_creationTime` as provided by Convex. Do not index `_creationTime` yourself.
-
-External connections belong in Convex actions that use `"use node"`. Use the existing internal query and mutation helpers where they already exist.
 The `/auth` route in `src/main.tsx` redirects to `/dashboard` by default. If the
 product's main authenticated route is different, update `redirectAfterAuth` to
 that route. A validated same-origin `returnTo` query parameter takes priority so

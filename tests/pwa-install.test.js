@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -39,10 +39,7 @@ function stripComments(text) {
  * playing music, and must not claim a capability the browser does not have.
  */
 
-// `import.meta.dirname`, not Bun's `import.meta.dir`: under vitest the latter is
-// `undefined`, so every path join below threw "The \"paths[0]\" argument must be
-// of type string" before a single assertion ran.
-const root = path.resolve(import.meta.dirname, "..");
+const root = path.resolve(import.meta.dir, "..");
 const swSource = fs.readFileSync(path.join(root, "public/sw.js"), "utf8");
 const manifest = JSON.parse(
   fs.readFileSync(path.join(root, "public/manifest.webmanifest"), "utf8"),
@@ -293,11 +290,6 @@ describe("maskable icons survive cropping", () => {
   test("the any-purpose icon is the real logo, not a redraw", () => {
     // The installed app must carry the same mark as the header, so icon-192 is
     // a resample of logo.png rather than a separate drawing that can drift.
-    // Compared with a tolerance. The centre pixel of a RESAMPLE is not
-    // bit-identical to the source: icon-192 is logo.png at a different size, so
-    // anti-aliasing and gradient interpolation land a few levels apart (7/255
-    // measured). Exact equality was asserting the resampler's rounding, not
-    // "the same mark"; a redrawn icon differs by far more than this.
     const a = decodePng(readPng("/icons/icon-192.png"));
     const b = decodePng(readPng("/logo.png"));
     // Compare the centre pixel of each, where both are the glyph.
@@ -306,15 +298,7 @@ describe("maskable icons survive cropping", () => {
         ((img.width >> 1) + (img.height >> 1) * img.width) * img.channels;
       return [img.data[i], img.data[i + 1], img.data[i + 2]];
     };
-    const [ar, ag, ab] = centre(a);
-    const [br, bg, bb] = centre(b);
-    for (const [got, want] of [
-      [ar, br],
-      [ag, bg],
-      [ab, bb],
-    ]) {
-      expect(Math.abs(got - want)).toBeLessThanOrEqual(16);
-    }
+    expect(centre(a)).toEqual(centre(b));
   });
 });
 
@@ -652,20 +636,10 @@ describe("existing playback is untouched", () => {
   });
 
   test("the media session integration is unchanged", () => {
-    // The PWA must inherit SYNQ's existing Media Session wiring, not replace
-    // it. The platform calls live in ONE module (`src/lib/mediaSession.ts`),
-    // which speaks to the browser's `navigator.mediaSession` and to the
-    // Android bridge alike; the store supplies the values and the button
-    // behaviour through `registerMediaSessionActions`. Both halves are pinned
-    // here, plus the "not replaced" half: the service worker never touches the
-    // session itself.
-    const media = readSource("src/lib/mediaSession.ts");
-    expect(media).toContain('"mediaSession" in navigator');
-    for (const action of ["nexttrack", "seekforward", "play", "pause"]) {
-      expect(media).toContain(`register("${action}"`);
-    }
-    expect(playerSource).toContain("registerMediaSessionActions");
-    expect(swSource).not.toMatch(/setActionHandler|mediaSession/);
+    // The PWA must inherit SYNQ's existing Media Session wiring, not replace it.
+    expect(playerSource).toMatch(/navigator\.mediaSession/);
+    expect(playerSource).toMatch(/setActionHandler\("nexttrack"/);
+    expect(playerSource).toMatch(/setActionHandler\("seekforward"/);
   });
 
   test("the crossfade system still exists", () => {

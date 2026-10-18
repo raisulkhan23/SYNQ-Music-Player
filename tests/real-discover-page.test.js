@@ -13,24 +13,27 @@
  * from here. The chips call the exact same `runSearch` the form does, so the
  * path under test is the real one.
  *
- * The component is pulled in with a top-level `await import`. `vi.mock` is
- * hoisted above every import by vitest, so the ordering no longer depends on
- * where the mocks are written, but the dynamic import is kept: it is what makes
- * the mocked module graph unambiguous, and the `await` is what the assertions
- * below were written against.
+ * FILE ORDERING IS LOAD-BEARING. The component is pulled in with a top-level
+ * `await import`, because `mock.module` has to run first and static imports are
+ * hoisted above it. That `await` suspends module evaluation, so every
+ * `describe` and `beforeEach` is registered ABOVE it — anything registered
+ * below lands after the runner has started the file and Bun rejects it with
+ * "Cannot call describe() after the test run has completed". This file passes
+ * in isolation and fails in a combined run, which is precisely the bug an
+ * isolated run hides.
  */
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { Window } from "happy-dom";
-import { setGlobal } from "./helpers/globals.js";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
 let win;
-// These are initialised HERE, not only in `beforeEach`, so that the
-// `useAction` dispatcher below always hands back a function. It used to matter
-// across files as well (Bun's `mock.module` was process-global); vitest scopes
-// mocks to the file, and having a working default here is still what keeps the
-// dispatcher honest.
+// These are initialised HERE, not only in `beforeEach`, and the reason is
+// ordering. `mock.module` is process-global, so an unrelated page test that
+// loads after this file gets this dispatcher too. If these were `undefined`
+// until this file's first `beforeEach` ran, any such test would call a
+// non-function and blow up — which is exactly what happened to four
+// artist-page tests before this was fixed.
 let discoverImpl = () => Promise.resolve({ results: [], needs_sync: false });
 let syncImpl = () =>
   Promise.resolve({ indexed: 0, considered: 0, cursor: null });
@@ -50,7 +53,7 @@ let Discover;
 win = new Window({ url: "https://example.test/discover" });
 globalThis.window = win;
 globalThis.document = win.document;
-setGlobal("navigator", win.navigator);
+globalThis.navigator = win.navigator;
 globalThis.location = win.location;
 globalThis.history = win.history;
 globalThis.HTMLElement = win.HTMLElement;
@@ -87,14 +90,15 @@ win.matchMedia = () => ({
  * The page still has to reach for the right path (`libraryVectors.discover`),
  * so its own wiring is genuinely exercised.
  *
- * The dispatcher below deliberately falls back to the project's own harmless
- * default (`() => () => Promise.resolve({ items: [] })`) for any ref it does
- * not recognise, rather than returning `undefined`. That keeps the mocked hook
- * API-shaped for every component this file renders, and it is why an
- * unrecognised ref shows up as an empty result instead of a crash inside a
- * component that is not the subject of the test.
+ * Both mocks below are deliberately BENIGN for every other test file. Bun's
+ * `mock.module` is process-global, not per-file, so a mock registered here
+ * stays in effect for whatever loads next — an earlier version of this file
+ * returned `undefined` for unrecognised refs and broke four unrelated page
+ * tests in a combined run while passing perfectly in isolation. The fallback
+ * is therefore the project's own harmless default, so a file that picks these
+ * up by accident gets exactly what it would have got anyway.
  */
-vi.mock("@/convex/_generated/api", () => {
+mock.module("@/convex/_generated/api", () => {
   const make = (prefix) =>
     new Proxy(
       {},
@@ -134,7 +138,7 @@ vi.mock("@/convex/_generated/api", () => {
   return { api: withLeaves };
 });
 
-vi.mock("convex/react", () => ({
+mock.module("convex/react", () => ({
   useQuery: (ref) =>
     ref === "libraryVectors.indexStatus" ? indexStatus : undefined,
   useAction: (ref) => {

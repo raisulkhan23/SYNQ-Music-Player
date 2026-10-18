@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { readSource } from "./helpers/tailwind-css.js";
 // youtube.ts is dependency-free, so the helper is tested for real.
 import { artistSearchQuery } from "../src/lib/youtube.ts";

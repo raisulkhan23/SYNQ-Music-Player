@@ -6,7 +6,7 @@
  * if the page throws during render, or renders an empty shell, it fails here
  * rather than in the browser where it looks like "the page does not load".
  */
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, mock } from "bun:test";
 import { renderToString } from "react-dom/server";
 import { createElement } from "react";
 import { MemoryRouter, Routes, Route } from "react-router";
@@ -87,7 +87,7 @@ if (typeof globalThis.Audio === "undefined") {
 const pendingAction = () => () => Promise.resolve({ items: [] });
 const emptyQuery = () => undefined;
 
-vi.mock("convex/react", () => ({
+mock.module("convex/react", () => ({
   useAction: () => pendingAction(),
   useQuery: emptyQuery,
   useMutation: () => () => Promise.resolve(),

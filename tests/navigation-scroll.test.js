@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from "bun:test";
 import { compileClasses, readSource } from "./helpers/tailwind-css.js";
 
 const cssSource = readSource("src/index.css");
@@ -15,11 +15,7 @@ describe("navigation scroll reset", () => {
     expect(mainSource).toContain(
       'import { ScrollToTop } from "@/components/ScrollToTop"',
     );
-    // `<Router>`, not `<BrowserRouter>`: main.tsx picks HashRouter over
-    // file:// (the packaged Electron/Capacitor load) and BrowserRouter
-    // otherwise, and renders the chosen component through one name. The claim
-    // is that the reset is inside the router it resets for.
-    expect(mainSource).toMatch(/<Router>[\s\S]{0,400}<ScrollToTop \/>/);
+    expect(mainSource).toMatch(/<BrowserRouter>[\s\S]{0,400}<ScrollToTop \/>/);
   });
 
   test("resets the app shell scroll container, not just the document", () => {
