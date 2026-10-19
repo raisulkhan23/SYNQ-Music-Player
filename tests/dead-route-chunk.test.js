@@ -4,7 +4,10 @@ import { readSource } from "./helpers/tailwind-css.js";
 const main = readSource("src/main.tsx");
 
 const PAGES = [
-  "Landing",
+  // "Landing" was removed from this list when "/" became the app itself and
+  // the marketing page was unrouted. Its file still exists and is still
+  // statically referenced by nothing — the pages that belong here are the
+  // ones a route actually renders.
   "Auth",
   "TrackLink",
   "Home",

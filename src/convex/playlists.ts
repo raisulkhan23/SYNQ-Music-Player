@@ -310,24 +310,22 @@ export const saveImported = mutation({
       }),
     ),
   },
-  handler: async (ctx, { name, origin, tracks }) => {
+  handler: async (
+    ctx,
+    { name, origin, tracks },
+  ): Promise<SaveImportedResult> => {
     const userId = await requireUser(ctx);
     if (tracks.length === 0) {
       throw new ConvexError("No tracks found in the import");
     }
     const playlistName = name.trim() || "Imported playlist";
-    const id = await ctx.db.insert("importedPlaylists", {
-      userId,
-      name: playlistName,
-      origin,
-      tracks,
-      createdAt: Date.now(),
-    });
 
     // The same tracks as real playlist snapshots, so the import is a first
     // class library entry rather than a record only the admin can see.
     // De-duplicated by id for the same reason `create` does it: a 200-row
-    // export that repeats a track should not show it twice.
+    // export that repeats a track should not show it twice. Built BEFORE
+    // either insert below, because the duplicate check against the library
+    // needs the ids.
     const snapshots: TrackSnapshot[] = [];
     const seen = new Set<string>();
     for (const track of tracks) {
@@ -353,6 +351,25 @@ export const saveImported = mutation({
     }
 
     if (snapshots.length > 0) {
+      const duplicate = await findDuplicateImport(
+        ctx,
+        userId,
+        playlistName,
+        origin,
+        snapshots,
+      );
+      if (duplicate) return duplicate;
+    }
+
+    const id = await ctx.db.insert("importedPlaylists", {
+      userId,
+      name: playlistName,
+      origin,
+      tracks,
+      createdAt: Date.now(),
+    });
+
+    if (snapshots.length > 0) {
       const now = Date.now();
       await ctx.db.insert("playlists", {
         userId,
@@ -368,9 +385,69 @@ export const saveImported = mutation({
       });
     }
 
-    return id;
+    return { importedPlaylistId: id };
   },
 });
+
+/** Shape returned for both a fresh save and an idempotent skip. */
+export type SaveImportedResult =
+  | {
+      importedPlaylistId: Id<"importedPlaylists">;
+      playlistId?: undefined;
+      duplicate?: false;
+    }
+  | {
+      importedPlaylistId?: undefined;
+      playlistId: Id<"playlists">;
+      duplicate: true;
+    };
+
+/**
+ * Re-importing the same source must not create a second playlist.
+ *
+ * An import id is deterministic — `import:origin|artist|title` — so the same
+ * playlist imported twice produces the same ids. If a playlist from the same
+ * origin with the same name already holds EXACTLY this id set, the import is
+ * a repeat, not a refresh: returning the existing playlist is the honest
+ * result, and a second library row a confusing one.
+ *
+ * Two deliberate refusals to "sync":
+ *
+ *  - A playlist whose content DIFFERS could be a changed source… or one the
+ *    listener has since edited (they can remove and add tracks on imported
+ *    playlists like any other). Reimporting over it would silently discard
+ *    those edits, so a changed import creates a new playlist instead. The
+ *    listener's library is never overwritten behind their back.
+ *  - The search is bounded: one index read over the user's own playlists,
+ *    capped, then in-memory matching. The `by_user` index keeps it O(own
+ *    rows), never a table scan.
+ */
+async function findDuplicateImport(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  name: string,
+  origin: string,
+  snapshots: TrackSnapshot[],
+): Promise<{ playlistId: Id<"playlists">; duplicate: true } | null> {
+  const expected = snapshots.map((s) => s.id).sort().join("\n");
+  const candidates = await ctx.db
+    .query("playlists")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .order("desc")
+    .take(200);
+  for (const row of candidates) {
+    if (
+      row.name !== name ||
+      row.description !== `Imported from ${origin}`
+    ) {
+      continue;
+    }
+    if (row.trackIds.length !== snapshots.length) continue;
+    if ([...row.trackIds].sort().join("\n") !== expected) continue;
+    return { playlistId: row._id, duplicate: true };
+  }
+  return null;
+}
 
 /**
  * Replace all tracks of an imported playlist (used to cache resolved plays).

@@ -128,7 +128,7 @@ export function ImportSection({
       const verdict = describeOutcome(outcome);
       if (!verdict.ok) throw new ImportError(verdict.failure.code);
       const name = outcome.name || fallbackName;
-      await saveImported({
+      const saved = await saveImported({
         name,
         origin: outcome.origin,
         tracks: toStoredTracks(verdict.outcome.tracks),
@@ -147,9 +147,19 @@ export function ImportSection({
       // success and the listener went looking for it in their library and found
       // nothing, with no way to tell whether the save or the search was at
       // fault. "Added to Your library" is both true and a direction.
-      toast.success(`${name} — ${summary}`, {
-        description: "Added to Your library.",
-      });
+      //
+      // Re-importing the same source returns the existing playlist rather than
+      // a second copy, and the message has to say so — "Added" would be false
+      // and send the listener hunting for an entry that was already there.
+      if (saved.duplicate) {
+        toast(`${name} — ${summary}`, {
+          description: "Already in Your library — opened the existing copy.",
+        });
+      } else {
+        toast.success(`${name} — ${summary}`, {
+          description: "Added to Your library.",
+        });
+      }
     },
     [saveImported],
   );

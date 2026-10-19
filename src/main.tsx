@@ -85,7 +85,6 @@ if (savedTheme === "light") {
  * down during a navigation either.
  */
 import AppShell from "./components/layout/AppShell.tsx";
-import Landing from "./pages/Landing.tsx";
 import AuthPage from "./pages/Auth.tsx";
 import TrackLink from "./pages/TrackLink.tsx";
 import Home from "./pages/Home.tsx";
@@ -370,7 +369,6 @@ createRoot(document.getElementById("root")!).render(
           <MotionPrefs>
             <Suspense fallback={<RouteLoading />}>
               <Routes>
-                <Route path="/" element={<Landing />} />
                 <Route
                   path="/auth"
                   element={<AuthPage redirectAfterAuth="/home" />}
@@ -408,6 +406,22 @@ createRoot(document.getElementById("root")!).render(
                   gate is a courtesy, not a security control.
                 */}
                 <Route element={<AppShell />}>
+                  {/* "/" is the product itself. SYNQ is an app, not a
+                      marketing site: the packaged Android build and the
+                      installed PWA launch at "/", and what should greet
+                      someone is the music experience, not a landing page (the
+                      deferred-auth model already lets a signed-out visitor
+                      browse /home). The marketing page stays in
+                      src/pages/Landing.tsx for tests that assert its copy,
+                      but nothing routes to it. */}
+                  <Route
+                    path="/"
+                    element={
+                      <PageBoundary>
+                        <Home />
+                      </PageBoundary>
+                    }
+                  />
                   <Route
                     path="/home"
                     element={

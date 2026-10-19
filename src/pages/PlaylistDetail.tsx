@@ -506,12 +506,15 @@ export default function PlaylistDetail() {
           </p>
           {/* The repair pass is silent by design: it is bookkeeping, not an
               event. It is only worth mentioning while it is actually running,
-              and only when this playlist is the kind that needed it. */}
+              and only when this playlist is the kind that needed it. The
+              remaining count is the honest denominator: "found 3 of 41 to
+              check" tells the listener where the pass actually is, whereas a
+              bare spinner on a 107-row import read as stuck forever. */}
           {repairing && storedRows.some(needsRepair) && (
             <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
               <Loader2 className="size-3 animate-spin" />
-              Looking up artwork and track lengths
-              {repairedCount > 0 ? ` · ${repairedCount} found` : "…"}
+              Looking up artwork and track lengths · {storedRows.filter(needsRepair).length} remaining
+              {repairedCount > 0 ? ` · ${repairedCount} found` : ""}
             </p>
           )}
           <div className="mt-4 flex flex-wrap items-center gap-3">
