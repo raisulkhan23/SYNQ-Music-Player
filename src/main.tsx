@@ -293,7 +293,39 @@ class RootErrorBoundary extends React.Component<
   }
 }
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
+// VITE_CONVEX_URL is a public (CLI-embedded) address, never a secret.
+//
+// Safety valve: a packaged build bakes its deployment URL in at build time.
+// If that deployment later pauses or is disabled, users would be stuck with a
+// broken install until a reinstall. `synq.convexUrl` in localStorage lets both
+// us and support override the baked-in URL at runtime — in every runtime (web,
+// desktop file://, Android WebView), since localStorage is available in all of
+// them.
+const convexStoredUrl =
+  typeof localStorage !== "undefined"
+    ? (localStorage.getItem("synq.convexUrl") ?? "").trim()
+    : "";
+const convexUrl =
+  convexStoredUrl || ((import.meta.env.VITE_CONVEX_URL as string | undefined) ?? "").trim();
+if (convexStoredUrl) {
+  // Only logged when the override is active — never a secret, but a normal
+  // launch should stay quiet about it.
+  console.info("[SYNQ] using localStorage override for Convex deployment", convexStoredUrl);
+}
+if (!convexUrl) {
+  // Degrade loudly instead of crash-on-construction: the shell still renders,
+  // auth/library/search show their offline states until a URL is configured.
+  console.warn(
+    "[SYNQ] VITE_CONVEX_URL is not set — running without the Convex backend.",
+  );
+}
+const convex = new ConvexReactClient(
+  // A stand-in https URL keeps the client constructible; it never connects.
+  convexUrl || "https://about.blank.internal",
+  // skipConvexDeploymentUrlCheck: the stand-in above is deliberately not a
+  // real deployment id, and the SDK aborts on that check otherwise.
+  convexUrl ? undefined : ({ skipConvexDeploymentUrlCheck: true } as any),
+);
 
 /** Keeps \`html.perf-lite\` in sync with the store.
  *

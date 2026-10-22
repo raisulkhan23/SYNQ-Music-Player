@@ -155,12 +155,14 @@ describe("the raster icons are valid PNGs, not placeholders", () => {
     const big = manifest.icons.find((i) => i.sizes === "512x512");
     expect(big).toBeDefined();
     expect(big.type).toBe("image/png");
-    const img = readPng(`public${big.src}`);
+    // Strip a `?v=N` cache-buster: `public/<file>` is the disk path; the
+    // query string is a URL concern, not a file name.
+    const img = readPng(`public${big.src.replace(/\?.*$/, "")}`);
     expect(img.width).toBe(512);
     expect(img.height).toBe(512);
     for (const icon of manifest.icons) {
       expect(icon.type).toBe("image/png");
-      expect(readPng(`public${icon.src}`).width).toBe(
+      expect(readPng(`public${icon.src.replace(/\?.*$/, "")}`).width).toBe(
         Number(icon.sizes.split("x")[0]),
       );
     }

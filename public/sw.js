@@ -38,7 +38,10 @@
  *  - Everything else  → network, no cache.
  */
 
-const VERSION = "v1";
+// v2: bumped to invalidate the shell cache after a logo/icon refresh —
+// `/public` brand assets keep their URL, so a version change is the only way
+// a client that has the old precache ever re-fetches them.
+const VERSION = "v3";
 const SHELL_CACHE = `synq-shell-${VERSION}`;
 const ASSET_CACHE = `synq-assets-${VERSION}`;
 const IMAGE_CACHE = `synq-images-${VERSION}`;

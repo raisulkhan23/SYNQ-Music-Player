@@ -24,6 +24,9 @@ android-build2.log
 *.p12
 keystore.properties
 keystore.properties.*
+# The template documenting the four keys is released with the repo; it only
+# ever says "change-me".
+!keystore.properties.example
 
 # Freebuff project ID
 .freebuff/project-id

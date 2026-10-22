@@ -1,19 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="SYNQ">
+  <!-- Regenerated 2026-10-18 from the raster rebuild (public/logo.png, itself
+       cut from scripts/brand/logo-source.jpg). The previous copy still carried
+       the pre-rebuild gradient, which is why the site rendered the old mark
+       while every raster icon showed the new one. Palette stops were sampled
+       from logo.png: light periwinkle sheen top-left, deep indigo core,
+       vivid violet-magenta bottom-right. -->
   <defs>
     <linearGradient id="synqTile" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="rgb(46,43,200)"/>
-      <stop offset="35%" stop-color="rgb(75,63,227)"/>
-      <stop offset="70%" stop-color="rgb(139,58,239)"/>
-      <stop offset="100%" stop-color="rgb(196,42,214)"/>
+      <stop offset="0%" stop-color="rgb(214,220,255)"/>
+      <stop offset="9%" stop-color="rgb(147,152,255)"/>
+      <stop offset="30%" stop-color="rgb(64,58,196)"/>
+      <stop offset="55%" stop-color="rgb(58,28,192)"/>
+      <stop offset="80%" stop-color="rgb(146,60,232)"/>
+      <stop offset="100%" stop-color="rgb(178,82,255)"/>
     </linearGradient>
-    <linearGradient id="synqSheen" x1="0%" y1="0%" x2="70%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.20"/>
-      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.03"/>
+    <!-- The artwork's corner highlight: reads as near-white at the very top-left. -->
+    <radialGradient id="synqSheen" cx="18%" cy="10%" r="52%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.75"/>
+      <stop offset="40%" stop-color="#ffffff" stop-opacity="0.16"/>
       <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
-    </linearGradient>
+    </radialGradient>
     <linearGradient id="synqBar" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="rgb(255,255,255)"/>
-      <stop offset="100%" stop-color="rgb(240,232,255)"/>
+      <stop offset="100%" stop-color="rgb(238,232,255)"/>
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="118" fill="url(#synqTile)"/>

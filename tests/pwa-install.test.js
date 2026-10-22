@@ -165,14 +165,15 @@ describe("web app manifest", () => {
 
   test("every declared icon file exists on disk", () => {
     for (const icon of manifest.icons) {
-      const file = path.join(root, "public", icon.src.replace(/^\//, ""));
+      // `?v=N` cache-buster is not a real disk path
+      const file = path.join(root, "public", icon.src.replace(/^\//, "").replace(/\?.*$/, ""));
       expect(fs.existsSync(file)).toBe(true);
     }
   });
 
   test("every icon is a real PNG of the size it claims", () => {
     for (const icon of manifest.icons) {
-      const file = path.join(root, "public", icon.src.replace(/^\//, ""));
+      const file = path.join(root, "public", icon.src.replace(/^\//, "").replace(/\?.*$/, ""));
       const buf = fs.readFileSync(file);
       // PNG magic
       expect(buf.subarray(1, 4).toString()).toBe("PNG");
