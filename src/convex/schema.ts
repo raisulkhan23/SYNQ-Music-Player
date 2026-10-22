@@ -150,6 +150,24 @@ const schema = defineSchema(
       updatedAt: v.number(),
     }).index("by_user", ["userId"]),
 
+    // Playlist sharing: one row per (playlist, recipient) grant. view-only by
+    // design — the owner keeps the only edit rights, which the per-mutation
+    // ownership checks in playlists.ts already enforce. `saved` is the
+    // recipient's Library reference and is INDEPENDENT of access: removing
+    // the reference (saved=false) must not revoke access, and revoking the
+    // grant (row deleted) removes both at once. Anonymous sessions are
+    // ephemeral, so they are never valid recipients.
+    playlistShares: defineTable({
+      playlistId: v.id("playlists"),
+      ownerId: v.id("users"),
+      recipientId: v.id("users"),
+      saved: v.boolean(),
+      createdAt: v.number(),
+    })
+      .index("by_playlist", ["playlistId"])
+      .index("by_recipient", ["recipientId"])
+      .index("by_grant", ["playlistId", "recipientId"]),
+
     // listening history: one row per user+track, updated on every play.
     // Covers ALL sources — remote plays store a title/artist/cover snapshot.
     playHistory: defineTable({

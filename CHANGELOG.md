@@ -7,6 +7,104 @@ and semantic versioning.
 
 ---
 
+## [Unreleased] — Full artist catalogue, real sharing, desktop installer
+
+### Added
+
+#### Artist pages show the catalogue, not one search shelf
+
+`Popular` used to be the entire artist page: one search returned about twenty
+rows, the page kept ten, and the "Albums" shelf was derived from those same ten
+rows. The catalogue now comes from YouTube Music's **`browse` endpoint**, which
+is the only place a discography actually lives: `browse(MPAD<artistId>)` returns
+the artist's full release grid (every album, single, EP, live, compilation and
+edition, up to 100 per page) and `browse(MPREb_<release>)` returns that release's
+complete tracklist. Release grids and long tracklists are followed page by
+page through their continuation tokens rather than stopping after the first
+page, and every response states whether the list is complete, truncated or
+failed — the first page is never presented as the whole catalogue.
+
+`Popular` stays (the provider's own ranking over search) but it is now a view of
+the catalogue rather than a stand-in for it, alongside **Songs** (every track
+read from every release, with filter and sort) and a grouped **discography**
+(Albums / EPs / Singles / …) where each release opens its own album page with
+its real tracklist. Artist Shuffle queues the whole catalogue, not the top ten.
+
+Identity is credit-based, not name-based: `"The Chainsmokers feat. Daya"` is
+Daya's guest appearance and *not* one of her releases, `"Simon & Garfunkel"` is
+one artist, `"Daya"` never matches `"Dayawave"`, and a deluxe edition is its
+own release instead of being folded into the standard one. Album pages try the
+exact edition first and say so when they had to fall back.
+
+Verified against the live provider: **Taylor Swift 100 releases / 368 songs**
+and **Hozier 28 releases / 83 songs** on first load, with album pages returning
+the release's real tracklist (e.g. 26 tracks for a *Track by Track* edition).
+
+#### Cross-account playlist sharing
+
+View-only grants in a new `playlistShares` table, authorized on the server:
+`sharing.sharePlaylist`, `revokeShare`, `accessList`, `sharedWithMe`,
+`setSavedInLibrary`, `searchShareableUsers`. Recipients can open and play a
+shared playlist, add or drop it from their library, and can never edit, delete
+or revoke it. Recipient searches return names and avatars only — never emails —
+and never the viewer themselves.
+
+#### Windows desktop app
+
+Electron shell (`electron/main.cjs`) serving `dist/` from `app://synq/`,
+`electron-builder` NSIS packaging, generated `build/icon.ico`, and
+`npm run desktop:installer` → `desktop-dist/SYNQ-Setup-<version>.exe`.
+
+### Fixed
+
+- **A stale negative result could hide an artist for a day.** `resolveArtist`
+  cached `found: false` with the 24h artist TTL, but an empty search shelf is
+  also what a throttled or malformed request returns. One bad parse left the
+  artist page empty long after the parser was fixed. Negatives now expire on the
+  short search TTL, and the resolve cache key is versioned (`ARTIST_CACHE_VERSION`)
+  so a poisoned entry cannot outlive the fix that repairs it.
+- **Home asked the same question four times.** The discovery shelves queried
+  four near-synonyms of "popular" ("new music friday", "latest hits", "evening
+  music hits", "fall hits"), which the provider answered with one pool of ten
+  songs — measured 30 returned rows containing 11 distinct songs — so the
+  allocator had to drop three shelves rather than repeat a card. Each shelf now
+  asks a different question (genre / hour-band / season seeds rotated daily);
+  six genre queries measured 50 rows with 50 distinct songs.
+- **Home crashed on load.** `usable` was declared as a `const` *below* the
+  allocator memo that called it, so the page died with "Cannot access 'usable'
+  before initialization". It is module-level now.
+- **The same recording appeared twice.** History and a search row report one
+  song under different album labels (reissue, deluxe), and the allocator only
+  matched on title+artist+*album*, so Anti-Hero sat in both "On repeat" and
+  "Right now". A title+artist reservation blocks it; versions still differ by
+  their own title ("Willow (Live)").
+- **A self-titled release lost its artist credit.** Release cards reused the
+  song-row rule that drops a candidate equal to the row title, so every
+  self-titled record rendered "Unknown artist". Release cards no longer apply
+  that comparison.
+- **A failed search shelf vanished silently.** A throttled query was stored as
+  `[]`, indistinguishable from "the provider has nothing", and the row disappeared
+  for the rest of the visit. Failure is its own state now and renders a **Try
+  again** tile.
+- **A conditional hook on the album page.** A `useMemo` sat below an early
+  return, so the hook order changed between renders.
+
+### Changed
+
+- The search-derived "New releases" shelf is gone: provider search carries no
+  release dates, so a recency label over those rows was a claim the data could
+  not support. It is replaced by **New from your artists** — real releases from
+  the artists you play most, carrying the provider's own year and release type,
+  built from the artist catalogue and sorted by that date.
+
+- Sharing search offered the signed-in listener to themselves.
+- The desktop shell loaded `/index.html`, which `BrowserRouter` matched as the
+  404 route; it now loads `/`.
+- The service worker no longer registers inside the desktop shell, where it
+  could only serve a stale copy of the app it shipped with.
+
+---
+
 ## [Unreleased] — Browse-first release
 
 The headline change: **SYNQ asks for an account when you do something that

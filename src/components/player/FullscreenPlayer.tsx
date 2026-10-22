@@ -532,7 +532,7 @@ export function FullscreenPlayer() {
   const setRate = usePlayerStore((s) => s.setRate);
   const audioFilter = usePlayerStore((s) => s.audioFilter);
   const setAudioFilter = usePlayerStore((s) => s.setAudioFilter);
-  const toggleVideo = usePlayerStore((s) => s.toggleVideo);
+  const toggleVideoVisible = usePlayerStore((s) => s.toggleVideoVisible);
 
   const a = accent ?? { r: 196, g: 246, b: 152 };
 
@@ -575,6 +575,13 @@ export function FullscreenPlayer() {
   // default OFF. Off keeps the player audio-only and shows cover art, which is
   // also the escape hatch when a browser extension blocks embedded players.
   const videoEnabled = usePlayerStore((s) => s.videoEnabled);
+  // The maximized player has its own on/off for the picture. Hiding the video
+  // here is a viewing choice for this session — it must NOT rewrite the
+  // Settings preference, because that is synced to every other device and the
+  // player's own button would then vanish with it.
+  const videoVisible = usePlayerStore((s) => s.videoVisible);
+  /** The picture is on only while Settings allows it AND the player's switch is on. */
+  const showVideo = videoEnabled && videoVisible;
   const wallpaper = usePlayerStore((s) => s.wallpaper);
   const wallpaperType = usePlayerStore((s) => s.wallpaperType);
 
@@ -676,7 +683,7 @@ export function FullscreenPlayer() {
   // The player element is NEVER moved in the DOM (that would reload the
   // iframe and kill playback) — it's fixed-positioned over the frame instead.
   useEffect(() => {
-    if (!fullscreen || !current || !videoEnabled) return;
+    if (!fullscreen || !current || !showVideo) return;
     if (!isYoutube) return;
     // NOTE: no early return when an audio effect is active — the store runs
     // the engine as a MUTED VISUAL SLAVE in that case (sound comes from the
@@ -757,7 +764,7 @@ export function FullscreenPlayer() {
       // no invisible overlay can ever swallow clicks again.
       dismissVideo();
     };
-  }, [fullscreen, current, videoEnabled, isYoutube, audioFilter]);
+  }, [fullscreen, current, showVideo, isYoutube, audioFilter]);
 
   // Re-sync the overlay when the lyrics panel toggles (frame may move).
   useEffect(() => {
@@ -1042,7 +1049,7 @@ export function FullscreenPlayer() {
               lyricsOpen && "lg:pr-[28rem]",
             )}
           >
-            {isYoutube && videoEnabled ? (
+            {isYoutube && showVideo ? (
               <div
                 ref={videoFrameRef}
                 className="fade-rise relative aspect-video w-[min(72vh,640px)] max-w-full overflow-hidden rounded-2xl bg-black shadow-[0_30px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/10 transition-all duration-300"
@@ -1429,24 +1436,26 @@ export function FullscreenPlayer() {
                 Lyrics
               </button>
 
-              {/* Turn the live video overlay on/off without leaving fullscreen. Only
-                  visible when the global "Video preview" preference is on, because an
-                  in-player toggle is only meaningful when the feature can actually
-                  present (YouTube tracks + embeds allowed). */}
-              {videoEnabled && (
+              {/* Turn the picture on/off without leaving the maximized player.
+                  Present whenever Settings allows video, and it stays put while
+                  the picture is hidden — that way it can always turn back on.
+                  It only appears for tracks that can actually present a video,
+                  so it never becomes a control that does nothing. */}
+              {videoEnabled && isYoutube && (
                 <button
                   type="button"
-                  title={videoEnabled ? "Hide video in fullscreen" : "Show video in fullscreen"}
-                  onClick={() => toggleVideo()}
+                  aria-pressed={videoVisible}
+                  title={videoVisible ? "Hide video" : "Show video"}
+                  onClick={() => toggleVideoVisible()}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-white/[0.08] sm:px-3 sm:py-1 sm:tracking-wide sm:uppercase",
-                    videoEnabled
+                    "flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[rgb(var(--tint)_/_0.6)] focus-visible:outline-none sm:px-3 sm:py-1 sm:tracking-wide sm:uppercase",
+                    videoVisible
                       ? "border-[rgb(var(--tint)_/_0.5)] text-[rgb(var(--tint))]"
                       : "text-muted-foreground",
                   )}
                 >
                   <Monitor className="size-3.5" />
-                  {videoEnabled ? "Video on" : "Video off"}
+                  {videoVisible ? "Video on" : "Video off"}
                 </button>
               )}
             </div>

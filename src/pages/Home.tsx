@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router";
-import { artistPath } from "@/lib/artistLinks";
+import { albumPath, artistPath } from "@/lib/artistLinks";
 import { PlaylistCard } from "@/components/playlists/PlaylistCard";
 import { MediaCard } from "@/components/tracks/MediaCard";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -7,6 +7,8 @@ import { Shelf } from "@/components/core/shelf";
 import { MixesRow } from "@/components/home/MixesRow";
 import { api } from "@/convex/_generated/api";
 import { explainReason, type RecoCandidate } from "@/lib/recommend";
+import { allocateSections, recordingKey } from "@/lib/homeShelves";
+import type { BrowseRelease } from "@/lib/musicBrowse";
 import { buildFavoritesItems, buildMixes, type Mix, type RemoteLike } from "@/lib/mixes";
 
 import { greeting } from "@/lib/format";
@@ -39,6 +41,7 @@ import {
   ListMusic,
   Play,
   PlayCircle,
+  RotateCw,
   X,
   Repeat2,
   Search,
@@ -67,6 +70,116 @@ interface RecoSection {
 }
 
 const DISCOVERY_REFRESH_INTERVAL = 24 * 60 * 60 * 1000;
+
+/**
+ * How many candidates one discovery query contributes to the pool.
+ *
+ * Larger than what a shelf shows on purpose: the allocator needs spare rows so
+ * four sections can each get distinct songs instead of splitting one list.
+ */
+const HOME_POOL_SIZE = 24;
+
+/** Cards a discovery shelf shows once allocation has run. */
+const HOME_SECTION_SIZE = 10;
+
+/** Pause between two discovery queries — see the effect that uses it. */
+const HOME_SHELF_GAP_MS = 400;
+
+/**
+ * Discovery seeds — one GENRE per shelf, rotated daily.
+ *
+ * WHY SEEDS AND NOT FOUR SYNONYMS OF "POPULAR". The shelves used to ask four
+ * near-identical questions ("new music friday", "latest hits", "evening music
+ * hits", "fall hits"). Search ranks by popularity, not by recency, genre or
+ * hour, so the provider answered all four with the same ten records: measured
+ * 30 returned rows containing 11 distinct songs. The allocator then had to
+ * drop three shelves rather than repeat a card, which is why Home looked
+ * half-empty on a wide screen.
+ *
+ * A genre is a different question and gets a different answer: six genre
+ * queries measured 50 rows with 50 distinct songs, so each shelf now has its
+ * own pool and the allocator only has to catch genuine overlap.
+ *
+ * Everything here is a real provider search — no tracks are invented, and a
+ * seed that returns nothing makes its shelf disappear rather than pad it.
+ */
+const DISCOVERY_SEEDS = [
+  "indie folk essentials",
+  "neo soul essentials",
+  "dream pop essentials",
+  "alt r&b essentials",
+  "singer songwriter essentials",
+  "shoegaze essentials",
+  "bedroom pop essentials",
+  "jazz fusion essentials",
+  "bossa nova essentials",
+  "modern folk essentials",
+  "synthwave essentials",
+  "americana essentials",
+];
+
+/** Time-of-day shelves, seeded per hour band so 9am ≠ 9pm. */
+const TIME_SEEDS: Record<string, string[]> = {
+  "late night": [
+    "late night jazz",
+    "ambient late night",
+    "slow r&b late night",
+    "lo-fi late night",
+  ],
+  morning: [
+    "morning acoustic",
+    "bright indie pop",
+    "feel good soul morning",
+    "acoustic folk morning",
+  ],
+  afternoon: [
+    "afternoon indie rock",
+    "upbeat funk afternoon",
+    "sunlit pop afternoon",
+    "alt rock afternoon",
+  ],
+  evening: [
+    "evening jazz",
+    "evening indie folk",
+    "dinner party soul",
+    "mellow electronic evening",
+  ],
+  night: [
+    "night drive synth",
+    "after hours r&b",
+    "late night piano",
+    "downtempo night",
+  ],
+};
+
+/** Seasonal shelves, seeded per season. */
+const SEASON_SEEDS: Record<string, string[]> = {
+  winter: ["winter acoustic", "winter ambient", "winter indie folk"],
+  spring: ["spring indie pop", "spring acoustic", "fresh folk spring"],
+  summer: ["summer pop anthems", "summer indie", "sunset soul summer"],
+  fall: [
+    "autumn acoustic songs",
+    "autumn indie folk",
+    "fall singer songwriter",
+    "autumn jazz",
+  ],
+};
+
+/** Release-type labels, from the provider's own classification. */
+const KIND_LABEL: Record<string, string> = {
+  album: "Album",
+  ep: "EP",
+  single: "Single",
+  live: "Live",
+  compilation: "Compilation",
+  soundtrack: "Soundtrack",
+  other: "Release",
+};
+
+/** Rotates a seed list once per discovery cycle, so a shelf ages. */
+function rotateSeed(list: readonly string[], rotation: number): string {
+  return list[Math.abs(rotation) % list.length] ?? list[0] ?? "";
+}
 const DISCOVERY_REFRESH_KEY = "synq:discovery-refreshed-at";
 const HOME_REQUEST_TIMEOUT_MS = 12_000;
 /** Discovery ("random genre") searches fan out to several artist-backed
@@ -195,6 +308,17 @@ export default function Home() {
   const [resumeVersion, setResumeVersion] = useState(0);
   const [remote, setRemote] = useState<RemoteMap>({});
   const [remoteRefreshToken, setRemoteRefreshToken] = useState(0);
+  /**
+   * Search shelves whose queries all failed on this pass.
+   *
+   * A failed shelf used to be stored as `[]`, which is indistinguishable from
+   * "the provider has nothing", so it was hidden — one throttled request and
+   * Home silently lost a row for the rest of the visit. Failed is its own
+   * state, and it renders a retry instead of nothing.
+   */
+  const [remoteFailures, setRemoteFailures] = useState<Record<string, boolean>>(
+    {},
+  );
 
   // --- personalised recommendations ---------------------------------------
   // Fetched once per Home visit, off the critical path: `null` means loading,
@@ -330,17 +454,52 @@ export default function Home() {
       })),
     [history],
   );
-  const mostPlayedItems: YtItem[] = useMemo(
-    () =>
-      [...historyItems].sort((a, b) => {
-        const ca =
-          history.find((h) => (h.youtubeId ?? h.id) === a.id)?.playCount ?? 0;
-        const cb =
-          history.find((h) => (h.youtubeId ?? h.id) === b.id)?.playCount ?? 0;
-        return cb - ca;
-      }),
-    [historyItems, history],
+  // Recently played, minus whatever is already shown above it, so the top of
+  // the page never repeats the same cover three times.
+  const seenAtTop = useMemo(() => {
+    const ids = new Set<string>();
+    if (continueTrack) ids.add(continueTrack.youtubeId ?? continueTrack.id);
+    for (const item of historyItems.slice(0, 1)) ids.add(item.id);
+    return ids;
+  }, [continueTrack, historyItems]);
+
+  const recentItems = useMemo(
+    () => usable(historyItems).filter((item) => !seenAtTop.has(item.id)),
+    [historyItems, seenAtTop],
   );
+
+  /**
+   * The most-played track per artist, ranked by total plays.
+   *
+   * "On repeat" is deliberately NOT the flat most-played list: with a small
+   * history that is just "Recently played" sorted differently, and the same four
+   * covers turn up in both rows. Grouping by artist first means the row answers
+   * a different question — *what do I keep coming back to* — and repeats only
+   * what "Recently played" genuinely does not show.
+   */
+  const mostPlayedItems: YtItem[] = useMemo(() => {
+    const byArtist = new Map<string, { item: YtItem; total: number }>();
+    for (const item of historyItems) {
+      const plays =
+        history.find((h) => (h.youtubeId ?? h.id) === item.id)?.playCount ?? 0;
+      const artist = item.artist || "";
+      const existing = byArtist.get(artist);
+      if (existing) {
+        existing.total += plays;
+        const existingPlays =
+          history.find((h) => (h.youtubeId ?? h.id) === existing.item.id)
+            ?.playCount ?? 0;
+        if (plays > existingPlays) existing.item = item;
+      } else {
+        byArtist.set(artist, { item, total: plays });
+      }
+    }
+    const recentIds = new Set(recentItems.map((item) => item.id));
+    return [...byArtist.values()]
+      .sort((a, b) => b.total - a.total)
+      .map((entry) => entry.item)
+      .filter((item) => !recentIds.has(item.id));
+  }, [history, historyItems, recentItems]);
 
   // --- live remote fills for every section -----------------------------------
   const timeLabel = timeOfDayLabel();
@@ -354,27 +513,46 @@ export default function Home() {
   }, []);
   const season = seasonLabel();
 
+  /** Which day of the discovery cycle this is — the seed rotation index. */
+  // eslint-disable-next-line react-hooks/purity -- daily bucket: constant within a render pass, steps only at the 24h refresh boundary
+  const seedRotation = Math.floor(Date.now() / DISCOVERY_REFRESH_INTERVAL);
+
   const remoteQueries = useMemo(() => {
     // Only the shelves the redesigned page actually renders are fetched.
     // "topTracks", "because" and "artists" used to be queried here and then
     // either never rendered or duplicated a recommendation shelf — paid for
     // on every Home visit and thrown away.
+    //
+    // Each shelf asks a DIFFERENT question (see DISCOVERY_SEEDS): four phrasings
+    // of "popular" returned one pool of ten songs four times over.
     const q: Array<{ key: string; query: string; fallback?: string }> = [
       {
         key: "discover",
-        query: "new music friday",
-        fallback: "fresh music this week",
+        query: rotateSeed(DISCOVERY_SEEDS, seedRotation),
+        fallback: rotateSeed(DISCOVERY_SEEDS, seedRotation + 5),
       },
       {
-        key: "newReleases",
-        query: "new songs just released",
-        fallback: "latest hits",
+        key: "timeOfDay",
+        query: rotateSeed(
+          TIME_SEEDS[timeLabel] ?? DISCOVERY_SEEDS,
+          seedRotation,
+        ),
+        fallback: rotateSeed(
+          TIME_SEEDS[timeLabel] ?? DISCOVERY_SEEDS,
+          seedRotation + 1,
+        ),
       },
-      { key: "timeOfDay", query: `${timeLabel} music hits` },
-      { key: "seasonal", query: `${season} hits` },
+      {
+        key: "seasonal",
+        query: rotateSeed(SEASON_SEEDS[season] ?? DISCOVERY_SEEDS, seedRotation),
+        fallback: rotateSeed(
+          SEASON_SEEDS[season] ?? DISCOVERY_SEEDS,
+          seedRotation + 1,
+        ),
+      },
     ];
     return q;
-  }, [timeLabel, season]);
+  }, [timeLabel, season, seedRotation]);
 
   // Remote shelves are live data, so refresh them once per day. The first
   // render always fetches current data; this timestamp makes the cadence
@@ -407,35 +585,188 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
-    // Fetch all sections in parallel; each falls back to a second query when
-    // the first returns nothing, so sections never sit empty.
-    (async () => {
-      await Promise.all(
-        remoteQueries.map(async ({ key, query, fallback }) => {
+    // SEQUENTIAL, not `Promise.all`.
+    //
+    // These four queries used to fire together. Concurrent InnerTube searches
+    // from this deployment answer with an empty shelf (the throttling finding
+    // recorded in src/convex/playlists.ts), which is how a section could come
+    // back blank while the identical query worked a moment later. One at a
+    // time, with a short gap, is the pattern that actually returns results.
+    //
+    // Each response keeps up to HOME_POOL_SIZE candidates: the allocator below
+    // needs a real pool to give four sections distinct rows. Slicing to six
+    // per section HERE was the other half of the repetition bug — every
+    // section got the same six songs, then rendered all six.
+    void (async () => {
+      for (const [index, { key, query, fallback }] of remoteQueries.entries()) {
+        if (cancelled) return;
+        if (index > 0) await new Promise((r) => setTimeout(r, HOME_SHELF_GAP_MS));
+        let settled = false;
+        for (const q of [query, fallback]) {
           if (cancelled) return;
-          for (const q of [query, fallback]) {
-            if (!q) continue;
-            try {
-              const { items } = await withTimeout(searchYt({ query: q }));
-              if (cancelled) return;
-              if (items.length > 0) {
-                setRemote((prev) => ({ ...prev, [key]: items.slice(0, 6) }));
-                return;
-              }
-            } catch {
-              // Try the fallback query, then resolve the section below.
+          if (settled) break;
+          if (!q) continue;
+          try {
+            const { items } = await withTimeout(searchYt({ query: q }));
+            if (cancelled) return;
+            if (items.length > 0) {
+              setRemote((prev) => ({
+                ...prev,
+                [key]: items.slice(0, HOME_POOL_SIZE),
+              }));
+              setRemoteFailures((prev) =>
+                prev[key] ? { ...prev, [key]: false } : prev,
+              );
+              settled = true;
             }
+          } catch {
+            // Try the fallback query, then resolve the section below.
           }
-          if (!cancelled) {
-            setRemote((prev) => ({ ...prev, [key]: [] }));
-          }
-        }),
-      );
+        }
+        if (!settled && !cancelled) {
+          setRemote((prev) => ({ ...prev, [key]: [] }));
+          setRemoteFailures((prev) => ({ ...prev, [key]: true }));
+        }
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [remoteQueries, remoteRefreshToken, searchYt]);
+
+  // ── New from the artists you listen to ────────────────────────────────────
+  // The search shelves cannot answer "what is new": provider search ranks by
+  // popularity and returns no release dates at all, so "new songs this week"
+  // measured 0 rows and a recency label over those results would be a claim the
+  // data cannot support. The artist catalogue CAN answer it — every release it
+  // reports carries the provider's own year — so this shelf is built from the
+  // top artists in the listener's real play history and sorted by that date.
+  const resolveArtistAction = useAction(api.artistCatalog.resolveArtist);
+  const fetchArtistReleases = useAction(api.artistCatalog.artistReleases);
+  const [artistReleases, setArtistReleases] = useState<Array<{
+    artist: string;
+    release: BrowseRelease;
+  }> | null>(null);
+
+  /** Artists the listener actually plays, most-played first. */
+  const topArtistNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of mostPlayedItems) {
+      const name = item.artist;
+      if (!name || name === "Unknown artist") continue;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name]) => name);
+  }, [mostPlayedItems]);
+
+  useEffect(() => {
+    if (topArtistNames.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const rows: Array<{ artist: string; release: BrowseRelease }> = [];
+      for (const name of topArtistNames) {
+        if (cancelled) return;
+        try {
+          const identity = await resolveArtistAction({ name });
+          if (!identity?.found || !identity.artistId) continue;
+          const result = await fetchArtistReleases({
+            artistId: identity.artistId,
+          });
+          for (const release of result?.releases ?? []) {
+            // An undated release is not evidence of recency; it is left out
+            // rather than sorted to the top by a guess.
+            if (!release.year) continue;
+            rows.push({
+              artist: identity.name ?? name,
+              release,
+            });
+          }
+        } catch {
+          // One artist failing must not empty the shelf for the others.
+        }
+      }
+      if (cancelled) return;
+      const seen = new Set<string>();
+      setArtistReleases(
+        rows
+          .filter((row) => {
+            const key = `${row.artist}|${row.release.id}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .sort(
+            (a, b) => Number(b.release.year) - Number(a.release.year),
+          )
+          .slice(0, 12),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [topArtistNames, resolveArtistAction, fetchArtistReleases]);
+
+  /** Re-ask every search shelf after a failure. */
+  const retryShelves = useCallback(() => {
+    setRemoteFailures({});
+    setRemote({});
+    setRemoteRefreshToken((value) => value + 1);
+  }, []);
+
+  /**
+   * One row per recording across the whole page.
+   *
+   * The four discovery shelves used to be filled independently, so generic
+   * queries returned the same hits and Home showed the same cover four times.
+   * The allocator hands out distinct candidates and reserves anything already
+   * visible above (history, chart, on-repeat, recommendations) so a song cannot
+   * appear twice on one screen.
+   */
+  const discovery = useMemo(() => {
+    const reserved = new Set<string>();
+    for (const item of [
+      ...historyItems,
+      ...mostPlayedItems,
+      ...usable(trending),
+      ...(recoSections ?? []).flatMap((section) =>
+        section.items.map((entry) => toYtItem(entry)),
+      ),
+    ]) {
+      if (item?.id) reserved.add(item.id);
+      // The album label is NOT reserved, because it is the one field that
+      // drifts: history stores the album a track was played from while the
+      // provider's search row may report a reissue, so the same recording came
+      // back under a different album name and appeared on Home twice. Artist +
+      // title is enough to say "already on this page"; within a discovery pool
+      // the allocator still keeps "Willow" and "Willow (Live)" apart.
+      if (item?.title && item?.artist) {
+        reserved.add(recordingKey({ title: item.title, artist: item.artist }));
+      }
+    }
+    const allocated = allocateSections(
+      [
+        { id: "discover", items: usable(remote.discover) },
+        { id: "timeOfDay", items: usable(remote.timeOfDay) },
+        { id: "seasonal", items: usable(remote.seasonal) },
+      ],
+      {
+        perSection: HOME_SECTION_SIZE,
+        reserved,
+        // Rotate on every refresh so "New releases" is not a carbon copy of
+        // the last visit even when the provider's ranking is identical.
+        offset: remoteRefreshToken * 3,
+      },
+    );
+    const byId = new Map(allocated.map((section) => [section.id, section.items]));
+    return {
+      discover: byId.get("discover") ?? [],
+      timeOfDay: byId.get("timeOfDay") ?? [],
+      seasonal: byId.get("seasonal") ?? [],
+    };
+  }, [historyItems, mostPlayedItems, recoSections, remote, remoteRefreshToken, trending]);
 
   const playRemoteItem = (item: YtItem, rest: YtItem[]) => {
     playTrack(
@@ -474,9 +805,10 @@ export default function Home() {
         mostPlayed: mostPlayedItems,
         recent: historyItems,
         discovery: remote.discover,
-        // Prefer the live new-release shelf; fall back to the chart, which is
-        // also genuinely "new" music to this listener.
-        newMusic: remote.newReleases ?? trending ?? undefined,
+        // The dated "new from your artists" shelf is the honest source for a
+        // new-music mix; the chart is the fallback for a listener with no
+        // play history yet.
+        newMusic: trending ?? remote.discover ?? undefined,
         soundAlike: recoSections
           ?.find((section) => section.id === "sound_alike")
           ?.items.map(toYtItem),
@@ -697,26 +1029,6 @@ export default function Home() {
     };
   }, [history, listeningStats]);
 
-  // Shelves are filtered once, here, rather than inside every shelf: a shelf
-  // that renders an unplayable row is worse than a shelf that renders fewer
-  // rows, and the same filter has to apply to history, recommendations and
-  // live search results alike.
-  const usable = (items: YtItem[] | undefined | null): YtItem[] =>
-    Array.isArray(items) ? items.filter(isUsableRemoteItem) : [];
-
-  // Recently played, minus whatever is already shown above it, so the top of
-  // the page never repeats the same cover three times.
-  const seenAtTop = useMemo(() => {
-    const ids = new Set<string>();
-    if (continueTrack) ids.add(continueTrack.youtubeId ?? continueTrack.id);
-    for (const item of historyItems.slice(0, 1)) ids.add(item.id);
-    return ids;
-  }, [continueTrack, historyItems]);
-
-  const recentItems = useMemo(
-    () => usable(historyItems).filter((item) => !seenAtTop.has(item.id)),
-    [historyItems, seenAtTop],
-  );
 
   // Continue listening: only tracks the app has a REAL saved position for.
   // Nothing is invented here — if there is no resume map entry, the track is
@@ -1123,95 +1435,124 @@ export default function Home() {
           ))}
       </Shelf>
 
+      {/* One row per recording: `discovery.*` is the allocator's output, not
+          the raw per-section search result. A section the allocator could not
+          fill is dropped instead of rendering a stub row. */}
       <Shelf
         id="shelf-discover"
         title="Discover something new"
+        // The shelf says which genre it is showing. A rotation the listener
+        // cannot see would look like the same unexplained row every day.
+        subtitle={`${capitalize(
+          rotateSeed(DISCOVERY_SEEDS, seedRotation).replace(
+            /\s*essentials$/i,
+            "",
+          ),
+        )} · rotates daily`}
         icon={<Compass className="size-4 text-[rgb(var(--tint))]" />}
         skeleton={remote.discover === undefined}
         hidden={
-          remote.discover !== undefined && usable(remote.discover).length === 0
+          !remoteFailures.discover &&
+          remote.discover !== undefined &&
+          discovery.discover.length === 0
         }
       >
-        {usable(remote.discover)
-          .slice(0, 14)
-          .map((item) => (
-            <MediaCard
-              key={item.id}
-              item={item}
-              onOpen={() => playRemoteItem(item, usable(remote.discover))}
-              onPlay={() => playRemoteItem(item, usable(remote.discover))}
-            />
-          ))}
+        {remoteFailures.discover ? (
+          <ShelfRetry onRetry={retryShelves} />
+        ) : null}
+        {discovery.discover.map((item) => (
+          <MediaCard
+            key={item.id}
+            item={item}
+            onOpen={() => playRemoteItem(item, discovery.discover)}
+            onPlay={() => playRemoteItem(item, discovery.discover)}
+          />
+        ))}
+      </Shelf>
+
+      {/* Releases, not search rows: these carry the provider's own year, so
+          the shelf can honestly be sorted by release date and can never show a
+          song twice. Hidden while there is no play history to build it from. */}
+      <Shelf
+        id="shelf-new-from-artists"
+        title="New from your artists"
+        subtitle="Releases from the artists you play most"
+        icon={<Disc3 className="size-4 text-[rgb(var(--tint))]" />}
+        skeleton={artistReleases === null && topArtistNames.length > 0}
+        hidden={(artistReleases?.length ?? 0) === 0}
+      >
+        {(artistReleases ?? []).map(({ artist, release }) => (
+          <MediaCard
+            key={`${artist}-${release.id}`}
+            variant="playlist"
+            item={{
+              id: release.id,
+              title: release.title,
+              artist,
+              duration: 0,
+              thumbnail: release.thumbnail ?? "",
+              album: release.title,
+            }}
+            meta={[release.year, KIND_LABEL[release.kind]].filter(Boolean).join(" · ")}
+            onOpen={() => {
+              const href = albumPath(artist, release.title);
+              if (href) navigate(href);
+            }}
+          />
+        ))}
+      </Shelf>
+
+      {/* These two used to share a two-column grid on large screens, which
+          squeezed two carousels into a half width each — the empty space this
+          page was criticised for. Full width, same rail as every other row. */}
+      <Shelf
+        id="shelf-time"
+        title="Right now"
+        subtitle={localTime}
+        icon={<Sun className="size-4 text-[rgb(var(--tint))]" />}
+        skeleton={remote.timeOfDay === undefined}
+        hidden={
+          !remoteFailures.timeOfDay &&
+          remote.timeOfDay !== undefined &&
+          discovery.timeOfDay.length === 0
+        }
+      >
+        {remoteFailures.timeOfDay ? (
+          <ShelfRetry onRetry={retryShelves} />
+        ) : null}
+        {discovery.timeOfDay.map((item) => (
+          <MediaCard
+            key={item.id}
+            item={item}
+            onOpen={() => playRemoteItem(item, discovery.timeOfDay)}
+            onPlay={() => playRemoteItem(item, discovery.timeOfDay)}
+          />
+        ))}
       </Shelf>
 
       <Shelf
-        id="shelf-releases"
-        title="New releases"
+        id="shelf-season"
+        title={`Sounds of ${capitalize(season)}`}
         icon={<Disc3 className="size-4 text-[rgb(var(--tint))]" />}
-        skeleton={remote.newReleases === undefined}
+        skeleton={remote.seasonal === undefined}
         hidden={
-          remote.newReleases !== undefined &&
-          usable(remote.newReleases).length === 0
+          !remoteFailures.seasonal &&
+          remote.seasonal !== undefined &&
+          discovery.seasonal.length === 0
         }
       >
-        {usable(remote.newReleases)
-          .slice(0, 14)
-          .map((item) => (
-            <MediaCard
-              key={item.id}
-              item={item}
-              onOpen={() => playRemoteItem(item, usable(remote.newReleases))}
-              onPlay={() => playRemoteItem(item, usable(remote.newReleases))}
-            />
-          ))}
+        {remoteFailures.seasonal ? (
+          <ShelfRetry onRetry={retryShelves} />
+        ) : null}
+        {discovery.seasonal.map((item) => (
+          <MediaCard
+            key={item.id}
+            item={item}
+            onOpen={() => playRemoteItem(item, discovery.seasonal)}
+            onPlay={() => playRemoteItem(item, discovery.seasonal)}
+          />
+        ))}
       </Shelf>
-
-      <div className="grid gap-9 lg:grid-cols-2 lg:gap-4">
-        <Shelf
-          id="shelf-time"
-          title="Right now"
-          subtitle={localTime}
-          icon={<Sun className="size-4 text-[rgb(var(--tint))]" />}
-          skeleton={remote.timeOfDay === undefined}
-          hidden={
-            remote.timeOfDay !== undefined &&
-            usable(remote.timeOfDay).length === 0
-          }
-        >
-          {usable(remote.timeOfDay)
-            .slice(0, 10)
-            .map((item) => (
-              <MediaCard
-                key={item.id}
-                item={item}
-                onOpen={() => playRemoteItem(item, usable(remote.timeOfDay))}
-                onPlay={() => playRemoteItem(item, usable(remote.timeOfDay))}
-              />
-            ))}
-        </Shelf>
-
-        <Shelf
-          id="shelf-season"
-          title={`Sounds of ${capitalize(season)}`}
-          icon={<Disc3 className="size-4 text-[rgb(var(--tint))]" />}
-          skeleton={remote.seasonal === undefined}
-          hidden={
-            remote.seasonal !== undefined &&
-            usable(remote.seasonal).length === 0
-          }
-        >
-          {usable(remote.seasonal)
-            .slice(0, 10)
-            .map((item) => (
-              <MediaCard
-                key={item.id}
-                item={item}
-                onOpen={() => playRemoteItem(item, usable(remote.seasonal))}
-                onPlay={() => playRemoteItem(item, usable(remote.seasonal))}
-              />
-            ))}
-        </Shelf>
-      </div>
 
       {/* ── Mood launches: a fast way in without typing a search. */}
       <Shelf
@@ -1334,6 +1675,46 @@ function toYtItem(candidate: RecoCandidate): YtItem {
     thumbnail: candidate.thumbnail,
     ...(candidate.album ? { album: candidate.album } : {}),
   };
+}
+
+/**
+ * A search shelf whose queries all failed, shown as a retry instead of a gap.
+ *
+ * Hiding a failed shelf is worse than showing the failure: the listener sees a
+ * row vanish and has no way to tell a throttled provider from an empty one, or
+ * to ask again.
+ */
+function ShelfRetry({ onRetry }: { onRetry: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onRetry}
+      className="flex h-40 w-64 shrink-0 flex-col items-start justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition-colors hover:border-[rgb(var(--tint)_/_0.4)] hover:bg-white/[0.06]"
+    >
+      <RotateCw className="size-4 text-[rgb(var(--tint))]" />
+      <span className="text-sm font-semibold">
+        The music source didn&apos;t answer
+      </span>
+      <span className="text-xs text-muted-foreground">
+        Try this row again — nothing else on the page is affected.
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Shelves are filtered once, by this, rather than inside every shelf: a shelf
+ * that renders an unplayable row is worse than a shelf that renders fewer rows,
+ * and the same filter has to apply to history, recommendations and live search
+ * results alike.
+ *
+ * Module-level on purpose. As a `const` inside the component it was in the
+ * temporal dead zone while the allocator memo above it ran, and the whole Home
+ * page crashed with "Cannot access 'usable' before initialization" — a closure
+ * TS accepts and the runtime does not.
+ */
+function usable(items: YtItem[] | undefined | null): YtItem[] {
+  return Array.isArray(items) ? items.filter(isUsableRemoteItem) : [];
 }
 
 function isUsableRemoteItem(item: YtItem): boolean {

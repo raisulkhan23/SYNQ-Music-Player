@@ -1,5 +1,12 @@
 import { create } from "zustand";
 import {
+  WALLPAPER_PREF_KEY,
+  readWallpaperReference,
+  writeWallpaperReference,
+  isWallpaperMarker,
+  WALLPAPER_TYPE_PREF_KEY,
+} from "@/lib/wallpaperPreference";
+import {
   getAudio,
   getSpareAudio,
   setDeckVolume,
@@ -651,15 +658,42 @@ interface PlayerStore {
   /** 0 = solid panels, 80 = maximum see-through. */
   cardTransparency: number;
   setCardTransparency: (value: number) => void;
-  /** Optional locally-persisted blurred background wallpaper. */
   /**
-   * The stored wallpaper picker value. This is a stored-asset key (object with
-   * a `key` field), a fallback public URL string, or null.
+   * The wallpaper the app is SHOWING right now — a loadable URL (a resolved
+   * `blob:` object URL for an uploaded file, or the remote URL itself).
    */
   wallpaper: string | null;
+  /**
+   * The PERSISTED wallpaper choice — the stable reference written to storage
+   * (`idb:wallpaper:<key>` for an uploaded file, a URL for a remote one).
+   *
+   * This is the single source of truth for "which wallpaper did the listener
+   * pick", and it is what survives a reload. The runtime `wallpaper` above is
+   * derived from it and dies with the tab, so the two must not be conflated:
+   * writing a blob URL into the persisted slot is what used to reset the
+   * selection on the next reload.
+   */
+  wallpaperRef: string | null;
   wallpaperType: "image" | "video";
-  setWallpaper: (value: string | null, type?: "image" | "video") => void;
-  /** Same shape, but never writes the persisted picker key (startup restore). */
+  /**
+   * Apply a wallpaper.
+   *
+   * `value` is what gets rendered (a loadable URL); `reference` is what gets
+   * persisted and defaults to `value`. An uploaded file passes its
+   * `idb:wallpaper:<key>` marker as the reference, so the transient blob URL
+   * never reaches storage.
+   */
+  setWallpaper: (
+    value: string | null,
+    type?: "image" | "video",
+    reference?: string | null,
+  ) => void;
+  /**
+   * Update the RUNTIME wallpaper only, never the persisted reference.
+   *
+   * Used by the start-up restore: the IndexedDB read can fail or come back
+   * empty, and neither may erase the saved preference.
+   */
   setWallpaperSessionOnly: (value: string | null, type?: "image" | "video") => void;
   setWallpaperType: (type: "image" | "video") => void;
   /** Hide the account email in the sidebar corner. */
@@ -682,9 +716,27 @@ interface PlayerStore {
   /** What the current radio was seeded from, shown as a label in the UI. */
   radioSource: string | null;
 
-  /** Show the actual video in the fullscreen player (YouTube sources). */
+  /**
+   * The persisted "Video preview" permission (Settings → Video preview).
+   *
+   * This is the app-wide answer to "may the maximized player show a picture
+   * at all?", synced across devices. It is NOT the in-player on/off switch —
+   * that is `videoVisible`, so hiding the picture for one song never silently
+   * turns the feature off in Settings (or on the listener's other devices).
+   */
   videoEnabled: boolean;
   toggleVideo: () => void;
+  /**
+   * Whether the video picture is showing in the maximized player right now.
+   *
+   * Session state, derived from `videoEnabled`: it starts `true` and the
+   * player's own button flips it. An earlier version had the in-player button
+   * flip `videoEnabled` itself, which made the button disappear the moment it
+   * was used — video could be turned off from the player but never back on
+   * without opening Settings.
+   */
+  videoVisible: boolean;
+  toggleVideoVisible: () => void;
 
   // liked songs (synced with Convex, optimistic)
   liked: Record<string, number>;
@@ -1024,38 +1076,24 @@ const initialAnimationLevel = readAnimationLevel();
 const initialPointerEffects = readBool("ss.pointerEffects", true);
 const initialArtistRepetition = readArtistRepetition();
 const initialNotifications = readNotificationsEnabled();
-const RAW_WALLPAPER_KEY = "ss.wallpaper";
-const initialWallpaper = readWallpaperPicker();
+const RAW_WALLPAPER_KEY = WALLPAPER_PREF_KEY;
+const initialWallpaperRef = readWallpaperReference();
 const initialWallpaperType =
   localStorage.getItem("ss.wallpaperType") === "video" ? "video" : "image";
 
 /**
- * The wallpaper picker historically stored both a reference and a separate key
- * in localStorage, and only the reference was read back at startup. That left a
- * stale picker value standing in as the wallpaper every time the real file asset
- * was missing (including the first open after the file-key slot was cleared).
+ * The runtime wallpaper at start-up.
  *
- * The picker is now the single source for the initial value. When it names a
- * stored wallpaper asset, the blob URL is refreshed on open so a cleared IndexedDB
- * slot does not resurrect the default cover as the background.
+ * A MARKER is not loadable — it names a file in IndexedDB that still has to
+ * be read out — so the runtime value starts empty and the shell resolves it.
+ * A URL is loadable as it is, and is used directly.
+ *
+ * This is what stopped the broken-image flash on every reload: the marker was
+ * being handed straight to `<img src>` while IndexedDB was still resolving.
  */
-function readWallpaperPicker(): string | null {
-  try {
-    const raw = window.localStorage.getItem(RAW_WALLPAPER_KEY);
-    if (raw === null) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && "key" in parsed) {
-      const key = String(parsed.key ?? "").trim();
-      if (!key) return null;
-      return key;
-    }
-    // Legacy plaintext reference preserved for the rare hand-edited store.
-    if (typeof parsed === "string" && parsed.trim()) return parsed.trim();
-    return raw;
-  } catch {
-    return null;
-  }
-}
+const initialWallpaper = isWallpaperMarker(initialWallpaperRef)
+  ? null
+  : initialWallpaperRef;
 
 /** Re-export the picker key so the tuning change can seed the wallpapers list. */
 export { RAW_WALLPAPER_KEY };
@@ -4380,6 +4418,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     const wantSlave =
       s.fullscreen &&
       s.videoEnabled &&
+      s.videoVisible &&
       !!s.current?.youtubeId &&
       (s.audioFilter !== "off" || hasAudioProcessing()) &&
       audioElementIsSource(s.current);
@@ -4927,7 +4966,21 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
         // start/stop the muted visual slave immediately, not on the next
         // fullscreen open — otherwise toggling video on shows a thumbnail.
         setTimeout(() => syncVideoSlave(), 100);
-        return { videoEnabled: next };
+        // Switching the permission back on must actually show the picture:
+        // keeping a "hidden" session flag from before would make the setting
+        // look broken (on in Settings, nothing on screen).
+        return { videoEnabled: next, videoVisible: next ? true : state.videoVisible };
+      }),
+
+    videoVisible: true,
+    toggleVideoVisible: () =>
+      set((state) => {
+        const next = !state.videoVisible;
+        // Same immediate-reaction rule as the Settings switch: with an audio
+        // effect active the picture comes from the muted slave, so it has to
+        // start/stop now rather than on the next fullscreen open.
+        setTimeout(() => syncVideoSlave(), 100);
+        return { videoVisible: next };
       }),
 
     sleepEndsAt: null,
@@ -5042,28 +5095,35 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       }),
 
     wallpaper: initialWallpaper,
+    wallpaperRef: initialWallpaperRef,
     wallpaperType: initialWallpaperType,
     setWallpaperType: (type) =>
       set(() => {
-        writeSetting("ss.wallpaperType", type);
+        writeSetting(WALLPAPER_TYPE_PREF_KEY, type);
         return { wallpaperType: type };
       }),
-    setWallpaper: (value, type = "image") =>
+    setWallpaper: (value, type = "image", reference) =>
       set(() => {
-        try {
-                  if (value) writeSetting(RAW_WALLPAPER_KEY, value);
-          else removeSetting(RAW_WALLPAPER_KEY);
-          writeSetting("ss.wallpaperType", type);
-        } catch {
-          // Keep the current session usable even when browser storage is full.
-        }
-        return { wallpaper: value, wallpaperType: type };
+        // The reference is what survives a reload. It defaults to the value
+        // (a remote wallpaper IS its own reference) but an uploaded file
+        // passes its IndexedDB marker so a transient blob URL is never
+        // persisted.
+        const ref =
+          reference === undefined ? value : reference;
+        writeWallpaperReference(ref);
+        writeSetting(WALLPAPER_TYPE_PREF_KEY, type);
+        return {
+          wallpaper: value,
+          wallpaperRef: ref && ref.trim() ? ref.trim() : null,
+          wallpaperType: type,
+        };
       }),
     /**
-     * Update the in-session wallpaper WITHOUT touching the persisted picker
-     * key. Used by the startup restore: if the IndexedDB read fails or comes
-     * back empty, the persisted marker must survive — a failed restore used to
-     * strip `ss.wallpaper`, so one slow cold start permanently reset the user's
+     * Update the RUNTIME wallpaper WITHOUT touching the persisted reference.
+     *
+     * Used by the start-up restore: if the IndexedDB read fails or comes back
+     * empty, the saved reference must survive — a failed restore used to strip
+     * `ss.wallpaper`, so one slow cold start permanently reset the user's
      * selection to the default background.
      */
     setWallpaperSessionOnly: (value, type = "image") =>

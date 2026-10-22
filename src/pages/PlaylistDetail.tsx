@@ -7,16 +7,20 @@ import {
   Play,
   Radio,
   Search as SearchIcon,
+  Share2,
   Shuffle,
   Trash2,
+  UserRound,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { RemoteTrackRow } from "@/components/tracks/RemoteTrackRow";
+import { ShareDialog } from "@/components/playlists/ShareDialog";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useAuth } from "@/hooks/use-auth";
 import { formatTime } from "@/lib/format";
 import {
   chunkRepairBatches,
@@ -65,6 +69,8 @@ export default function PlaylistDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [repairing, setRepairing] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const { user } = useAuth();
 
   // Rows straight off the document, before the display mapping below. The
   // repair pass reads THESE, because it needs to know exactly what is still
@@ -484,6 +490,13 @@ export default function PlaylistDetail() {
     }
   };
 
+  // Ownership is the server's answer, not a client guess: `playlists.get`
+  // only hands this document to the owner or to a recipient of a live grant.
+  // Every destructive control below keys off this local boolean purely for
+  // rendering; the mutations it gates re-check ownership server-side anyway.
+  const isOwner = user != null && user._id === playlist.userId;
+  const sharedBy = !isOwner && playlist.userId != null ? "shared with you" : null;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-end">
@@ -561,26 +574,51 @@ export default function PlaylistDetail() {
                 {resolvingId === "__radio__" ? "Loading…" : "Radio"}
               </button>
             )}
-            {/* Delete stays available even for an empty playlist. */}
-            <button
-              type="button"
-              aria-label="Delete playlist"
-              disabled={deleting}
-              onClick={() => void handleDelete()}
-              onBlur={() => setConfirmDelete(false)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors disabled:opacity-60",
-                confirmDelete
-                  ? "border-red-500 bg-red-500/20 text-red-300"
-                  : "border-white/10 text-muted-foreground hover:border-red-500/40 hover:text-red-400",
-              )}
-            >
-              <Trash2 className="size-4" />
-              {confirmDelete ? "Click to confirm" : "Delete"}
-            </button>
+            {/* Delete is the owner's control. Recipients see neither the
+                button nor the confirmation — and the `playlists.remove`
+                mutation would refuse them regardless, server-side. */}
+            {isOwner && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(true)}
+                  disabled={user == null}
+                  className="flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors hover:border-[rgb(var(--tint)_/_0.5)] hover:text-[rgb(var(--tint))]"
+                >
+                  <Share2 className="size-4" />
+                  Share
+                </button>
+                <button
+                  type="button"
+                  aria-label="Delete playlist"
+                  disabled={deleting}
+                  onClick={() => void handleDelete()}
+                  onBlur={() => setConfirmDelete(false)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors disabled:opacity-60",
+                    confirmDelete
+                      ? "border-red-500 bg-red-500/20 text-red-300"
+                      : "border-white/10 text-muted-foreground hover:border-red-500/40 hover:text-red-400",
+                  )}
+                >
+                  <Trash2 className="size-4" />
+                  {confirmDelete ? "Click to confirm" : "Delete"}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
+
+      {!isOwner && sharedBy && (
+        <div className="flex items-center gap-2 rounded-2xl border border-[rgb(var(--tint)_/_0.3)] bg-[rgb(var(--tint)_/_0.08)] px-4 py-2.5 text-sm">
+          <UserRound className="size-4 shrink-0 text-[rgb(var(--tint))]" />
+          <span className="min-w-0 truncate text-muted-foreground">
+            Shared with you — you can play it, but only its owner can edit or
+            delete it.
+          </span>
+        </div>
+      )}
 
       {rows.length > 0 ? (
         <div className="flex flex-col gap-0.5">
@@ -610,16 +648,18 @@ export default function PlaylistDetail() {
                 onPlay={() => void playRow(track)}
                 source="youtube"
                 menuItems={
-                  <DropdownMenuItem
-                    className="gap-2"
-                    onSelect={(event) => {
-                      event.stopPropagation();
-                      void handleRemove(track);
-                    }}
-                  >
-                    <X className="size-4" />
-                    Remove from playlist
-                  </DropdownMenuItem>
+                  isOwner ? (
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={(event) => {
+                        event.stopPropagation();
+                        void handleRemove(track);
+                      }}
+                    >
+                      <X className="size-4" />
+                      Remove from playlist
+                    </DropdownMenuItem>
+                  ) : undefined
                 }
               />
             ))
@@ -641,6 +681,14 @@ export default function PlaylistDetail() {
       )}
 
       <ChangeHistory playlistId={playlist._id} />
+
+      <ShareDialog
+        playlistId={playlist._id}
+        playlistName={playlist.name}
+        isOwner={isOwner}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
     </div>
   );
 }

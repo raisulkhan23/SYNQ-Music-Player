@@ -194,6 +194,89 @@ const ANDROID_VR: InnerTubeClient = {
   extra: { androidSdkVersion: 31, osName: "Android", osVersion: "12" },
 };
 
+/**
+ * Raw `browse` request against YouTube Music.
+ *
+ * Exported for `artistCatalog.ts`, which needs the artist → releases →
+ * tracklist endpoints. Those are only served by the WEB_REMIX client, and they
+ * use the same authorized session as search, so the transport lives here rather
+ * than being duplicated (a second copy would drift on headers, timeout or auth
+ * and silently start returning empty pages).
+ */
+export async function browseMusic(
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${MUSIC_API}browse?prettyPrint=false`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": MUSIC_CLIENT.userAgent,
+      "X-Goog-Api-Key": INNERTUBE_KEY,
+      "X-Youtube-Client-Name": MUSIC_CLIENT.id,
+      "X-Youtube-Client-Version": MUSIC_CLIENT.clientVersion,
+      Origin: "https://music.youtube.com",
+      "X-Origin": "https://music.youtube.com",
+      Referer: "https://music.youtube.com/",
+      ...(await authHeaders("https://music.youtube.com")),
+    },
+    body: JSON.stringify({
+      context: {
+        client: {
+          hl: "en",
+          gl: "US",
+          clientName: MUSIC_CLIENT.clientName,
+          clientVersion: MUSIC_CLIENT.clientVersion,
+        },
+      },
+      ...body,
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new ConvexError(`YouTube Music browse returned ${res.status}`);
+  return (await res.json()) as Record<string, unknown>;
+}
+
+/**
+ * Artist-filtered search. `params` is the documented "Artists" filter, which
+ * keeps podcasts, covers and unrelated videos out of the identity lookup.
+ */
+export async function searchMusicArtists(
+  query: string,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${MUSIC_API}search?prettyPrint=false`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": MUSIC_CLIENT.userAgent,
+      "X-Goog-Api-Key": INNERTUBE_KEY,
+      "X-Youtube-Client-Name": MUSIC_CLIENT.id,
+      "X-Youtube-Client-Version": MUSIC_CLIENT.clientVersion,
+      Origin: "https://music.youtube.com",
+      "X-Origin": "https://music.youtube.com",
+      Referer: "https://music.youtube.com/",
+      ...(await authHeaders("https://music.youtube.com")),
+    },
+    body: JSON.stringify({
+      context: {
+        client: {
+          hl: "en",
+          gl: "US",
+          clientName: MUSIC_CLIENT.clientName,
+          clientVersion: MUSIC_CLIENT.clientVersion,
+        },
+      },
+      query,
+      params: ARTIST_SEARCH_PARAMS,
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new ConvexError(`YouTube Music API returned ${res.status}`);
+  return (await res.json()) as Record<string, unknown>;
+}
+
+/** InnerTube's "Artists" search filter, base64-encoded by YouTube itself. */
+export const ARTIST_SEARCH_PARAMS = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D";
+
 async function innerTube(
   endpoint: string,
   client: InnerTubeClient,

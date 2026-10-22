@@ -346,8 +346,28 @@ describe("artist page", () => {
     expect(artistSrc).toMatch(/Link[\s\S]{0,400}?\/search/);
   });
 
-  test("builds its albums from real album data", () => {
-    expect(artistSrc).toMatch(/groupByAlbum\(/);
+  test("the discography comes from the artist's real release list", () => {
+    // The page no longer derives albums from search rows. It reads the artist's
+    // release list (grouped by the provider's own release type) and hydrates
+    // each release's tracklist.
+    expect(artistSrc).toMatch(/useArtistCatalog\(/);
+    expect(artistSrc).toMatch(/catalog\.releases/);
+    expect(artistSrc).toMatch(/releaseGroups/);
+  });
+
+  test("popular is a view of the catalogue, not the whole catalogue", () => {
+    // The bug this pins: the page kept ten rows and called them the artist.
+    // Popular is now explicitly the source's ranking over search results, while
+    // Songs/Discography come from the release catalogue.
+    expect(artistSrc).toMatch(/searchView\.popular/);
+    expect(artistSrc).toMatch(/catalogItems/);
+    expect(artistSrc).toMatch(/artistCatalog/);
+  });
+
+  test("shuffle uses the wider catalogue, not the Popular subset", () => {
+    // "Artist Shuffle" must queue everything retrieved, not ten ranked rows.
+    expect(artistSrc).toMatch(/shuffleAll\(/);
+    expect(artistSrc).toMatch(/shuffleAll\(\s*catalogItems\.length > 0/);
   });
 
   test("an unresolvable artist shows a message rather than a blank page", () => {
@@ -356,6 +376,14 @@ describe("artist page", () => {
 
   test("does not render an empty related shelf", () => {
     expect(artistSrc).toMatch(/hidden=\{[^}]*related[^}]*length === 0/);
+  });
+
+  test("a self-titled release keeps its artist credit", () => {
+    // "Taylor Swift" (the 2006 album) is released by Taylor Swift. The song-row
+    // disambiguation drops a candidate that equals the row's title, which is
+    // right for songs and wrong for albums — it made every self-titled record
+    // render "Unknown artist" in the discography.
+    expect(mediaCardSrc).toMatch(/variant === "playlist"[\s\S]{0,120}cleanArtistName\(item\.artist\)/);
   });
 
   test("stale results for a previous artist are not shown under a new name", () => {

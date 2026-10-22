@@ -44,6 +44,14 @@ export const TTL = {
   /** Artist metadata. */
   artist: 24 * 60 * 60,
   /**
+   * An artist's release list. Long, because a discography changes only when
+   * the artist releases something — and re-reading it on every visit is what
+   * made the Browse endpoint feel slow.
+   */
+  artistCatalog: 12 * 60 * 60,
+  /** One page of a release's tracklist. */
+  releaseTracks: 12 * 60 * 60,
+  /**
    * Signed stream URLs. These are bearer credentials for the media itself, so
    * this is short on purpose. When it lapses the client simply asks for a new
    * one — playback is unaffected because `resolveStream` is called per track.

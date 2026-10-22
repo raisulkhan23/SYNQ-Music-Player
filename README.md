@@ -270,3 +270,64 @@ When using convex, make sure:
 - This includes importing generated files like `@/convex/_generated/server`, `@/convex/_generated/api`
 - Remember to import functions like useQuery, useMutation, useAction, etc. from `convex/react`
 - NEVER have return type validators.
+
+# Desktop (Windows)
+
+SYNQ ships as an Electron app. Electron was chosen over Tauri deliberately: the
+repo already carried both scaffolds, and Electron bundles its own Chromium so the
+audio deck, crossfade and queue behave identically on every Windows machine
+instead of depending on the installed WebView2 runtime. The cost is installer
+size (~110 MB).
+
+## Build an installer
+
+```bash
+npm run desktop:installer      # -> desktop-dist/SYNQ-Setup-<version>.exe
+npm run desktop:unpacked       # -> desktop-dist/win-unpacked/ (no installer, faster)
+```
+
+The script regenerates `build/icon.ico` from the PNGs the web app already ships
+(`scripts/make-icon.mjs`), builds the renderer with Vite, then wraps `dist/` with
+electron-builder. Nothing else is packaged: `node_modules` is excluded because
+the renderer is bundled and the main process has no runtime dependencies.
+
+## Run it
+
+```bash
+npm run build && npm run desktop:start
+```
+
+`electron/main.cjs` serves `dist/` from `app://synq/` — a privileged, secure
+scheme, not `file://` — so `BrowserRouter` keeps real paths and a shared link
+like `/artist/Hozier` opens the right page. External links go to the system
+browser; the renderer runs with `contextIsolation`, `sandbox`, and no Node
+integration.
+
+## Verifying a build
+
+Windows GUI builds have no console, so the shell has an env-guarded smoke check:
+
+```bash
+SYNQ_SMOKE_OUT=smoke.json ./desktop-dist/win-unpacked/SYNQ.exe
+SYNQ_SMOKE_ROUTE=artist/Hozier SYNQ_SMOKE_OUT=artist.json ./desktop-dist/win-unpacked/SYNQ.exe
+```
+
+Each writes what actually rendered (title, visible text, URL) and exits. The
+last verified build rendered the Home page at `app://synq/` and the artist page
+at `app://synq/artist/Hozier`.
+
+## Updates — configured, not yet verified
+
+`electron/main.cjs` checks `SYNQ_UPDATE_FEED` (a JSON document with
+`{ "version", "url", "notes" }`) at startup and every six hours, and offers the
+download. It never installs anything silently. Remaining external requirements:
+
+- **Hosting** for the installer + feed (no feed URL exists in this repo).
+- **A code-signing certificate.** This build is unsigned, so Windows SmartScreen
+  will warn on first run and the installer cannot be verified as trusted.
+- **Icon/version metadata inside `SYNQ.exe`.** electron-builder writes those with
+  `rcedit` from its `winCodeSign` cache, whose archive contains macOS symlinks;
+  extracting it needs the Windows "create symbolic link" privilege (Developer
+  Mode or an elevated shell). This environment has neither, so
+  `signAndEditExecutable: false` is set. The installer and shortcuts are still
+  branded. On a machine with that privilege, delete that line.

@@ -1319,7 +1319,7 @@ export function SettingsDialog({
 
           <ToggleRow
             label="Video preview"
-            description="Show the live video in the fullscreen player when a song plays from YouTube. Leave it off for an audio-only player — useful if a browser extension blocks embedded videos."
+            description="Allow the live video in the maximized player when a song plays from YouTube. The player has its own Video button for hiding the picture without changing this. Leave it off for an audio-only player — useful if a browser extension blocks embedded videos."
             on={videoEnabled}
             onToggle={() => {
               toggleVideo();

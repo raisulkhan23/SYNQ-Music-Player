@@ -120,9 +120,11 @@ describe("the artist page tells the truth about an empty page", () => {
   test("a genuine empty result still says Nothing found", () => {
     // The honest answer must still be available — the fix is to stop lying
     // about the throttled case, not to stop reporting empty artists.
-    expect(artist).toMatch(
-      /searchFailed \? "Couldn't reach YouTube" : "Nothing found"/,
-    );
+    // The empty state's title is a branch, not a constant: a refused request
+    // and a genuinely empty artist must never share one label. `upstreamEmpty`
+    // is the catalogue actually answering with no artist at all.
+    expect(artist).toMatch(/upstreamEmpty[\s\S]{0,120}Nothing found/);
+    expect(artist).toMatch(/searchFailed[\s\S]{0,120}Couldn't reach YouTube/);
   });
 
   test("there is a retry that actually re-runs the search", () => {

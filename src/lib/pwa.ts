@@ -35,6 +35,22 @@ const UPDATE_RELOAD_KEY = "ss.pwaUpdateReload";
 /** How long a worker can sit installed-but-waiting before we call it stale. */
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * True inside the packaged desktop shell.
+ *
+ * `electron/preload.cjs` is the only thing that sets this, and it exposes a
+ * frozen object with a single boolean. Nothing about installation, service
+ * workers or "a new version is available" applies there: the app ships its own
+ * files and is updated by running a new installer.
+ */
+export function isDesktopShell(): boolean {
+  if (typeof window === "undefined") return false;
+  const bridge = (
+    window as Window & { synqDesktop?: { isDesktop?: boolean } }
+  ).synqDesktop;
+  return bridge?.isDesktop === true;
+}
+
 /** True when the app is running as an installed app rather than a browser tab. */
 export function isStandalone(
   displayMode?: string,
@@ -113,8 +129,11 @@ export function resolveInstallState(input: {
   promptCaptured: boolean;
   dismissed: boolean;
   ios: boolean;
+  /** Packaged desktop shell: there is nothing to install into a browser. */
+  desktop?: boolean;
 }): InstallState {
   if (input.installed) return "installed";
+  if (input.desktop) return "unavailable";
   if (input.dismissed) return "dismissed";
   if (input.promptCaptured) return "ready";
   if (input.ios) return "manual";
@@ -265,6 +284,10 @@ export async function registerServiceWorker(
   if (typeof window === "undefined") return null;
   if (!("serviceWorker" in navigator)) return null;
   if (!import.meta.env.PROD) return null;
+  // The desktop shell already ships every asset from its own `app://` origin,
+  // so a worker in front of it can only serve a STALE copy of the app it was
+  // installed from. Updates there come from a new installer, not a cache.
+  if (isDesktopShell()) return null;
   // A service worker needs a secure context. localhost counts; plain http on a
   // LAN does not, and registering there throws.
   if (!window.isSecureContext) return null;
@@ -433,6 +456,7 @@ export function usePwaInstall() {
     promptCaptured,
     dismissed,
     ios: isIos(),
+    desktop: isDesktopShell(),
   });
 
   /** Ask the browser to install. Returns false when it cannot be done. */

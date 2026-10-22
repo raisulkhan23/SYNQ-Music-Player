@@ -501,6 +501,16 @@ export const myPlaylists = query({
 /**
  * A single playlist owned by the signed-in user.
  */
+/**
+ * A single playlist the signed-in user may open: their own, or one shared
+ * with them.
+ *
+ * The widening is READ-ONLY by construction. Every mutation above still
+ * checks `playlist.userId === caller` on its own, so a share grant cannot
+ * leak edit or delete rights through this query — it only enables opening
+ * and viewing. An invalid or forged id that is neither owned nor granted
+ * keeps returning null exactly as before.
+ */
 export const get = query({
   args: { playlistId: v.id("playlists") },
   handler: async (ctx, { playlistId }) => {
@@ -509,8 +519,18 @@ export const get = query({
       return null;
     }
     const playlist = await ctx.db.get(playlistId);
-    if (playlist === null || playlist.userId !== userId) {
+    if (playlist === null) {
       return null;
+    }
+    if (playlist.userId !== userId) {
+      // view-only sharing: an existing grant row is the whole permission.
+      const grant = await ctx.db
+        .query("playlistShares")
+        .withIndex("by_grant", (q) =>
+          q.eq("playlistId", playlistId).eq("recipientId", userId),
+        )
+        .collect();
+      if (grant.length === 0) return null;
     }
     return playlist;
   },

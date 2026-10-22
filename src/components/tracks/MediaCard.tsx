@@ -65,8 +65,16 @@ export function MediaCard({
     variant === "artist"
       ? cleanArtistName(item.artist, item.title)
       : cleanTrackTitle(item.title);
+  // A release card's title is an ALBUM name, not a song name, so comparing the
+  // artist against it is wrong: a self-titled record ("Taylor Swift" by Taylor
+  // Swift, "Weezer" by Weezer) would have its artist credit thrown away and the
+  // card would read "Unknown artist". Only song rows get that comparison.
   const subtitle =
-    variant === "artist" ? "Artist" : cleanArtistName(item.artist, item.title);
+    variant === "artist"
+      ? "Artist"
+      : variant === "playlist"
+        ? cleanArtistName(item.artist)
+        : cleanArtistName(item.artist, item.title);
 
   const activate = () => {
     // Space/Enter on the card must behave like a click, and the play button

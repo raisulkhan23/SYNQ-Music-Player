@@ -199,9 +199,15 @@ describe("the page has a deliberate rhythm, most useful first", () => {
 describe("sections only appear when they can be honest", () => {
   test("a shelf with nothing to show renders nothing", () => {
     expect(shelf).toMatch(/if \(hidden\) return null;/);
+    // The gate now reads the ALLOCATOR's output, not the raw per-section
+    // result: a section the coordinator could not fill with distinct songs is
+    // dropped instead of rendering one repeated card. A FAILED shelf is the
+    // one exception — it renders a retry, because silence and failure are not
+    // the same thing to the listener.
     expect(home).toMatch(
-      /hidden=\{\s*remote\.discover !== undefined &&\s*usable\(remote\.discover\)\.length === 0\s*\}/,
+      /hidden=\{\s*!remoteFailures\.discover &&\s*remote\.discover !== undefined &&\s*discovery\.discover\.length === 0\s*\}/,
     );
+    expect(home).toMatch(/remoteFailures\.discover \? \(/);
   });
 
   test("the engine still decides which rows exist", () => {

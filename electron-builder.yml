@@ -1,0 +1,55 @@
+# SYNQ desktop packaging.
+#
+# `npm run desktop:installer` produces a Windows installer in `desktop-dist/`.
+# The build output (`dist/`) is produced by Vite first; electron-builder only
+# wraps it, so the packaged app is the same code that the browser serves.
+appId: com.synq.app
+productName: SYNQ
+copyright: SYNQ
+
+directories:
+  output: desktop-dist
+  buildResources: build
+
+# Only these ship. `node_modules` is deliberately excluded: the renderer is
+# already bundled by Vite, and the main process has no runtime dependencies.
+files:
+  - electron/**
+  - dist/**
+  - package.json
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # `scripts/make-icon.mjs` builds this from the PNGs the web app ships, so the
+  # installer, Start-menu shortcut and taskbar all use the same artwork.
+  icon: build/icon.ico
+  artifactName: SYNQ-Setup-${version}.${ext}
+  # Rewriting the exe's resources needs `rcedit`, which electron-builder fetches
+  # from its winCodeSign cache. That archive contains macOS symlinks, and
+  # extracting it requires the Windows "create symbolic link" privilege —
+  # Developer Mode or an elevated shell. This build environment has neither, so
+  # the metadata step is skipped (the app still runs, the installer is still
+  # branded). On a machine with that privilege, delete this line to get the
+  # icon and version info embedded in SYNQ.exe as well.
+  signAndEditExecutable: false
+
+nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SYNQ
+  # Keeps the app's own user data across upgrades.
+  deleteAppDataOnUninstall: false
+
+# Desktop builds are not published from here. Update hosting and code signing
+# are external requirements; see README "Desktop (Windows)".
+publish: null

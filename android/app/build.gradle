@@ -1,5 +1,24 @@
 apply plugin: 'com.android.application'
 
+// Signing material never lives in this file — it is committed to a public
+// remote. The password comes from the environment first, then from a
+// git-ignored `keystore.properties` in the android/ directory. A literal in
+// here would publish the release password to everyone who can clone the repo.
+def releaseSecrets = new Properties()
+def releaseSecretsFile = rootProject.file("keystore.properties")
+if (releaseSecretsFile.exists()) {
+    releaseSecretsFile.withInputStream { releaseSecrets.load(it) }
+}
+
+def releaseSecret = { String envName, String propertyName ->
+    def value = System.getenv(envName) ?: releaseSecrets.getProperty(propertyName)
+    if (!value) {
+        logger.warn("No ${envName} and no '${propertyName}' in keystore.properties — " +
+                "the release build cannot sign the APK without it.")
+    }
+    value ?: ""
+}
+
 android {
     namespace = "com.synq.music"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -13,14 +32,27 @@ android {
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            storeFile file("$projectDir/../keystores/synq-release.keystore")
+            storePassword releaseSecret("SYNQ_KEYSTORE_PASSWORD", "keystore.password")
+            keyAlias releaseSecret("SYNQ_KEY_ALIAS", "key.alias") ?: "synq"
+            keyPassword releaseSecret("SYNQ_KEY_PASSWORD", "key.password")
         }
     }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 }
 
