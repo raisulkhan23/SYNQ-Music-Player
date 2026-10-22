@@ -98,6 +98,12 @@ import { api } from "@/convex/_generated/api";
 import { ConvexClient } from "convex/browser";
 import { toast } from "sonner";
 import { track as trackEvent } from "@/lib/analytics";
+import {
+  publishTrackMetadata,
+  publishPlaybackState,
+  registerMediaSessionActions,
+  registerAudioRouteLossHandler,
+} from "@/lib/mediaSession";
 import { useAuthGate, type AuthIntent } from "@/store/authGate";
 
 /**
@@ -3214,43 +3220,73 @@ function wireYoutubeEngine() {
 
 // --- media session (lock screen / hardware keys) ------------------------------
 
+/**
+ * The actual OS conversation lives in `@/lib/mediaSession`, which is the one
+ * place for it: the W3C Media Session API on the web and
+ * `@capgo/capacitor-media-session` in the packaged Android shell, where the
+ * plugin is also what runs the `mediaPlayback` foreground service that keeps
+ * music alive with the screen off. This wrapper keeps the six historical call
+ * sites below working with the (track, playing) shape they already use.
+ */
 function syncMediaSession(track: Playable | null, playing: boolean) {
-  if (!("mediaSession" in navigator)) return;
-  if (!track) {
-    navigator.mediaSession.metadata = null;
-    return;
-  }
-  navigator.mediaSession.metadata = new MediaMetadata({
-    title: track.title,
-    artist: track.artistName,
-    album: track.albumName,
-    artwork: track.coverUrl ? [{ src: track.coverUrl, sizes: "512x512" }] : [],
-  });
-  navigator.mediaSession.playbackState = playing ? "playing" : "paused";
+  publishTrackMetadata(
+    track
+      ? {
+          title: track.title,
+          artistName: track.artistName,
+          albumName: track.albumName,
+          coverUrl: track.coverUrl,
+        }
+      : null,
+  );
+  publishPlaybackState(playing ? "playing" : "paused");
 }
 
 /** Hardware media keys / lock-screen controls. */
 function wireMediaKeys() {
-  if (!("mediaSession" in navigator)) return;
-  const ms = navigator.mediaSession;
-  try {
-    ms.setActionHandler("play", () => usePlayerStore.getState().togglePlay());
-    ms.setActionHandler("pause", () => usePlayerStore.getState().togglePlay());
-    ms.setActionHandler("previoustrack", () =>
-      usePlayerStore.getState().prev(),
-    );
-    ms.setActionHandler("nexttrack", () => usePlayerStore.getState().next());
-    ms.setActionHandler("seekbackward", () => {
+  // Registered ONCE, for the life of the page. The handlers are deliberately
+  // thin and read the live store when the button is actually pressed — that is
+  // what keeps a re-mounted PlayerBar from stacking a second "next" handler,
+  // and the lock screen and the transport bar from ever disagreeing.
+  registerMediaSessionActions({
+    play: () => {
       const s = usePlayerStore.getState();
-      s.seek(Math.max(0, s.currentTime - 10));
-    });
-    ms.setActionHandler("seekforward", () => {
+      if (!s.isPlaying) s.togglePlay();
+    },
+    pause: () => {
       const s = usePlayerStore.getState();
-      s.seek(s.currentTime + 10);
-    });
-  } catch {
-    /* unsupported action types — fine */
-  }
+      if (s.isPlaying) s.togglePlay();
+    },
+    previoustrack: () => usePlayerStore.getState().prev(),
+    nexttrack: () => usePlayerStore.getState().next(),
+    seekbackward: (seconds) => {
+      const s = usePlayerStore.getState();
+      s.seek(Math.max(0, s.currentTime - seconds));
+    },
+    seekforward: (seconds) => {
+      const s = usePlayerStore.getState();
+      s.seek(s.currentTime + seconds);
+    },
+    seekto: (seconds) => {
+      usePlayerStore.getState().seek(seconds);
+    },
+    stop: () => {
+      // The listener ended playback from the notification: stop the music and
+      // take the session down. Nothing here may auto-resume.
+      const s = usePlayerStore.getState();
+      if (s.isPlaying) s.togglePlay();
+      publishPlaybackState("none");
+    },
+  });
+
+  // Unplugging headphones or losing the Bluetooth speaker pauses (never
+  // resumes) playback — the native shell delivers this as a window event from
+  // `AudioRouteLossReceiver`; on the web `registerAudioRouteLossHandler` is
+  // a no-op listener that simply never fires.
+  registerAudioRouteLossHandler(() => {
+    const s = usePlayerStore.getState();
+    if (s.isPlaying) s.togglePlay();
+  });
 }
 
 // --- store --------------------------------------------------------------------

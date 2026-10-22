@@ -25,6 +25,7 @@
     "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^8.5.2",
     "@capacitor/core": "^8.5.2",
+    "@capgo/capacitor-media-session": "^8.1.5",
     "@convex-dev/auth": "^0.0.90",
     "@gravity-ai/react": "^1.2.1",
     "@hookform/resolvers": "^5.2.2",

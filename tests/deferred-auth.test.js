@@ -621,13 +621,19 @@ describe("queue building is NOT gated, on purpose", () => {
     // Requirement: hardware/browser media controls must not be a way around
     // the gate. `next`/`prev`/`togglePlay` all delegate to the gated
     // `playIndex`, so a media key cannot start audio for a guest either.
+    //
+    // The registration moved into `@/lib/mediaSession` (one writer for the
+    // whole app, shared with the Android shell), but the handlers still read
+    // the live store state — the gate cannot be bypassed from the lock
+    // screen.
     const store = readSource("src/store/player.ts");
-    expect(store).toMatch(
-      /setActionHandler\("nexttrack", \(\) => usePlayerStore\.getState\(\)\.next\(\)\)/,
+    expect(store).toContain("registerMediaSessionActions");
+    const wiring = store.slice(
+      store.indexOf("function wireMediaKeys"),
+      store.indexOf("// --- store ---"),
     );
-    expect(store).toMatch(
-      /setActionHandler\("play", \(\) => usePlayerStore\.getState\(\)\.togglePlay\(\)\)/,
-    );
+    expect(wiring).toMatch(/nexttrack:\s*\(\) => usePlayerStore\.getState\(\)\.next\(\)/);
+    expect(wiring).toMatch(/isPlaying/);
   });
 });
 

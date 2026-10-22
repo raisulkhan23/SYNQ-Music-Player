@@ -11,6 +11,11 @@ import { toPlayableYoutube } from "@/lib/playable";
 import { giveUpNotice } from "@/lib/playbackFallback";
 import { artistSearchQuery } from "@/lib/youtube";
 import { getAudio } from "@/lib/audio";
+import {
+  publishPlaybackState,
+  publishPosition,
+  publishTrackMetadata,
+} from "@/lib/mediaSession";
 import { formatRemaining, useSleepCountdown } from "@/lib/sleepTimer";
 import { formatSkipped } from "@/lib/introTrim";
 import { usePlayerStore } from "@/store/player";
@@ -599,38 +604,28 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
   }, []);
 
   // Publish now-playing metadata so iOS/Safari can show SYNQ in Control Center
-  // and expose the app as the active AirPods media session.
+  // and expose the app as the active AirPods media session. The write goes
+  // through `@/lib/mediaSession`, the one place for it — this effect is keyed
+  // on the same inputs it always was, while the store's own per-track reminder
+  // covers the case where the bar is not mounted at all (e.g. a desktop
+  // shutdown). The library deduplicates what it last sent, so double-writing
+  // never produces a duplicate OS session.
   useEffect(() => {
-    if (!("mediaSession" in navigator) || typeof MediaMetadata === "undefined")
-      return;
-    const session = navigator.mediaSession;
-    if (!current) {
-      session.metadata = null;
-      return;
-    }
-    const artwork = current.coverUrl
-      ? [96, 256, 512].map((size) => ({
-          src: current.coverUrl,
-          sizes: `${size}x${size}`,
-        }))
-      : undefined;
-    session.metadata = new MediaMetadata({
-      title: current.title,
-      artist: current.artistName,
-      album: current.albumName ?? "SYNQ",
-      artwork,
-    });
+    publishTrackMetadata(
+      current
+        ? {
+            title: current.title,
+            artistName: current.artistName,
+            albumName: current.albumName ?? "SYNQ",
+            coverUrl: current.coverUrl ?? null,
+          }
+        : null,
+    );
   }, [current]);
 
   // Keep lock-screen / headphone scrubber state synchronized with playback.
   useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-    const session = navigator.mediaSession;
-    session.playbackState = current
-      ? isPlaying
-        ? "playing"
-        : "paused"
-      : "none";
+    publishPlaybackState(current ? (isPlaying ? "playing" : "paused") : "none");
     if (!current) return;
 
     const player = usePlayerStore.getState();
@@ -642,15 +637,11 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
     );
     const playbackRate =
       Number.isFinite(player.rate) && player.rate > 0 ? player.rate : 1;
-    try {
-      session.setPositionState({
-        duration: mediaDuration,
-        playbackRate,
-        position: safeTime,
-      });
-    } catch {
-      // Some browsers throw while duration metadata is still resolving.
-    }
+    publishPosition({
+      duration: mediaDuration,
+      position: safeTime,
+      rate: playbackRate,
+    });
   }, [current, currentTime, duration, isPlaying]);
 
   if (!current) return <ReadingSessionNav />;

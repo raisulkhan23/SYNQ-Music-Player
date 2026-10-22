@@ -636,10 +636,19 @@ describe("existing playback is untouched", () => {
   });
 
   test("the media session integration is unchanged", () => {
-    // The PWA must inherit SYNQ's existing Media Session wiring, not replace it.
-    expect(playerSource).toMatch(/navigator\.mediaSession/);
-    expect(playerSource).toMatch(/setActionHandler\("nexttrack"/);
-    expect(playerSource).toMatch(/setActionHandler\("seekforward"/);
+    // The PWA must inherit SYNQ's existing Media Session wiring, not replace
+    // it. That wiring now lives in the shared `@/lib/mediaSession` module
+    // (driving the W3C API on the web, the Capacitor plugin in the Android
+    // shell), and the store registers its handlers through it.
+    expect(playerSource).toContain('from "@/lib/mediaSession"');
+    const module = readSource("src/lib/mediaSession.ts");
+    expect(module).toMatch(/setActionHandler.*nexttrack|"nexttrack"/);
+    expect(module).toMatch(/"seekforward"/);
+    const wiring = playerSource.slice(
+      playerSource.indexOf("function wireMediaKeys"),
+      playerSource.indexOf("// --- store ---"),
+    );
+    expect(wiring).toContain("registerMediaSessionActions");
   });
 
   test("the crossfade system still exists", () => {
