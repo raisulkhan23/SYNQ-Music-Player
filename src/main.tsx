@@ -23,6 +23,7 @@ import {
 } from "@/lib/cardTransparency";
 import { usePlayerStore } from "@/store/player";
 import { applyAnimationLevel, readAnimationLevel } from "@/lib/motion";
+import { installImageFallback } from "@/lib/imageFallback";
 import "./index.css";
 
 // SYNQ defaults to dark; restore the user's theme mode before first paint.
@@ -44,6 +45,11 @@ applyAnimationLevel(readAnimationLevel());
 // Restore the saved card transparency before paint so glass panels never flash
 // at the default opacity first.
 applyCardTransparency(readCardTransparency());
+// Broken remote artwork (expired CDN urls, rate-limited hosts, dead assets)
+// must show the app's neutral placeholder instead of the browser's
+// broken-image glyph. The install is idempotent and lives at module scope for
+// the whole page, exactly like the theme restore above — never uninstalled.
+installImageFallback();
 const savedTheme = localStorage.getItem("ss.themeMode");
 document.documentElement.dataset.scene =
   localStorage.getItem("ss.sceneTheme") ?? "studio";
