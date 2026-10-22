@@ -1353,7 +1353,7 @@ export function FullscreenPlayer() {
                     <DropdownMenuItem
                       key={r}
                       className={cn(
-                        "gap-2",
+                        "gap-2 justify-center",
                         r === rate && "text-[rgb(var(--tint))]",
                       )}
                       onSelect={() => setRate(r)}
@@ -1395,7 +1395,7 @@ export function FullscreenPlayer() {
                     <DropdownMenuItem
                       key={f.id}
                       className={cn(
-                        "gap-2",
+                        "gap-2 justify-center",
                         f.id === audioFilter && "text-[rgb(var(--tint))]",
                       )}
                       onSelect={() => {
@@ -1448,14 +1448,16 @@ export function FullscreenPlayer() {
                   title={videoVisible ? "Hide video" : "Show video"}
                   onClick={() => toggleVideoVisible()}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[rgb(var(--tint)_/_0.6)] focus-visible:outline-none sm:px-3 sm:py-1 sm:tracking-wide sm:uppercase",
+                    "inline-flex items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[rgb(var(--tint)_/_0.6)] focus-visible:outline-none sm:px-3 sm:py-1 sm:tracking-wide sm:uppercase",
                     videoVisible
                       ? "border-[rgb(var(--tint)_/_0.5)] text-[rgb(var(--tint))]"
                       : "text-muted-foreground",
                   )}
                 >
                   <Monitor className="size-3.5" />
-                  {videoVisible ? "Video on" : "Video off"}
+                  <span className="whitespace-nowrap">
+                    {videoVisible ? "Video on" : "Video off"}
+                  </span>
                 </button>
               )}
             </div>
