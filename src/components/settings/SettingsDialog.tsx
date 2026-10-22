@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { DEFAULT_CARD_TRANSPARENCY } from "@/lib/cardTransparency";
+import { publicAsset } from "@/lib/publicAsset";
 import { PresetSelector } from "@/components/settings/PresetSelector";
 import { ANIMATION_LEVEL_META, ANIMATION_LEVELS } from "@/lib/motion";
 import {
@@ -2545,7 +2546,7 @@ function InstallAppRow() {
     return (
       <div className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5">
         <img
-          src="/icons/icon-192.png"
+          src={publicAsset("icons/icon-192.png")}
           alt=""
           width={36}
           height={36}

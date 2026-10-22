@@ -72,7 +72,13 @@ describe("the logo is a real, valid image everywhere it is referenced", () => {
   test("the favicon and the in-app logo point at the same file", () => {
     expect(indexHtml).toMatch(/href="\/logo\.svg\?v=\d+"/);
     const logo = readSource("src/components/brand/Logo.tsx");
-    expect(logo).toMatch(/export const LOGO_SRC = "\/logo\.svg\?v=\d+"/);
+    // LOGO_SRC resolves through publicAsset; on the hosted site that is still
+    // the same root-absolute /logo.svg?v=<n> string (covered by runtime tests
+    // in tests/public-asset-resolution.test.js), so the invariant here is the
+    // versioned script reference, not the assignment's exact spelling.
+    expect(logo).toMatch(
+      /export const LOGO_SRC = publicAsset\("logo\.svg\?v=\d+"\)/,
+    );
     // Every <img> of the mark must reference it, never an older asset.
     expect(logo).not.toMatch(/src="\/logo\.png"/);
     expect(logo).not.toMatch(/src="\/logo\.svg"/);
@@ -84,12 +90,14 @@ describe("the logo is a real, valid image everywhere it is referenced", () => {
     // preview — keep showing the PREVIOUS logo indefinitely. That is exactly
     // how a correctly-replaced file can look like it was never changed.
     const logo = readSource("src/components/brand/Logo.tsx");
-    const version = logo.match(/LOGO_SRC = "\/logo\.svg\?v=(\d+)"/);
+    const version = logo.match(/LOGO_SRC = publicAsset\("logo\.svg\?v=(\d+)"\)/);
     expect(version).not.toBeNull();
 
     // Every consumer must use that same version, or they will disagree.
     const player = readSource("src/lib/youtubePlayer.ts");
-    expect(player).toContain(`logo.src = "/logo.svg?v=${version[1]}"`);
+    expect(player).toContain(
+      `logo.src = publicAsset("logo.svg?v=${version[1]}")`,
+    );
     expect(indexHtml).toContain(`/logo.svg?v=${version[1]}`);
     // The iOS home-screen icon is versioned for the same reason. It is the
     // full-bleed 180px render (iOS applies its own rounded mask, so a

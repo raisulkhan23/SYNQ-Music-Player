@@ -14,6 +14,8 @@
 // through the same player instance the whole time.
 // ---------------------------------------------------------------------------
 
+import { publicAsset } from "@/lib/publicAsset";
+
 interface YtPlayerLike {
   loadVideoById: (id: string, startSeconds?: number) => void;
   playVideo: () => void;
@@ -410,7 +412,7 @@ function ensureShields(): void {
     const logo = document.createElement("img");
     // Versioned for the same reason as the in-app Logo: a /public asset keeps
     // its URL, so an unversioned one can be served stale from cache.
-    logo.src = "/logo.svg?v=2";
+    logo.src = publicAsset("logo.svg?v=2");
     logo.style.cssText = "width:56px;opacity:.5;";
     logo.onerror = () => {
       logo.style.display = "none";

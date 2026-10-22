@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { publicAsset } from "@/lib/publicAsset";
 import { Link } from "react-router";
 import { ArrowRightFromLine } from "lucide-react";
 
@@ -13,7 +14,7 @@ import { ArrowRightFromLine } from "lucide-react";
  * resource, so the old cached copy cannot be reused. Bump it whenever the
  * mark itself changes.
  */
-export const LOGO_SRC = "/logo.svg?v=2";
+export const LOGO_SRC = publicAsset("logo.svg?v=2");
 
 /** iconOnly renders just the mark — used in the collapsed sidebar rail.
  *  Passing `onToggle` there turns the mark into the rail's expand control. */
