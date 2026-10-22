@@ -20,6 +20,7 @@ import { RemoteTrackRow } from "@/components/tracks/RemoteTrackRow";
 import { ShareDialog } from "@/components/playlists/ShareDialog";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { isPlayable } from "@/lib/eligibility";
 import { useAuth } from "@/hooks/use-auth";
 import { formatTime } from "@/lib/format";
 import {
@@ -293,6 +294,12 @@ export default function PlaylistDetail() {
     // `resolveLegacyRow`, the search-based fallback was never reached for
     // imported tracks at all.
     if (!row.hasSnapshot || !row.youtubeId) return null;
+    // The shared queue-eligibility rule (`lib/eligibility`): an id that is not
+    // the 11-character YouTube shape is metadata, not a recording. A snapshot
+    // carrying a corrupted or truncated id used to stream silence and still
+    // advance the queue; this sends such a row to the search resolution path
+    // below like any other unmatched import.
+    if (!isPlayable(row)) return null;
     const item: YtItem = {
       id: row.youtubeId,
       title: row.title,

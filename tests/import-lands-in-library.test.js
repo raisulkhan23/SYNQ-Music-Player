@@ -185,7 +185,11 @@ describe("an imported track is not mistaken for a playable video", () => {
       detail.indexOf("const directPlayable"),
       detail.indexOf("const directQueue"),
     );
-    expect(fn).toContain("!row.youtubeId");
+    // Gated through the shared queue-eligibility rule, which strengthens the
+    // old `!row.youtubeId` id-presence check: the id must also be the real
+    // 11-character YouTube shape, and the row must have a title to render.
+    expect(fn).toContain("!isPlayable(row)");
+    expect(fn).toContain("!row.hasSnapshot");
   });
 
   test("it no longer substitutes the row id for a missing youtubeId", () => {
