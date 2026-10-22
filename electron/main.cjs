@@ -20,10 +20,12 @@
  * listeners actually share.
  */
 
-const { app, BrowserWindow, Menu, dialog, net, protocol, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const oauth = require("./oauth-deep-link.cjs");
+const tray = require("./tray.cjs");
 
 /** Where the Vite build lands. Packaged builds carry it inside app.asar. */
 const DIST = path.join(__dirname, "..", "dist");
@@ -116,16 +118,19 @@ async function serveApp(request) {
   }
 }
 
-/** Only the app's own origin may be loaded in the window. */
-function isAppUrl(target) {
-  try {
-    return new URL(target).protocol === "app:";
-  } catch {
-    return false;
-  }
-}
+/**
+ * A synq:// URL in the launch arguments means the OS cold-started us to
+ * deliver an OAuth callback (Windows passes the URL as an argv entry; the
+ * running-instance case goes through `second-instance` instead). Such a
+ * callback cannot complete sign-in — the pending record it must match died
+ * with the previous process — so it is dispatched and validated (and thus
+ * rejected) honestly rather than silently ignored.
+ */
+const startupDeepLink = oauth.findDeepLinkArg(process.argv);
 
 let mainWindow = null;
+/** Set on before-quit so close-to-tray cannot preventDefault an app.quit(). */
+let quitting = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -156,16 +161,23 @@ function createWindow() {
   mainWindow.once("ready-to-show", () => mainWindow.show());
 
   // External links (support pages, provider consent, a shared link) belong in
-  // the user's browser, never in a window with no address bar.
+  // the user's browser, never in a window with no address bar. The policy is
+  // one of the shell's security contracts, so it is applied to BOTH routes a
+  // target URL can take: a plain navigation (location.href assignment — how
+  // `@convex-dev/auth` starts sign-in) and an embedded-frame attempt. The
+  // app's own origin (`app://synq`) navigates inside; every http(s) URL and
+  // everything else (synq:, javascript:, data:) is kept out of the window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) void shell.openExternal(url);
+    const policy = oauth.decideNavigationPolicy(url, {
+      appSchemes: ["app:"],
+    });
+    if (policy === "open-external") void shell.openExternal(url);
     return { action: "deny" };
   });
 
-  mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (isAppUrl(url)) return;
-    event.preventDefault();
-    if (/^https?:/i.test(url)) void shell.openExternal(url);
+  const detachNavigationGuard = oauth.onAuthNavigation(mainWindow.webContents, {
+    appSchemes: ["app:"],
+    appOrigins: [],
   });
 
   // A permission prompt from a page we did not author is a red flag; the app
@@ -176,6 +188,22 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    // A closed window invalidates every OAuth attempt that was waiting for a
+    // synq://callback — a later delivery must not complete a sign-in nobody
+    // is listening for.
+    oauth.forgetAllPendingCallbacks();
+    detachNavigationGuard();
+  });
+
+  // Close-to-tray: only when the renderer asked for it (off by default, so
+  // the default close/quit behavior is exactly what it was before the tray
+  // existed). When the tray is unavailable the preference simply cannot be
+  // enabled in practice — and close keeps quitting as before.
+  mainWindow.on("close", (event) => {
+    if (!quitting && tray.shouldHideOnClose(mainWindow, true)) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
   });
 
   // Headless smoke check for CI and for shipping verification: load the shell,
@@ -207,6 +235,14 @@ function createWindow() {
   // shared URL or a restored session would.
   const route = process.env.SYNQ_SMOKE_ROUTE ?? "";
   const target = route.startsWith("/") ? route : `/${route}`;
+  if (startupDeepLink) {
+    // Cold launch with a synq:// URL: dispatch once the renderer exists.
+    // The validator decides what is acceptable; an unregistered callback is
+    // dropped rather than trusted.
+    mainWindow.webContents.once("did-finish-load", () => {
+      oauth.handleDeepLink(mainWindow, startupDeepLink);
+    });
+  }
   void mainWindow.loadURL(`${APP_ORIGIN}${target === "/" ? "/" : target}`);
 }
 
@@ -331,21 +367,40 @@ function isNewer(candidate, current) {
 }
 
 // One instance only: two windows sharing one localStorage would fight over the
-// saved queue and the "single audio deck" invariant.
+// saved queue and the "single audio deck" invariant. The single instance is
+// also the OAuth return destination: the OS delivers synq://callback to
+// whichever process holds this lock (see the second-instance/open-url wiring
+// below; the handlers resolve the window lazily, before it even exists).
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  });
-
+  oauth.onSecondInstance(() => mainWindow);
   app.whenReady().then(() => {
     app.setAppUserModelId("com.synq.app");
     protocol.handle("app", serveApp);
     installMenu();
+
+    // The OS-level synq:// handler. In a packaged install this registers the
+    // app; in dev it points at the local electron.exe + this entry script (the
+    // documented way to exercise deep links unpackaged) so desktop sign-in is
+    // testable rather than only claimed. Failure is logged and swallowed: a
+    // missing handler only means the browser flow never calls back.
+    oauth.registerDeepLink();
+
+    // The renderer→main half of the OAuth contract.
+    oauth.onBeginOAuth();
+
+    // The renderer's close-to-tray preference (off by default).
+    ipcMain.on("desktop:minimize-to-tray", (_event, enable) => {
+      tray.setMinimizeToTray(enable);
+    });
+
     createWindow();
+
+    // Tray. Optional by design: without a usable icon (or a platform without
+    // a tray implementation) installTray says so and the shell runs exactly
+    // as before — no tray, close still quits.
+    tray.installTray();
 
     // Give the first paint time to finish before talking to the network.
     setTimeout(() => void checkForUpdates(), 15_000);
@@ -354,6 +409,14 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("before-quit", () => {
+    // Enable real closes now, or the close-to-tray interceptor below would
+    // cancel the very quit this event announces.
+    quitting = true;
+    // Remove the tray icon BEFORE teardown so it cannot survive the process.
+    tray.unload();
   });
 
   app.on("activate", () => {

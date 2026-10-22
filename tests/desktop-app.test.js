@@ -49,22 +49,51 @@ describe("the shell is locked down", () => {
     expect(main).toMatch(/sandbox: true/);
   });
 
-  test("the preload exposes one frozen flag and nothing else", () => {
-    // Any ipcRenderer/require surface here would be a hole in the renderer.
+  test("the preload exposes one frozen surface and nothing else", () => {
+    // The renderer never sees require/fs/a raw ipc surface; the bridge is the
+    // only exposure and it is frozen, so no channel can be reassigned inside
+    // the page. (ipcRenderer lives in the preload itself, which is its job
+    // under contextIsolation — the renderer cannot reach it.)
     expect(preload).toMatch(/contextBridge\.exposeInMainWorld/);
     expect(preload).toMatch(/Object\.freeze/);
-    expect(preload).not.toMatch(/ipcRenderer/);
     expect(preload).not.toMatch(/exposeInMainWorld\(\s*"require"/);
+  });
+
+  test("the bridge uses explicit named channels, never an arbitrary one", () => {
+    // Each channel string appears exactly once: the preload sends on
+    // `desktop:begin-oauth` / `desktop:minimize-to-tray` and listens on
+    // `synq:auth-result` / `tray:action`, and the main process matches those
+    // names. No wildcard or renderer-approved channel name exists.
+    expect((preload.match(/desktop:begin-oauth/g) ?? []).length).toBe(1);
+    expect((preload.match(/desktop:minimize-to-tray/g) ?? []).length).toBe(1);
+    expect((preload.match(/synq:auth-result/g) ?? []).length).toBe(1);
+    expect((preload.match(/tray:action/g) ?? []).length).toBe(1);
+    // Exactly two senders and two listeners — nothing else is wired.
+    expect((preload.match(/ipcRenderer\.on\(/g) ?? []).length).toBe(2);
+    expect((preload.match(/ipcRenderer\.send\(/g) ?? []).length).toBe(2);
+    // Listener fan-out is isolated: one throwing listener cannot break the
+    // other channel or remove the surface.
+    expect(preload).toMatch(/for \(const listener of authResultListeners\)/);
+    expect(preload).toMatch(/for \(const listener of trayActionListeners\)/);
   });
 
   test("external links leave the app instead of replacing it", () => {
     expect(main).toMatch(/setWindowOpenHandler/);
     expect(main).toMatch(/shell\.openExternal/);
-    expect(main).toMatch(/will-navigate/);
+    // Navigation policy is delegated to one module so both routes to a new
+    // URL — a plain navigation and an embedded-frame attempt — get the same
+    // verdicts (unit-tested in tests/desktop-oauth-deeplink.test.js).
+    expect(main).toMatch(/oauth\.onAuthNavigation/);
+    expect(main).toMatch(/oauth\.decideNavigationPolicy/);
   });
 
   test("only the app's own origin is treated as internal", () => {
-    expect(main).toMatch(/new URL\(target\)\.protocol === "app:"/);
+    // The shell hands the policy the app scheme it actually serves.
+    expect(main).toMatch(/"app:"/);
+    // And the shared policy itself lets that scheme through (via the imported
+    // module), while every other scheme stays outside the window.
+    expect(main).toMatch(/oauth\.decideNavigationPolicy\(url, \{/);
+    expect(main).toMatch(/appSchemes: \["app:"\]/);
   });
 
   test("the served path cannot escape the build directory", () => {

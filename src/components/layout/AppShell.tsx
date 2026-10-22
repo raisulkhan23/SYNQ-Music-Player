@@ -28,6 +28,7 @@ import { BackToTop } from "@/components/core/BackToTop";
 import { CommandPalette } from "@/components/core/CommandPalette";
 import { NotificationBridge } from "@/components/player/NotificationBridge";
 import { TasteOnboarding } from "@/components/onboarding/TasteOnboarding";
+import { useTrayBridge } from "@/lib/trayBridge";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery } from "convex/react";
@@ -124,6 +125,9 @@ function useAnimatedCssTint(
   // changes back, debounced. Transient state (currentTime, queue, fullscreen) is
   // ignored — only whitelisted UI/player preferences leave the device.
   usePreferencesSync();
+
+  // Tray quick actions (desktop only; a no-op without the shell bridge).
+  useTrayBridge();
 
   useEffect(() => {
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);

@@ -25,6 +25,14 @@ win:
     - target: nsis
       arch:
         - x64
+  # Register the synq:// handler at install time, so the OAuth callback from
+  # the browser resolves to the installed app from the very first launch.
+  # (The shell also calls setAsDefaultProtocolClient at runtime; this is the
+  # installer-level guarantee that the OS-routed return path exists.)
+  protocols:
+    - name: SYNQ
+      schemes:
+        - synq
   # `scripts/make-icon.mjs` builds this from the PNGs the web app ships, so the
   # installer, Start-menu shortcut and taskbar all use the same artwork.
   icon: build/icon.ico

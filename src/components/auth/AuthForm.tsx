@@ -6,6 +6,7 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { useAuth } from "@/hooks/use-auth";
+import { isDesktopRuntime, startDesktopOAuth } from "@/lib/desktop-auth";
 import { ArrowRight, Loader2, Mail } from "lucide-react";
 import { useState } from "react";
 
@@ -95,7 +96,41 @@ export function AuthForm({
     setIsLoading(true);
     setError(null);
     try {
-      // Send OAuth back to the origin the user is actually using.
+      // Desktop: the consent screen must open in the user's own browser, so
+      // the attempt is registered under `synq://callback` and comes back
+      // through the main process. `startDesktopOAuth` resolves once the
+      // callback is validated or the flow is abandoned; only reached when the
+      // Electron bridge is there — the hosted web build and Android take the
+      // branch below unchanged.
+      if (isDesktopRuntime()) {
+        const result = await startDesktopOAuth(provider, (callbackUrl) =>
+          signIn(provider, { redirectTo: callbackUrl }),
+        );
+
+        if (result?.code) {
+          // Exchange the code using the verifier the SDK stored when the flow
+          // started. Convex Auth then stores the session and the app's auth
+          // state updates on its own.
+          await signIn(undefined as unknown as string, { code: result.code });
+          onSuccess?.();
+          return;
+        }
+
+        if (result?.error === "access_denied") {
+          setError("Sign-in was cancelled.");
+        } else if (result) {
+          setError("Sign-in could not be completed. Please try again.");
+        } else {
+          setError(
+            "That sign-in didn't finish. Finish it in your browser, or try again.",
+          );
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      // Web (and Android WebView): send OAuth back to the origin the user is
+      // actually using.
       await signIn(provider, { redirectTo });
     } catch (err) {
       console.error(`${provider} sign-in error:`, err);
