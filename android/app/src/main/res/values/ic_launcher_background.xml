@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- SYNQ's app background. Capacitor ships #FFFFFF, which made the
+         launcher icon flash white against the dark app surface. -->
+    <color name="ic_launcher_background">#12141C</color>
+</resources>

@@ -1,0 +1,45 @@
+# Paths copied from the development checkout into this public release.
+#
+# One entry per line, relative to the development checkout root. A directory
+# entry is copied recursively, minus the blocked names enforced in
+# tools/sync-from-dev.mjs (`.git`, `node_modules`, build output, keystores,
+# `.env*`, logs).
+#
+# Deliberately NOT listed, because this release owns its own wording:
+#   README.md  .env.example  .gitignore  docs/  tools/
+#
+# Add a new top-level directory here on purpose, and review the result — this
+# list is the entire definition of what the public sees.
+
+src
+public
+electron
+android
+tests
+scripts
+
+assets/logo-master.jpg
+
+# Imported by src/main.tsx, so the build needs it even though it is generated
+# platform tooling rather than app code.
+vly-toolbar-readonly.tsx
+
+index.html
+main.ts
+package.json
+package-lock.json
+CHANGELOG.md
+vite.config.ts
+vitest.config.ts
+tsconfig.json
+tsconfig.app.json
+tsconfig.node.json
+eslint.config.js
+postcss.config.cjs
+components.json
+convex.json
+capacitor.config.ts
+electron-builder.yml
+.prettierrc
+.prettierignore
+.gitattributes

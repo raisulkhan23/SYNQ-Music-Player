@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="SYNQ">
+  <!--
+    SYNQ mark: an indigo→violet→magenta squircle with three glossy white bars
+    tilted down to the right.
+
+    This is the vector twin of the master artwork (assets/logo-master.jpg,
+    rebuild the raster set with `node scripts/generate-logo-assets.mjs`). It is
+    what the in-app logo, the favicon and the mask icon use, so it has to match
+    the tile the installers and launchers show — a different hue or a mirrored
+    tilt here is exactly how the app ends up displaying "the old logo".
+  -->
+  <defs>
+    <clipPath id="synqSquircle">
+      <rect width="512" height="512" rx="122" ry="122" />
+    </clipPath>
+
+    <!-- Body: indigo at the top-left, violet through the middle, magenta in
+         the bottom-right corner. -->
+    <linearGradient id="synqBody" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#2c2e96" />
+      <stop offset="0.38" stop-color="#4317bf" />
+      <stop offset="0.72" stop-color="#7b23dd" />
+      <stop offset="1" stop-color="#ba2df2" />
+    </linearGradient>
+
+    <!-- The glass highlight is a broad, soft diagonal band across the upper
+         left, not a uniform white wash: a uniform wash desaturates the whole
+         tile and is what made the previous mark look mauve. -->
+    <radialGradient id="synqSheen" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f0edff" stop-opacity="0.36" />
+      <stop offset="0.55" stop-color="#e3deff" stop-opacity="0.3" />
+      <stop offset="0.86" stop-color="#d8d2ff" stop-opacity="0.24" />
+      <stop offset="0.96" stop-color="#d8d2ff" stop-opacity="0.07" />
+      <stop offset="1" stop-color="#d8d2ff" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Darker rim along the left and bottom edges, as in the artwork. -->
+    <linearGradient id="synqRim" x1="1" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#1b0d63" stop-opacity="0.55" />
+      <stop offset="0.32" stop-color="#1b0d63" stop-opacity="0.12" />
+      <stop offset="0.6" stop-color="#1b0d63" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Bars: bright white face with a faint cool tint at the lower edge. -->
+    <linearGradient id="synqBar" gradientUnits="userSpaceOnUse" x1="0" y1="160" x2="0" y2="390">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="0.62" stop-color="#fdfbff" />
+      <stop offset="1" stop-color="#e7e0fb" />
+    </linearGradient>
+
+    <filter id="synqBarShadow" x="-25%" y="-40%" width="160%" height="200%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#1b0a4a" flood-opacity="0.42" />
+    </filter>
+
+    <filter id="synqSheenBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" />
+    </filter>
+    <filter id="synqGlowBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="26" />
+    </filter>
+  </defs>
+
+  <g clip-path="url(#synqSquircle)">
+    <rect width="512" height="512" fill="url(#synqBody)" />
+
+    <!-- Glass sweep: a circular pane of light anchored at the top-left corner.
+         Its edge is the pale arc that crosses the tile from the top edge to the
+         left edge — a wedge with hard corners reads as a flat white wash, which
+         is what drains the mark's saturation. -->
+    <g filter="url(#synqSheenBlur)">
+      <circle cx="2" cy="-2" r="272" fill="url(#synqSheen)" />
+    </g>
+    <!-- Glossy rim along the very top-left edge. -->
+    <path
+      d="M-14 40 C24 12 92 -8 190 -12"
+      fill="none"
+      stroke="#ffffff"
+      stroke-opacity="0.38"
+      stroke-width="9"
+      filter="url(#synqSheenBlur)"
+    />
+
+    <!-- Rim shading and a soft glow where the magenta corner meets the edge. -->
+    <rect width="512" height="512" fill="url(#synqRim)" />
+    <ellipse cx="474" cy="474" rx="180" ry="160" fill="#c53bf5" opacity="0.2" filter="url(#synqGlowBlur)" />
+
+    <!-- Three bars, fanning slightly: the top one is the most steeply tilted,
+         each is longer than the one above it. Drawn as round-capped strokes so
+         the tip positions in the artwork are reproduced exactly. -->
+    <g filter="url(#synqBarShadow)" stroke="url(#synqBar)" stroke-linecap="round" fill="none">
+      <path d="M164 171 L369 230" stroke-width="40" />
+      <path d="M142 249 L406 305" stroke-width="42" />
+      <path d="M124 322 L434 367" stroke-width="44" />
+    </g>
+  </g>
+</svg>

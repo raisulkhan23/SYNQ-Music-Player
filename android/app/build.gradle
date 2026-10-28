@@ -1,0 +1,210 @@
+import groovy.json.JsonSlurper
+
+apply plugin: 'com.android.application'
+
+// -----------------------------------------------------------------------------
+// Version, from ONE source.
+//
+// `package.json` is the version of the product; the APK's `versionName` is that
+// same string, and `versionCode` is computed from it. Keeping them in sync by
+// hand is how a store upload gets rejected: Google Play refuses an APK whose
+// versionCode is not strictly greater than the one already published, and the
+// rejection arrives AFTER a multi-minute upload.
+//
+// The scheme is the one Android's own documentation suggests for deriving a
+// code from a name — `major * 10000 + minor * 100 + patch` — so 1.2.3 is 10203
+// and it increases in step with `npm version minor`.
+//
+// It only works while minor and patch stay under 100. That is not a silent
+// limit: past it the arithmetic COLLIDES (1.0.100 would compute the same code
+// as 1.1.0, and Play would reject the upload as a duplicate), so it is checked
+// here and reported as what it is.
+// -----------------------------------------------------------------------------
+def packageJsonFile = new File(rootProject.projectDir.parentFile, "package.json")
+if (!packageJsonFile.exists()) {
+    throw new GradleException("package.json not found at ${packageJsonFile} — it is the source of the app version.")
+}
+def packageVersion = new JsonSlurper().parse(packageJsonFile).version?.toString()?.trim()
+if (!packageVersion) {
+    throw new GradleException("package.json has no \"version\" field; the APK versionCode and versionName are derived from it.")
+}
+def SEMVER = packageVersion =~ /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/
+if (!SEMVER.matches()) {
+    throw new GradleException(
+        "package.json version \"${packageVersion}\" is not major.minor.patch, so an Android versionCode cannot be derived from it. " +
+        "Use e.g. 1.4.2 or 1.4.2-rc.1."
+    )
+}
+def versionMajor = SEMVER.group(1) as int
+def versionMinor = SEMVER.group(2) as int
+def versionPatch = SEMVER.group(3) as int
+if (versionMinor > 99 || versionPatch > 99) {
+    throw new GradleException(
+        "package.json version ${packageVersion} cannot be expressed as a versionCode: the scheme is major*10000 + minor*100 + patch, " +
+        "which only stays unique while minor and patch are below 100. Bump the major instead, or change the scheme in this file."
+    )
+}
+def appVersionCode = versionMajor * 10000 + versionMinor * 100 + versionPatch
+
+// -----------------------------------------------------------------------------
+// Release signing.
+//
+// The distribution key and its passwords are NOT in this repository and must
+// never be. They live in `android/keystore.properties`, which is gitignored; the
+// committed `android/keystore.properties.example` documents the four keys. On a
+// machine that has never been set up, this block is simply absent and the
+// release build falls back to the previous behaviour — an UNSIGNED APK — with a
+// warning, rather than a build failure. CI that only compiles still works.
+//
+// `storeFile` is resolved against the `android/` directory, so a relative path
+// like `synq-release.jks` means `android/synq-release.jks`. Absolute paths are
+// accepted as-is.
+//
+// Losing this key means you can never update the app on Google Play again, and
+// committing it means anyone can publish as you. Back both files up somewhere
+// that is not this working copy.
+// -----------------------------------------------------------------------------
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasReleaseSigning = keystorePropertiesFile.exists()
+def unfilledSigningKeys = []
+// A property is read in THREE places, in this order: the environment first
+// (keeps the real password out of an on-disk file entirely), then the
+// `keystore.properties` key this file documents, then the legacy key names the
+// earlier automation wrote — existing local setups keep working unchanged.
+if (hasReleaseSigning) {
+    keystorePropertiesFile.withInputStream { stream -> keystoreProperties.load(stream) }
+}
+def signingSecret = { String documentedKey, String legacyKey, String envName ->
+    def value = System.getenv(envName)
+    if (!value || !value.trim()) value = hasReleaseSigning ? keystoreProperties.getProperty(documentedKey) : null
+    if (!value || !value.trim()) value = hasReleaseSigning ? keystoreProperties.getProperty(legacyKey) : null
+    def trimmed = value?.toString()?.trim()
+    // `change-me` is the placeholder in keystore.properties.example, so copying
+    // that file without editing it counts as unfilled — which turns the
+    // tampered-keystore message, about a password somebody may believe they set,
+    // into the actual problem.
+    (!trimmed || trimmed == 'change-me') ? "" : trimmed
+}
+// A copied-and-not-filled-in properties file is the likeliest mistake here,
+// and every way it can go wrong is confusing: a blank `storeFile` resolves
+// to the `android/` directory itself, and a wrong password surfaces much
+// later as "Keystore was tampered with, or password was incorrect".
+def releaseStoreFile = signingSecret('storeFile', 'keystore.path', 'SYNQ_KEYSTORE_PATH')
+if (!releaseStoreFile) {
+    // The default inherited from the original layout: android/keystores/…
+    releaseStoreFile = "keystores/synq-release.keystore"
+}
+if (!rootProject.file(releaseStoreFile).exists()) {
+    unfilledSigningKeys.add("the keystore file (${releaseStoreFile})")
+}
+def releaseStorePassword = signingSecret('storePassword', 'keystore.password', 'SYNQ_KEYSTORE_PASSWORD')
+if (!releaseStorePassword) unfilledSigningKeys.add('storePassword (keystore.password)')
+def releaseKeyAlias = signingSecret('keyAlias', 'key.alias', 'SYNQ_KEY_ALIAS') ?: "synq"
+def releaseKeyPassword = signingSecret('keyPassword', 'key.password', 'SYNQ_KEY_PASSWORD')
+if (!releaseKeyPassword) unfilledSigningKeys.add('keyPassword (key.password)')
+
+android {
+    namespace = "com.synq.music"
+    compileSdk = rootProject.ext.compileSdkVersion
+
+    // Reported HERE, after `compileSdk` is set, and not from the top of the
+    // file: failing before the `android` block is evaluated makes AGP add its
+    // own "does not specify compileSdk" failure on top of this one, which sends
+    // the reader after a problem they do not have.
+    if (!unfilledSigningKeys.isEmpty()) {
+        throw new GradleException(
+            "android/keystore.properties still needs a real value for: ${unfilledSigningKeys.join(', ')}. " +
+            "Fill it in (see android/keystore.properties.example) or delete the file to build unsigned."
+        )
+    }
+
+    defaultConfig {
+        applicationId "com.synq.music"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // See the version block at the top of this file — both come from
+        // package.json, so there is nothing here to keep in step by hand.
+        versionCode appVersionCode
+        versionName packageVersion
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                // v1/v2/v3 signature schemes are left at AGP's defaults: with
+                // minSdk 24 that is v2+v3, which is what Play and every current
+                // Android release verify against.
+                storeFile rootProject.file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+/**
+ * Say it out loud when a release build is about to produce an unsigned APK.
+ *
+ * `app-release-unsigned.apk` is not installable, and the failure it causes —
+ * "there is no such file", or a silent sideload refusal — looks nothing like
+ * its cause. A missing keystore.properties is a setup step somebody forgot, so
+ * it is reported as exactly that at the moment it matters, instead of as a
+ * mysterious missing-signed-APK later.
+ */
+gradle.taskGraph.whenReady { graph ->
+    if (hasReleaseSigning) return
+    // assembleRelease (APK) and bundleRelease (AAB, which is what Play actually
+    // wants) are both affected — neither is publishable unsigned.
+    def buildingRelease = graph.allTasks.any { task ->
+        def name = task.name.toLowerCase()
+        name.contains("release") && (name.startsWith("assemble") || name.startsWith("bundle"))
+    }
+    if (buildingRelease) {
+        logger.warn("SYNQ: android/keystore.properties is missing, so this release build will be UNSIGNED and cannot be installed or published. Copy android/keystore.properties.example and point it at your keystore.")
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

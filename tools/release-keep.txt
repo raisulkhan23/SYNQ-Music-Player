@@ -1,0 +1,11 @@
+# Files whose public copy is intentionally different from the development copy.
+#
+# The sync tool never overwrites these, and instead warns when the development
+# version has changed since — so a sanitised file cannot be silently reverted by
+# the next release, and a real change to it cannot be silently dropped either.
+#
+# Keep this list as short as possible. Anything here is a file the maintainer
+# has to reconcile by hand.
+
+# Deployment-specific trusted origins replaced with a documented placeholder.
+src/convex/auth.ts
