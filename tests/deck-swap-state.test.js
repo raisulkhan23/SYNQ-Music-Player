@@ -60,7 +60,7 @@ describe("the store resyncs when the listeners follow a deck swap", () => {
     // rebind of an idle spare deck would flash the spinner.
     const body = bindBody();
     expect(body).toMatch(
-      /isBuffering:\s*\n?\s*currentlySounding && audio\.readyState < HTMLMediaElement\.HAVE_FUTURE_DATA/,
+      /isBuffering:\s*currentlySounding\s*&&\s*audio\.readyState\s*<\s*HTMLMediaElement\.HAVE_FUTURE_DATA/,
     );
   });
 
