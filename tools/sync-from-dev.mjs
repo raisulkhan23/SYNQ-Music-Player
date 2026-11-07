@@ -113,7 +113,10 @@ function run(cmd, cmdArgs, options = {}) {
 }
 
 function git(cmdArgs, options = {}) {
-  return execFileSync("git", cmdArgs, { cwd: RELEASE_ROOT, encoding: "utf8", ...options }).trim();
+  // A call with stdio: "inherit" returns null from execFileSync, so the
+  // staging step would throw on .trim() after a git command that succeeded.
+  const out = execFileSync("git", cmdArgs, { cwd: RELEASE_ROOT, encoding: "utf8", ...options });
+  return (out ?? "").trim();
 }
 
 /** Every publishable file under one manifest entry, as { rel, abs }. */
@@ -212,6 +215,9 @@ function sync() {
 
 function checks() {
   if (!existsSync(path.join(RELEASE_ROOT, "node_modules"))) run("npm", ["ci"]);
+  // build/icon.ico is generated, not committed, and one suite asserts it is a
+  // real multi-image ICO — so a fresh checkout fails that test without this.
+  run("npm", ["run", "build:icon"]);
   run("npm", ["run", "build"]);
 
   // Lint is reported, not enforced: the codebase carries pre-existing findings

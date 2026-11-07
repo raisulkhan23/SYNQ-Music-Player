@@ -17,6 +17,12 @@ import {
   setEqTreble as setEqTrebleLib,
   setEqBalance as setEqBalanceLib,
   setEqMono as setEqMonoLib,
+  setEqBands as setEqBandsLib,
+  setDeckPitch as setDeckPitchLib,
+  setRatePreservesPitch as setRatePreservesPitchLib,
+  setReverbMix as setReverbMixLib,
+  setDistortion as setDistortionLib,
+  setVolumeNormalization as setVolumeNormalizationLib,
   ensureGraph,
   hasAudioProcessing,
   describeDecks,
@@ -52,22 +58,6 @@ import {
   type TransitionPlan,
   type TransitionReason,
 } from "@/lib/transition";
-import {
-  planAutoMix,
-  type AutoMixLevel,
-  type AutoMixPlan,
-} from "@/lib/automix";
-import {
-  getCachedAnalysis,
-  setAnalysisResolver,
-  warmAnalysis,
-} from "@/lib/analysisScheduler";
-
-// AutoMix analyses the NEXT track before its boundary, which means it needs the
-// stream URL the engine would have resolved only when the boundary arrives.
-// Handing the engine's own resolver to the scheduler shares its cache and its
-// strategy — analysis can never fetch a stream playback would not accept.
-setAnalysisResolver((videoId) => ytResolve(videoId));
 import type { RGB } from "@/lib/covers";
 import {
   clampIntroSkip,
@@ -97,16 +87,12 @@ import {
   readNotificationsEnabled,
   writeNotificationsEnabled,
 } from "@/lib/notifications";
-import { toPlayableYoutube, type Playable } from "@/lib/playable";
 import {
-  failureFromEmbedCode,
-  type PlaybackFailureKind,
-} from "@/lib/playbackFallback";
-import {
-  listStoredDownloads,
-  localAudioUrl,
-  parseStoredName,
-} from "@/lib/opfsSink";
+  toPlayableYoutube,
+  SOUNDCLOUD_RESOLVE_MARKER,
+  type Playable,
+} from "@/lib/playable";
+import { localAudioUrl } from "@/lib/opfsSink";
 import { resolveViaPiped } from "@/lib/pipedResolve";
 import type { RecoCandidate } from "@/lib/recommend";
 import { DEFAULT_EXPLORATION } from "@/lib/recommend";
@@ -310,45 +296,6 @@ const localAudioUrls = new Map<string, string | null>();
  * concurrent lookups for the same track, so a prewarm and a play landing at the
  * same moment do not both stat the directory.
  */
-/**
- * Track ids whose audio is genuinely on this device.
- *
- * A synchronous set, separate from the blob-URL cache, because the ENGINE
- * CHOICE has to be made before anything is awaited: with no crossover, no EQ
- * and no gapless enabled, a YouTube track normally plays through the IFrame —
- * which cannot work offline and never reads the downloaded copy. Knowing a
- * track is on disk is the one reason to route it to the deck instead, and it
- * has to be answerable at load time rather than after a 15-second resolve.
- */
-const downloadedIds = new Set<string>();
-
-/** True when a complete copy of this track is saved on the device. */
-export function isTrackStoredLocally(id: string): boolean {
-  return downloadedIds.has(id);
-}
-
-/**
- * Read the local library once, so the engine choice is right from the first
- * click after a reload.
- *
- * `localAudioUrls` starts empty on every page load, and without this a
- * downloaded track played offline tried the IFrame first and only reached its
- * own file after a failed resolve. One directory listing at startup avoids
- * that entire wrong path.
- */
-export async function hydrateDownloadedTracks(): Promise<void> {
-  try {
-    const files = await listStoredDownloads();
-    for (const file of files) {
-      const { id } = parseStoredName(file.name);
-      if (id) downloadedIds.add(id);
-    }
-  } catch {
-    // No OPFS (private mode, unsupported browser): nothing is saved locally,
-    // which is exactly what an empty set means.
-  }
-}
-
 const localAudioPending = new Map<string, Promise<string | null>>();
 
 function primeLocalAudio(videoId: string): Promise<string | null> {
@@ -375,18 +322,18 @@ function primeLocalAudio(videoId: string): Promise<string | null> {
  * to disk instead of resolving a stream it already has.
  */
 export function noteTrackDownloaded(videoId: string): void {
-  downloadedIds.add(videoId);
   localAudioUrls.delete(videoId);
   // The cached network URL, if any, is now wrong to prefer.
   ytResolveCache.delete(videoId);
+  invalidateScResolve(videoId);
   void primeLocalAudio(videoId);
 }
 
 /** Called when a download is deleted, so the track streams again. */
 export function noteTrackRemoved(videoId: string): void {
-  downloadedIds.delete(videoId);
   localAudioUrls.set(videoId, null);
   ytResolveCache.delete(videoId);
+  invalidateScResolve(videoId);
 }
 
 /** Resolve once per track, then reuse the stream while EQ/effects are adjusted. */
@@ -430,6 +377,63 @@ const ytResolve = (videoId: string): Promise<string | null> => {
 /** Start EQ stream resolution before the user changes a slider. */
 export function prewarmYoutubeStream(videoId: string): void {
   void ytResolve(videoId);
+}
+
+// --- SoundCloud resolution ----------------------------------------------------
+//
+// SoundCloud tracks play from SoundCloud itself: the Convex action resolves
+// the track's progressive MP3 (refusing 30-second SNIP previews and HLS-only
+// uploads), and the browser streams it through /audio-proxy so the Web Audio
+// graph can tap it like any other deck source.
+
+let scResolveClient: ConvexClient | null = null;
+const scResolveCache = new Map<string, Promise<string | null>>();
+
+/**
+ * Resolve one SoundCloud track id to a proxied, playable URL.
+ *
+ * Failures resolve to null (not throw) so a dead source degrades to the
+ * store's normal "couldn't play" path with its retry affordance, rather than
+ * crashing a transition. A downloaded copy wins before any network, exactly
+ * like `ytResolve` — offline playback of a saved SoundCloud release is the
+ * same first-class path as a saved YouTube one.
+ */
+function scResolve(trackId: string): Promise<string | null> {
+  const local = localAudioUrls.get(trackId);
+  if (local !== undefined) return Promise.resolve(local);
+  const cached = scResolveCache.get(trackId);
+  if (cached) return cached;
+  const pending = primeLocalAudio(trackId).then((onDisk) => {
+    if (onDisk) return onDisk;
+    return (async (): Promise<string | null> => {
+      try {
+        scResolveClient =
+          scResolveClient ??
+          new ConvexClient(import.meta.env.VITE_CONVEX_URL as string);
+        const res = await scResolveClient.action(api.soundcloud.resolveSoundcloudStream, {
+          trackId,
+        });
+        if (res?.url) {
+          return `${audioProxyBase}?u=${encodeURIComponent(res.url)}`;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    })();
+  });
+  scResolveCache.set(trackId, pending);
+  pending
+    .then((url) => {
+      if (!url) scResolveCache.delete(trackId);
+    })
+    .catch(() => scResolveCache.delete(trackId));
+  return pending;
+}
+
+/** Forget a SoundCloud resolution (the stream died mid-play, say). */
+function invalidateScResolve(trackId: string): void {
+  scResolveCache.delete(trackId);
 }
 
 export type RepeatMode = "off" | "all" | "one";
@@ -589,24 +593,12 @@ interface PlayerStore {
   bufferedEnd: number;
   errorNonce: number;
   /**
-   * Name of the provider whose SCRIPT genuinely failed to load ("YouTube"), or
-   * null.
-   *
-   * Set only when `ytEngine.isApiBlocked()` is true — i.e. `youtube.com/
-   * iframe_api` itself never arrived. This used to be set from IFrame error 153
-   * as well, which turned a YouTube player-configuration failure (missing
-   * referrer, an `app://` document) into "your blocker is blocking YouTube" for
-   * listeners who had no blocker at all.
+   * Name of the provider a genuine EMBED-BLOCKED error came from ("YouTube"),
+   * or null. Set only by `isEmbedBlocked` codes (101/150/153), never by a
+   * timeout, a generic load failure or a removed video — so the "your blocker
+   * is blocking X" message can never be shown to someone who has no blocker.
    */
   blockedProvider: string | null;
-  /**
-   * The precise reason the LAST playback attempt failed, or null.
-   *
-   * Unlike `blockedProvider`, this distinguishes a refused embed, a
-   * removed video, an owner-disabled embed, a player error and a load timeout,
-   * so the give-up message can describe what actually happened.
-   */
-  failureKind: PlaybackFailureKind | null;
 
   // preferences
   volume: number;
@@ -647,24 +639,6 @@ interface PlayerStore {
    */
   gapless: boolean;
   toggleGapless: () => void;
-
-  /**
-   * AutoMix: align a blend to the measured beat grids of both tracks.
-   *
-   * Opt-in, because it changes where two songs meet — the intro of the incoming
-   * track may be skipped and the outgoing one may end before its last bar. It
-   * only ever REFINES a boundary the planner already decided to blend: repeat,
-   * A-B loops, paused playback and album seams are still authoritative.
-   */
-  automix: boolean;
-  setAutomix: (on: boolean) => void;
-  /** How much evidence a blend needs before AutoMix will beat-align it. */
-  automixLevel: AutoMixLevel;
-  setAutomixLevel: (level: AutoMixLevel) => void;
-  /** Why the last boundary did (or did not) use AutoMix. */
-  autoMixNote: string | null;
-  /** Non-null only while an AutoMix blend is armed or running. */
-  autoMixIndicator: string | null;
 
   /**
    * Smart intro trim: while the first seconds of a track play, watch the
@@ -1079,7 +1053,6 @@ function readSavedQueue(): { items: Playable[]; queueIndex: number } | null {
     const parsed = JSON.parse(raw) as {
       items: PersistedPlayable[];
       queueIndex: number;
-      currentId?: string | null;
     };
     const items: Playable[] = [];
     for (const p of parsed.items ?? []) {
@@ -1098,20 +1071,9 @@ function readSavedQueue(): { items: Playable[]; queueIndex: number } | null {
       }
     }
     if (items.length === 0) return null;
-    // The track that was actually playing wins over the stored position. The
-    // two can disagree — a crossfade, a rescue swap or a radio fill can move
-    // `current` without moving `queueIndex` — and restoring the position
-    // instead of the track brought back a different song than the one the
-    // listener left playing.
-    const byCurrent = parsed.currentId
-      ? items.findIndex((i) => i.id === parsed.currentId)
-      : -1;
     return {
       items,
-      queueIndex:
-        byCurrent >= 0
-          ? byCurrent
-          : Math.min(Math.max(0, parsed.queueIndex), items.length - 1),
+      queueIndex: Math.min(Math.max(0, parsed.queueIndex), items.length - 1),
     };
   } catch {
     return null;
@@ -1138,17 +1100,6 @@ const initialCrossfade = normalizeCrossfade(
   readNum("ss.crossfade", DEFAULT_CROSSFADE),
 );
 const initialGapless = readBool("ss.gapless", DEFAULT_GAPLESS);
-/**
- * AutoMix is off by default: it marks the ends and starts of songs, so it must
- * be a deliberate choice rather than a surprise on first play.
- */
-const initialAutoMix = readBool("ss.automix", false);
-const initialAutoMixLevel: AutoMixLevel = (() => {
-  const raw = localStorage.getItem("ss.automixLevel");
-  return raw === "conservative" || raw === "experimental"
-    ? raw
-    : "standard";
-})();
 
 /**
  * Discovery-vs-familiarity preference for recommendations, 0..100.
@@ -1245,8 +1196,6 @@ const initialLikedAlbums = readIdSet("ss.likedAlbums");
 // Long tracks remember where you stopped so you can resume exactly there.
 
 const RESUME_KEY = "ss.resume";
-/** How early AutoMix starts measuring the next track, in seconds. */
-const ANALYZE_AHEAD_SECONDS = 60;
 const RESUME_MIN_DURATION = 300; // only tracks ≥ 5 min
 
 /** Latest saved position for a track (for the Continue Listening UI). */
@@ -1396,13 +1345,14 @@ export interface LastPlayedSnapshot {
   coverUrl: string;
   duration: number;
   /**
-   * The durable "recently played" record. Only `"youtube"` is possible now
-   * that Jamendo is a discovery index rather than a playback source, so
-   * restoring history can no longer mislabel a track as one that plays
-   * through the `<audio>` element.
+   * The durable "recently played" record. `"soundcloud"` joined `"youtube"`
+   * when SoundCloud became a first-class playable source; a restored history
+   * row re-resolves through the same source it recorded, so a track never
+   * comes back labelled as playing through an engine that cannot play it.
    */
-  source: "youtube";
+  source: "youtube" | "soundcloud";
   youtubeId?: string;
+  soundcloudId?: string;
   audioUrl: string;
   at: number;
 }
@@ -1431,6 +1381,7 @@ function saveLastPlayed(track: Playable): void {
       duration: track.duration,
       source: track.source,
       youtubeId: track.youtubeId,
+      soundcloudId: track.soundcloudId,
       audioUrl: track.audioUrl,
       at: Date.now(),
     };
@@ -1516,6 +1467,7 @@ function recordHistory(track: Playable): void {
           albumName: track.albumName,
           coverUrl: track.coverUrl,
           youtubeId: track.youtubeId,
+          soundcloudId: track.soundcloudId,
           audioUrl: track.audioUrl,
           playCount: existing.playCount + 1,
           at: Date.now(),
@@ -1543,6 +1495,7 @@ function lastSnapshotOf(track: Playable): LastPlayedSnapshot {
     duration: track.duration,
     source: track.source,
     youtubeId: track.youtubeId,
+    soundcloudId: track.soundcloudId,
     audioUrl: track.audioUrl,
     at: Date.now(),
   };
@@ -2178,11 +2131,16 @@ function audioElementIsSource(t: Playable | null | undefined): boolean {
   if (!t) return false;
   return (
     t.audioUrl === "stream" ||
+    // A SoundCloud track is deck-owned by definition: it resolves lazily to
+    // a proxied MP3 and never plays through the IFrame engine.
+    t.audioUrl === SOUNDCLOUD_RESOLVE_MARKER ||
+    t.source === "soundcloud" ||
     t.audioUrl.includes("audio-proxy") ||
     t.audioUrl.includes("googlevideo") ||
     t.audioUrl.includes("videoplayback") ||
     t.audioUrl.includes("piped") ||
     t.audioUrl.includes("odycdn") ||
+    t.audioUrl.includes("sndcdn") ||
     // A non-YouTube direct URL (catalog tracks) also plays via the element.
     (!t.youtubeId && /^https?:\/\//.test(t.audioUrl))
   );
@@ -2398,8 +2356,6 @@ let transition: {
   incomingStarted: boolean;
   /** Track id currently loaded onto the spare deck, if any. */
   preparedFor: string | null;
-  /** Where a beat-aligned AutoMix blend enters the incoming track. */
-  incomingStart: number;
   /**
    * The outgoing track reached its natural end WHILE this blend was running.
    *
@@ -2432,14 +2388,8 @@ let transition: {
  * got two songs at once and no way to stop the second one.
  */
 function cancelTransition(why: string): void {
-  if (!transition) {
-    return;
-  }
+  if (!transition) return;
   const t = transition;
-  // The indicator must never outlive the blend it describes.
-  if (usePlayerStore.getState().autoMixIndicator) {
-    usePlayerStore.setState({ autoMixIndicator: null });
-  }
   if (why) t.armed = false;
   transition = null;
   if (t.incomingStarted) {
@@ -2559,74 +2509,29 @@ function armTransition(reason: TransitionReason, atSeconds: number): void {
     return;
   }
 
-  // AutoMix is evaluated BEFORE the base plan, because it can be the only
-  // reason this boundary is a blend at all: a listener who switched AutoMix on
-  // but left the crossfade length at "off" has still asked for measured
-  // transitions. The base plan is asked for the length AutoMix measured, while
-  // every guard inside `planTransition` (repeat-one, A-B loop, paused, empty
-  // queue, album seam, untappable source) stays authoritative over the mode.
-  //
-  // It reads CACHED analysis only: arming happens inside a `timeupdate`, and a
-  // fetch+decode here would stall playback at the exact moment it matters.
-  const autoPlan: AutoMixPlan | null = s.automix
-    ? planAutoMix({
-        outgoing: s.current ? getCachedAnalysis(s.current.id) : null,
-        incoming: getCachedAnalysis(next.track.id),
-        outgoingDuration: s.duration,
-        outgoingTime: atSeconds,
-        reason,
-        canCrossfade: crossfadePossible(s.current, next.track),
-        sameAlbum: sameAlbumRun(s.current, next.track),
-        config: {
-          enabled: true,
-          level: s.automixLevel,
-          crossfadeSeconds: s.crossfade,
-        },
-      })
-    : null;
+  // Ask the graph BEFORE planning, not after. Arming a crossfade the audio
+  // context cannot run produced the worst failure loop in the engine: the
+  // blend armed, was refused ("no-graph" / "context-suspended"), was cancelled,
+  // and the very next timeupdate armed it AGAIN with a slightly shorter fade —
+  // for the rest of the track. Readiness is also what lets a blend degrade
+  // honestly: when the graph is genuinely unavailable, the plan becomes
+  // gapless (if enabled) instead of a crossfade that will be refused.
+  const readiness = crossfadeReadiness();
+  const canCrossfade = crossfadePossible(s.current, next.track) && readiness.ok;
 
-  let plan = planTransition({
-    crossfadeSeconds:
-      autoPlan?.apply === true
-        ? Math.max(s.crossfade, autoPlan.seconds)
-        : s.crossfade,
+  const plan = planTransition({
+    crossfadeSeconds: s.crossfade,
     gaplessEnabled: s.gapless,
     reason,
     currentDuration: s.duration,
     currentTime: atSeconds,
     hasNext: true,
-    canCrossfade: crossfadePossible(s.current, next.track),
+    canCrossfade,
     sameAlbum: sameAlbumRun(s.current, next.track),
     abRepeatActive: s.abA !== null && s.abB !== null,
     repeatOne: s.repeat === "one",
     paused: !s.isPlaying,
   });
-
-  let incomingStart = 0;
-  let autoMixApplied = false;
-  if (autoPlan) {
-    if (autoPlan.apply && plan.mode === "crossfade") {
-      plan = {
-        ...plan,
-        mode: "crossfade",
-        seconds: autoPlan.seconds,
-        leadSeconds: autoPlan.leadSeconds,
-        because: autoPlan.because,
-      };
-      incomingStart = autoPlan.incomingStart;
-      autoMixApplied = true;
-      usePlayerStore.setState({
-        autoMixNote: `AutoMix ${autoPlan.because}.`,
-      });
-    } else if (plan.mode === "crossfade" || plan.mode === "gapless") {
-      // Only report a fallback for a boundary that would otherwise have been a
-      // blend; a repeat-one cut is not AutoMix "failing".
-      usePlayerStore.setState({
-        autoMixNote: `AutoMix fell back to a crossfade — ${autoPlan.refusal}.`,
-      });
-    }
-  }
-
   if (plan.mode === "cut") {
     traceTransition("plan=cut", {
       because: plan.because,
@@ -2662,17 +2567,9 @@ function armTransition(reason: TransitionReason, atSeconds: number): void {
 
   noteTransition(
     plan.mode === "crossfade"
-      ? `${plan.because.startsWith("beat-aligned") ? "AutoMix: " : ""}Blending over ${plan.seconds}s — ${plan.because}.`
+      ? `Blending over ${plan.seconds}s — ${plan.because}.`
       : `Next song prepared to start with no gap.`,
   );
-  if (autoMixApplied) {
-    // The chip is the only visible difference between a beat-aligned blend and
-    // an ordinary one. It is cleared by `cancelTransition` and on commit, so it
-    // can never outlive the audio it describes.
-    usePlayerStore.setState({
-      autoMixIndicator: `AutoMix · beat-aligned · ${plan.seconds.toFixed(1)}s`,
-    });
-  }
   traceTransition("armed", {
     mode: plan.mode,
     seconds: plan.seconds,
@@ -2696,7 +2593,6 @@ function armTransition(reason: TransitionReason, atSeconds: number): void {
     outgoingId: s.current?.id ?? null,
     incomingEl: null,
     incomingSlot: null,
-    incomingStart,
     advanceRecovered: false,
   };
   // Start buffering the incoming track now if there is time for it to land.
@@ -2714,8 +2610,13 @@ function prepareIncoming(track: Playable): Promise<HTMLAudioElement | null> {
   if (t) t.preparedFor = null;
   const ready = async (): Promise<HTMLAudioElement | null> => {
     let url = track.audioUrl;
-    // "stream" is a marker meaning "resolve this YouTube video", not a URL.
-    if (!audioElementIsSource(track) || track.audioUrl === "stream") {
+    // "sc:resolve" means "resolve this SoundCloud id", not a URL. The cached
+    // resolution makes this cheap, so a gapless hand-off between two
+    // SoundCloud tracks preloads exactly like a YouTube one.
+    if (track.audioUrl === SOUNDCLOUD_RESOLVE_MARKER) {
+      const scId = track.soundcloudId ?? track.id.replace(/^sc:/, "");
+      url = (await scResolve(scId)) ?? "";
+    } else if (!audioElementIsSource(track) || track.audioUrl === "stream") {
       if (!track.youtubeId) return null;
       url = (await ytResolve(track.youtubeId)) ?? "";
     }
@@ -2729,17 +2630,6 @@ function prepareIncoming(track: Playable): Promise<HTMLAudioElement | null> {
     el.preload = "auto";
     el.playbackRate = usePlayerStore.getState().rate;
     el.load();
-    // Beat-aligned AutoMix enters the incoming track on a beat rather than at
-    // 0. Apply it as soon as metadata exists, and re-assert it immediately
-    // before play() in `maybeRunCrossfade` (a seek before metadata is absorbed
-    // by some browsers).
-    if (t && t.incomingStart > 0) {
-      try {
-        el.currentTime = t.incomingStart;
-      } catch {
-        /* not seekable yet — the pre-play seek will set it */
-      }
-    }
     if (transition === t && t) t.preparedFor = track.id;
     return el;
   };
@@ -2822,8 +2712,10 @@ async function maybeRunCrossfade(remaining: number): Promise<void> {
 
   // Make sure the incoming deck really is holding this track before fading to
   // it. If the resolver was slow or failed, fall back rather than fade to
-  // silence.
-  if (!incoming.currentSrc || !incoming.currentSrc.startsWith("http")) {
+  // silence. `blob:` is a downloaded copy's object URL — as valid a source as
+  // any http one.
+  const incomingSrc = incoming.currentSrc || "";
+  if (!incomingSrc.startsWith("http") && !incomingSrc.startsWith("blob:")) {
     const prepared = await prepareIncoming(t.track);
     if (!prepared || !transition || transition !== t) return;
     if (!canCrossfadeNow()) {
@@ -2854,19 +2746,6 @@ async function maybeRunCrossfade(remaining: number): Promise<void> {
   incoming.volume = s.volume;
   incoming.muted = s.muted;
   incoming.playbackRate = s.rate;
-  // The incoming deck must be at the AutoMix entry point BEFORE it becomes
-  // audible; the gain fade would otherwise reveal a different bar of the song
-  // than the plan was aligned to.
-  if (t.incomingStart > 0) {
-    try {
-      if (Math.abs(incoming.currentTime - t.incomingStart) > 0.25) {
-        incoming.currentTime = t.incomingStart;
-      }
-    } catch {
-      cancelTransition("incoming-seek-failed");
-      return;
-    }
-  }
 
   const started = await new Promise<boolean>((resolve) => {
     let settled = false;
@@ -2961,9 +2840,8 @@ async function maybeRunCrossfade(remaining: number): Promise<void> {
  * commit a crossfaded advance through the same queue bookkeeping every other
  * advance uses without the two needing to live in the same scope.
  */
-let commitCrossfadeAdvance:
-  | ((index: number, track: Playable, startSeconds?: number) => void)
-  | null = null;
+let commitCrossfadeAdvance: ((index: number, track: Playable) => void) | null =
+  null;
 
 /**
  * The UNGATED queue advance, hoisted to module scope for `handleEnded`.
@@ -3016,13 +2894,7 @@ function commitTransition(
   }
   swapActiveDeck();
   releaseDeck(outgoingSlot);
-  if (usePlayerStore.getState().autoMixIndicator) {
-    usePlayerStore.setState({ autoMixIndicator: null });
-  }
-  // The incoming deck has been playing from `incomingStart`, so the store's
-  // position for the new track has to begin there too or the seek bar would
-  // claim the song started at 0:00 while audio is a bar in.
-  commitCrossfadeAdvance?.(t.index, t.track, t.incomingStart || undefined);
+  commitCrossfadeAdvance?.(t.index, t.track);
 }
 
 /** Complete a crossfade: promote the incoming deck and commit the new track. */
@@ -3100,19 +2972,10 @@ function tickTransition(t: number, duration: number): void {
   const s = usePlayerStore.getState();
   if (!Number.isFinite(duration) || duration <= 0) return;
   const remaining = Math.max(0, duration - t);
-  const ahead = s.automix ? peekNextTrack() : null;
-  if (s.automix) {
-    // AutoMix decisions are made synchronously at arming time, so the analysis
-    // has to be FINISHED by then. This is the only place that knows how much
-    // time is left, which makes it the right place to start measuring — early
-    // enough that a fetch, decode and FFT pass all land before the boundary.
-    if (s.current) warmAnalysis(s.current);
-    if (remaining <= ANALYZE_AHEAD_SECONDS && ahead) warmAnalysis(ahead.track);
-  }
   if (!transition) {
     // Arm once the track is close enough to its end that preparing the next
     // one still has time to buffer.
-    const baseLead =
+    const lead =
       s.crossfade > 0
         ? preloadLead({
             mode: "crossfade",
@@ -3124,17 +2987,6 @@ function tickTransition(t: number, duration: number): void {
         : s.gapless
           ? GAPLESS_PRELOAD_LEAD_SECONDS
           : 0;
-    // AutoMix needs the same pre-roll even when the crossfade setting is off,
-    // because the measured blend is the only transition there is. Gated on both
-    // analyses being READY — not merely present — because a partial result would
-    // make `planAutoMix` refuse, and arming early for a track it will refuse
-    // only re-plans a cut on every position update.
-    const ready = (id: string) => getCachedAnalysis(id)?.status === "ready";
-    const autoMixReady =
-      !!ahead && !!s.current && ready(s.current.id) && ready(ahead.track.id);
-    const lead = autoMixReady
-      ? Math.max(baseLead, GAPLESS_PRELOAD_LEAD_SECONDS)
-      : baseLead;
     if (lead > 0 && remaining <= lead) armTransition("track-ended", t);
     return;
   }
@@ -3238,22 +3090,46 @@ function wireAudio() {
   setDeckMuted(initialMuted);
   setDeckRate(initialRate);
 
-  // Restore persisted audio settings (EQ / balance / mono / sound filter).
+  // Restore persisted audio settings (EQ / balance / mono / 10-band curve /
+  // pitch / reverb / distortion / normalization).
   try {
     const eq = JSON.parse(localStorage.getItem("ss.eq") ?? "{}") as {
       bass?: number;
       treble?: number;
       balance?: number;
       mono?: boolean;
+      bands?: number[];
       filter?: string;
     };
     if (typeof eq.bass === "number") setEqBassLib(eq.bass);
     if (typeof eq.treble === "number") setEqTrebleLib(eq.treble);
     if (typeof eq.balance === "number") setEqBalanceLib(eq.balance);
     if (eq.mono) setEqMonoLib(true);
+    if (Array.isArray(eq.bands)) setEqBandsLib(eq.bands);
     // Sound effects are intentionally session-only. Applying a persisted
     // effect after startup made Bass Boost appear at random while a track was
     // already playing; the user must explicitly enable it again.
+  } catch {
+    /* ignore */
+  }
+  try {
+    const pitch = JSON.parse(localStorage.getItem("ss.pitch") ?? "{}") as {
+      semitones?: number;
+      preserve?: boolean;
+    };
+    if (typeof pitch.preserve === "boolean") setRatePreservesPitchLib(pitch.preserve);
+    if (typeof pitch.semitones === "number")
+      setDeckPitchLib(Math.min(12, Math.max(-12, pitch.semitones)));
+  } catch {
+    /* ignore */
+  }
+  try {
+    const reverb = Number(localStorage.getItem("ss.reverb"));
+    if (Number.isFinite(reverb) && reverb > 0) setReverbMixLib(Math.min(1, reverb / 100));
+    const distortion = Number(localStorage.getItem("ss.distortion"));
+    if (Number.isFinite(distortion) && distortion > 0)
+      setDistortionLib(Math.min(100, distortion));
+    setVolumeNormalizationLib(localStorage.getItem("ss.normalize") === "1");
   } catch {
     /* ignore */
   }
@@ -3274,6 +3150,15 @@ function wireAudio() {
  * from the previous one. Handlers ignore events from an element that is no
  * longer the live deck, which is what makes a mid-swap event harmless.
  */
+/**
+ * Deck-state sync indirection — REMOVED.
+ *
+ * The eager `usePlayerStore.setState` inside `bindAudioDeck` cannot work
+ * during store construction (TDZ), and a try/catch cannot catch it in an ES
+ * module. The rebind-only gate in `bindAudioDeck` handles both concerns; no
+ * indirection is needed.
+ */
+
 function bindAudioDeck(audio: HTMLAudioElement): void {
   if (boundAudio && boundAudio !== audio) {
     for (const [type, fn] of boundAudioHandlers) {
@@ -3281,7 +3166,61 @@ function bindAudioDeck(audio: HTMLAudioElement): void {
     }
   }
   boundAudioHandlers = [];
+  // True when this call attaches to a DIFFERENT deck than the listeners were
+  // on — i.e. a swap promoted mid-play (crossfade commit, gapless hand-off).
+  // The very first bind (during store construction) has boundAudio === null.
+  const isSwap = boundAudio !== null && boundAudio !== audio;
   boundAudio = audio;
+
+  // SYNC THE STORE TO THE ELEMENT'S LIVE STATE — on a REBIND only.
+  //
+  // A deck that is promoted mid-play (crossfade commit, gapless hand-off)
+  // started playing while the store's listeners were still attached to the
+  // OUTGOING deck, so its "play" and "playing" events fired where nobody was
+  // listening. After the rebind no new event fires (the element is already
+  // playing), and every one of these fields stayed frozen at whatever the
+  // outgoing deck last reported:
+  //
+  //  - `isPlaying: false` while music audibly plays. The transition planner
+  //    reads it as `paused: true`, and `planTransition` returns "cut" for a
+  //    paused player — so the track AFTER the first successful crossfade
+  //    never blends again. One blend, then hard cuts forever, with the
+  //    progress bar still advancing.
+  //  - a stale position/duration, until the next timeupdate papered over it.
+  //
+  // Reading the element here — exactly once per rebind — is what makes the
+  // store's picture true again before the next decision is made from it.
+  //
+  // REBIND-only for a structural reason too: the FIRST bind runs inside
+  // `wireAudio()` during the store factory, before the `usePlayerStore`
+  // binding has left its temporal dead zone — an eager reference would throw
+  // on every app start. A first bind has nothing to sync anyway (the deck is
+  // fresh and idle); only a SWAP carries live state the store must adopt.
+  if (isSwap && typeof usePlayerStore !== "undefined") {
+    const bufferedEnd = (() => {
+      try {
+        return audio.buffered.length > 0
+          ? audio.buffered.end(audio.buffered.length - 1)
+          : 0;
+      } catch {
+        return 0;
+      }
+    })();
+    const currentlySounding = !audio.paused && !audio.ended;
+    usePlayerStore.setState({
+      currentTime: audio.currentTime,
+      ...(audio.duration && Number.isFinite(audio.duration)
+        ? { duration: audio.duration }
+        : {}),
+      bufferedEnd,
+      isPlaying: currentlySounding,
+      // Buffering is only meaningful for a deck that is supposed to be making
+      // sound; a paused spare deck is not "buffering".
+      isBuffering:
+        currentlySounding &&
+        audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA,
+    });
+  }
 
   const live = () => audio === getAudio();
   const on = (type: string, fn: EventListener) => {
@@ -3439,14 +3378,13 @@ function wireYoutubeEngine() {
         usePlayerStore.setState((s) => ({
           isBuffering: false,
           isPlaying: false,
-          // An IFrame error code describes YouTube's answer about the EMBED or
-          // the VIDEO. It is never evidence that the listener's browser is
-          // blocking youtube.com: 153 in particular is a player-configuration
-          // error that occurs with no blocker installed. The blocker verdict
-          // is only ever set from `isApiBlocked()` (see the play() catch), so
-          // the honest per-code reason is recorded here instead.
-          blockedProvider: ytEngine.isApiBlocked() ? "YouTube" : s.blockedProvider,
-          failureKind: failureFromEmbedCode(code),
+          // Only code 153 (embed refused → the listener's blocker) is evidence
+          // of a blocker. Owner-disabled embedding (101/150) and removed or
+          // invalid videos (2/5/100) are NOT, and must never produce the
+          // "your blocker is blocking YouTube" message.
+          blockedProvider: ytEngine.isEmbedBlocked(code)
+            ? "YouTube"
+            : s.blockedProvider,
           errorNonce: s.errorNonce + 1,
         }));
       }
@@ -3590,6 +3528,61 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
   ) => {
     const onError = () => reportLoadFailure(token, trackId);
     audio.addEventListener("error", onError, { once: true });
+  };
+
+  /**
+   * Resolve a SoundCloud track and play it through the audio deck.
+   *
+   * Reachable only from `loadTrack`'s element path (SoundCloud tracks are
+   * deck-owned), so the store state was already committed before this runs —
+   * this only has to fill in the sound. A failed resolve parks the track at
+   * the same "couldn't play" state every other failed source lands in, with
+   * the same retry affordance, instead of a silent spinner.
+   */
+  const resolveAndPlaySoundcloud = (track: Playable, resumeAt: number, seq: number) => {
+    const id = track.soundcloudId ?? track.id.replace(/^sc:/, "");
+    // The effects/EQ live on the deck, so the graph must exist before the
+    // first sc track sounds — same gesture-context rule as the filter path.
+    ensureGraph();
+    ytEngine.pause();
+    const audio = getAudio();
+    void scResolve(id)
+      .then((url) => {
+        if (seq !== loadSeq || get().current?.id !== track.id) return;
+        if (!url) {
+          invalidateScResolve(id);
+          noteTransition("This SoundCloud track wouldn't resolve — no playable stream.");
+          reportLoadFailure(seq, track.id);
+          return;
+        }
+        audio.src = url;
+        audio.playbackRate = get().rate;
+        watchAudioErrors(audio, seq, track.id);
+        audio.load();
+        if (resumeAt > 0) {
+          const applyResume = () => {
+            audio.currentTime = resumeAt;
+            usePlayerStore.setState({ currentTime: resumeAt });
+          };
+          if (audio.readyState >= 1) applyResume();
+          else
+            audio.addEventListener("loadedmetadata", applyResume, { once: true });
+        }
+        void audio.play().catch((err: unknown) => {
+          const name = (err as { name?: string } | null)?.name;
+          if (name === "NotAllowedError" || name === "AbortError") return;
+          invalidateScResolve(id);
+          reportLoadFailure(seq, track.id);
+        });
+        syncMediaSession(track, true);
+        prefetchTrack(get().queue[get().queueIndex + 1]);
+        maybeAutofillQueue();
+      })
+      .catch(() => {
+        if (seq !== loadSeq) return;
+        invalidateScResolve(id);
+        reportLoadFailure(seq, track.id);
+      });
   };
 
   /**
@@ -3746,11 +3739,10 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       duration: track.duration,
       bufferedEnd: 0,
       isBuffering: true,
-      // A failure verdict belongs to the track that produced it. A fresh load
-      // starts with no such evidence, so a later give-up on THIS track cannot
-      // inherit the previous one's diagnosis.
+      // Evidence of a blocked embed belongs to the track that produced it. A
+      // fresh load starts with no such evidence, so a later give-up on THIS
+      // track cannot inherit the previous one's blocker verdict.
       blockedProvider: null,
-      failureKind: null,
       // A-B points don't carry across tracks
       abA: null,
       abB: null,
@@ -3758,23 +3750,6 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       // definition: the next song gets its own fresh look.
       introTrimSkipped: null,
     });
-
-    // Persist the queue as the track actually changes. Only queue MUTATIONS
-    // used to save, so starting a radio or playing a row from search left the
-    // stored queue pointing at whatever was playing before: reloading during
-    // the first seconds of a new song "resumed" an unrelated older track, and
-    // a reload later in the same session brought back a different song than
-    // the one that was audible. Persisting here covers every entry point
-    // (search radio, playlists, history, next/previous) in one place.
-    {
-      const persisted = get();
-      const at = persisted.queue.findIndex((q) => q.id === track.id);
-      saveQueue(
-        persisted.queue,
-        at >= 0 ? at : persisted.queueIndex,
-        track.id,
-      );
-    }
 
     // The crossfade already has this track sounding on the deck we just
     // promoted. Do all the bookkeeping (queue, history, engagement, media
@@ -3789,9 +3764,11 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     }
 
     // A track with NO video id and no stream URL cannot play at all. This
-    // was reachable and failed SILENTLY: `audio.src = undefined` resolves to
-    // the page itself, which is never playable, so the element neither errors
-    // nor plays. Fail fast and say so instead.
+    // was reachable and failed SILENTLY: `audio.src = undefined` resolves
+    // to the page itself, which is never playable, so the element neither
+    // errors nor plays. Fail fast and say so instead. (A SoundCloud track
+    // carries the `sc:resolve` marker here, which is truthy, so it flows
+    // past this guard to the element path and resolves on demand.)
     if (!track.youtubeId && !track.audioUrl) {
       set({ isBuffering: false, isPlaying: false });
       toast.error(
@@ -3835,12 +3812,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       // the IFrame, `crossfadePossible()` returned false, and every plan
       // silently degraded to a cut. Asking for a crossfade now routes playback
       // the same way an effect preset already did.
-      // A DOWNLOADED copy is the fourth reason, and the one that makes offline
-      // playback work at all: the IFrame needs the network, so a saved track
-      // must go to the deck even with every effect switched off.
-      const wantDeckEngine =
-        wantFilter || get().crossfade > 0 || get().gapless ||
-        downloadedIds.has(track.youtubeId);
+      const wantDeckEngine = wantFilter || get().crossfade > 0 || get().gapless;
       // The decks need a RUNNING AudioContext before a blend is possible, and
       // the context is only ever created lazily. Build it here, inside the
       // gesture that started playback, so a crossfade is not permanently
@@ -3936,9 +3908,6 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       // couple of seconds, so 5s is already very generous — and the fatal
       // paths (API blocked, error 153, stream blocked) now short-circuit
       // long before this fires, so it only has to cover genuinely slow nets.
-      //
-      // A timeout is a timeout: the engine never reported PLAYING, which is not
-      // evidence of a blocker, so `failureKind` records exactly that.
       ytLoadWatchdog = setTimeout(() => {
         const state = usePlayerStore.getState();
         if (seq !== loadSeq || !state.current?.youtubeId || state.isPlaying)
@@ -3947,7 +3916,6 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
         usePlayerStore.setState((currentState) => ({
           isBuffering: false,
           isPlaying: false,
-          failureKind: "timeout",
           errorNonce: currentState.errorNonce + 1,
         }));
       }, 5_000);
@@ -3965,15 +3933,9 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
         .catch(() => {
           clearYtLoadWatchdog();
           if (seq !== loadSeq) return;
-          // The ONLY place a blocker may be named: the engine failed to load
-          // youtube.com's own script, which it measures directly. A rejected
-          // play() for any other reason is a player error.
-          const blocked = ytEngine.isApiBlocked();
           set({
             isPlaying: false,
             isBuffering: false,
-            blockedProvider: blocked ? "YouTube" : null,
-            failureKind: blocked ? "api-blocked" : "player-error",
             errorNonce: get().errorNonce + 1,
           });
         });
@@ -3986,6 +3948,29 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       if (track.audioUrl === "stream") {
         void resolveAndPlayWithFilter(track, resumeAt, false);
         return;
+      }
+      // "sc:resolve" marks a SoundCloud track: resolve its progressive MP3
+      // through the Convex action (cached per track), then play on this deck
+      // exactly like any other direct URL — EQ, crossfade and gapless all
+      // apply because it is deck-owned audio.
+      if (track.audioUrl === SOUNDCLOUD_RESOLVE_MARKER) {
+        void resolveAndPlaySoundcloud(track, resumeAt, seq);
+        return;
+      }
+      // Build the audio graph BEFORE the track starts. This path serves every
+      // deck-owned track that is not YouTube (SoundCloud, downloaded copies,
+      // direct catalog URLs) — and it never built the graph, so the first
+      // crossfade on such a track was always refused with "no-graph" and the
+      // EQ/effects were silent. Same gesture-context rule as the YouTube
+      // branch above: this runs inside the click that started playback, so
+      // the context is allowed to start running.
+      if (
+        get().crossfade > 0 ||
+        get().gapless ||
+        get().audioFilter !== "off" ||
+        hasAudioProcessing()
+      ) {
+        ensureGraph();
       }
       audio.src = track.audioUrl;
       audio.playbackRate = get().rate;
@@ -4248,21 +4233,8 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     set({ radioActive: false, radioSource: null });
   };
 
-  /**
-   * Rescue a track through the resolved audio element instead of the IFrame.
-   *
-   * The marker matters. A YouTube track's `audioUrl` is normally the
-   * `https://youtu.be/<id>` placeholder (an HTML page) or empty; leaving
-   * either in place made `loadTrack` take the IFrame branch again, so the
-   * "rescue" repeated the load that had just failed and the fallback chain
-   * burned its attempts on identical failures. Only a REAL media stream is
-   * kept as-is; everything else is marked `"stream"`, which is what makes
-   * `loadTrack` resolve the audio through SYNQ's proxy.
-   */
   const playViaStream = (track: Playable, startSeconds?: number) => {
-    const marked = audioElementIsSource(track)
-      ? track
-      : { ...track, audioUrl: "stream" };
+    const marked = { ...track, audioUrl: track.audioUrl || "stream" };
     if (
       !gatePlayback({
         kind: "playViaStream",
@@ -4339,17 +4311,13 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
    * source. Going through `playIndex` instead would re-assign `src` and
    * restart the song at zero.
    */
-  const advanceTrackForTransition = (
-    index: number,
-    track: Playable,
-    startSeconds?: number,
-  ) => {
+  const advanceTrackForTransition = (index: number, track: Playable) => {
     const s = get();
     if (index < 0 || index >= s.queue.length) return;
     if (s.queue[index]?.id !== track.id) return; // queue moved under us
     saveQueue(s.queue, index, track.id ?? null);
     set({ queueIndex: index });
-    loadTrack(s.queue[index], startSeconds, { deckAlreadyPlaying: true });
+    loadTrack(s.queue[index], undefined, { deckAlreadyPlaying: true });
   };
   // Hand the transition engine the one thing it cannot do on its own: commit
   // the queue exactly the way a normal advance does.
@@ -5235,7 +5203,6 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     bufferedEnd: 0,
     errorNonce: 0,
     blockedProvider: null,
-    failureKind: null,
 
     volume: initialVolume,
     muted: initialMuted,
@@ -5253,32 +5220,6 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     introTrimSkipped: null,
     crossfade: initialCrossfade,
     transitionNote: null,
-    automix: initialAutoMix,
-    automixLevel: initialAutoMixLevel,
-    autoMixNote: null,
-    autoMixIndicator: null,
-    setAutomix: (on: boolean) => {
-      writeSetting("ss.automix", on ? "1" : "0");
-      // A blend already in flight was decided under the old setting; re-plan it
-      // rather than letting the two disagree.
-      cancelTransition("setting-changed");
-      set({
-        automix: on,
-        autoMixNote: on
-          ? "AutoMix on — blends are aligned to the beat when both tracks can be analysed."
-          : null,
-        autoMixIndicator: null,
-      });
-    },
-    setAutomixLevel: (level: AutoMixLevel) => {
-      const next: AutoMixLevel =
-        level === "conservative" || level === "experimental"
-          ? level
-          : "standard";
-      writeSetting("ss.automixLevel", next);
-      cancelTransition("setting-changed");
-      set({ automixLevel: next });
-    },
     setCrossfade: (seconds: number) => {
       const next = normalizeCrossfade(seconds);
       writeSetting("ss.crossfade", String(next));
@@ -5485,20 +5426,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
 
     // restore queue from the last session (does not autoplay — user resumes)
     ...(savedQueue
-      ? {
-          queue: savedQueue.items,
-          queueIndex: savedQueue.queueIndex,
-          // Restoring the queue without the current track left the whole
-          // player bar unmounted (`current === null` renders the bar as
-          // nothing), so the restored queue had no reachable way to resume it:
-          // play was `togglePlay`'s queue fallback, but the Play button only
-          // exists in the bar. Seeding `current` from the restored slot shows
-          // the bar with the last track PAUSED; pressing Play re-resolves the
-          // stream through the normal engine path (a persisted queue carries
-          // no usable stream URL), so nothing autoplays and no old blob URL is
-          // ever trusted.
-          current: savedQueue.items[savedQueue.queueIndex] ?? null,
-        }
+      ? { queue: savedQueue.items, queueIndex: savedQueue.queueIndex }
       : {}),
 
     history: [],
@@ -5517,6 +5445,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
         return { likedAlbums: next };
       });
     },
+
     playTrack,
     playListOrdered,
     startPlaylistRadio,

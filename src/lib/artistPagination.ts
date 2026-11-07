@@ -1,121 +1,182 @@
 import {
+  findContinuation,
   isEndMessage,
   parseReleaseGrid,
+  parseReleaseTracks,
   type BrowseRelease,
   type BrowseTrack,
 } from "./musicBrowse";
 
 /**
- * Following an artist's discography to its actual end.
+ * Pure paging rules for the artist catalogue.
  *
- * The provider answers a release grid with up to a page of releases plus a
- * continuation token. Stopping at a fixed page count is how a discography
- * became "the first N releases": the page is honest about the rows it has, but
- * it is not the catalogue. These readers follow the token until the provider
- * says there is nothing left, with a hard ceiling that exists only to stop a
- * malformed, self-repeating token from looping forever.
+ * The Convex action used to keep its own release-grid loop and the hook kept
+ * its own tracklist loop. Two loops written at two different times drift: one
+ * grows a dedupe set, the other forgets; one bounds its pages, the other trusts
+ * the provider. Both loops must obey the SAME rules, and those rules must be
+ * testable without a network — so they live here, as pure functions over an
+ * injected "read one page" function.
  *
- * Kept dependency-free and free of Convex context so the paging rules can be
- * tested against fake pages instead of the live provider.
+ * The injected reader is `(body) => Promise<page data>`: the Convex action
+ * binds it to the rate-limited `browsePage`, tests bind it to fake pages.
  */
 
-/** Safety ceiling on release-grid pages for one artist, not a display limit. */
-export const MAX_RELEASE_PAGES = 24;
+/** Hard cap on release-grid pages followed for one artist, per call. */
+export const MAX_RELEASE_PAGES = 3;
 
-/** Safety ceiling on one release's tracklist pages. */
-export const MAX_TRACKLIST_PAGES = 24;
+/** Bounded: a malformed cursor that never advances must not loop forever. */
+export const MAX_TRACKLIST_PAGES = 4;
 
-export interface ReleaseGridRead {
+/** Shape every read-page function must satisfy. */
+export type ReadBrowsePage = (body: Record<string, unknown>) => Promise<unknown>;
+
+/** Result of following one artist's release grid to its stated end. */
+export interface ReleaseGridResult {
   releases: BrowseRelease[];
-  /** The provider ended the list (not just "we stopped"). */
+  /** Provider said there is nothing further. */
   complete: boolean;
-  /** Requests made, including the first page. */
+  /** We stopped at the page cap with more still offered. */
+  truncated: boolean;
+  /** Provider requests made (for cache/diagnostics). */
   pages: number;
+  /** True when the artist page exposed no release grid at all. */
+  empty: boolean;
+  /** Continuation tokens already followed, so a repeating token cannot loop. */
+  seenCursors: string[];
 }
 
 /**
- * Read one release grid from its first page to the end.
+ * Follow an artist's release grid(s) page by page, deduplicating by release id.
  *
- * `complete: false` means the ceiling was hit with the provider still offering
- * more — the caller must surface that rather than presenting a partial list as
- * the whole discography.
+ * The artist page's carousels point at one combined grid (`MPAD…`) — albums
+ * and "Singles & EPs" usually share it, and the `gridIds` set deduplicates
+ * that. Paging stops on the first of: an explicit end-of-list message, a page
+ * with no cursor, a page with no rows, or `MAX_RELEASE_PAGES`.
  */
 export async function readReleaseGrid(
-  fetchFirst: () => Promise<unknown>,
-  fetchContinuation: (cursor: string) => Promise<unknown>,
-  maxPages: number = MAX_RELEASE_PAGES,
-): Promise<ReleaseGridRead> {
+  readPage: ReadBrowsePage,
+  gridIds: string[],
+): Promise<ReleaseGridResult> {
   const releases: BrowseRelease[] = [];
   const seen = new Set<string>();
-  const seenCursors = new Set<string>();
+  const seenCursors: string[] = [];
+  let truncated = gridIds.length > 0;
   let pages = 0;
 
-  const collect = (page: unknown): void => {
-    for (const release of parseReleaseGrid(page).releases) {
-      if (seen.has(release.id)) continue;
-      seen.add(release.id);
-      releases.push(release);
-    }
-  };
-
-  let page = await fetchFirst();
-  pages += 1;
-  for (;;) {
-    // An end-of-list response carries a message and no rows. It is a real
-    // answer, not a failed page.
-    if (isEndMessage(page)) return { releases, complete: true, pages };
-    collect(page);
-    const cursor = parseReleaseGrid(page).nextCursor;
-    if (!cursor) return { releases, complete: true, pages };
-    // A token that repeats itself would fetch the same page forever.
-    if (seenCursors.has(cursor)) return { releases, complete: false, pages };
-    if (pages >= maxPages) return { releases, complete: false, pages };
-    seenCursors.add(cursor);
-    page = await fetchContinuation(cursor);
+  for (const gridId of gridIds) {
+    let page: unknown = await readPage({ browseId: gridId });
     pages += 1;
+    for (;;) {
+      const parsed = parseReleaseGrid(page);
+      for (const release of parsed.releases) {
+        if (seen.has(release.id)) continue;
+        seen.add(release.id);
+        releases.push(release);
+      }
+      const cursor = parsed.nextCursor;
+      if (!cursor || seenCursors.includes(cursor) || pages >= MAX_RELEASE_PAGES) {
+        // Either the provider has nothing left (its continuation answers with
+        // an end-of-list message) or we stopped at the cap.
+        if (!cursor || seenCursors.includes(cursor)) truncated = false;
+        break;
+      }
+      seenCursors.push(cursor);
+      page = await readPage({ continuation: cursor });
+      pages += 1;
+      if (isEndMessage(page)) {
+        truncated = false;
+        break;
+      }
+      const nextPage = parseReleaseGrid(page);
+      if (nextPage.releases.length === 0) {
+        truncated = false;
+        break;
+      }
+    }
   }
+
+  // The stated end: the provider said there is nothing further.
+  const stated: ReleaseGridResult = {
+    releases,
+    complete: true,
+    truncated: false,
+    pages,
+    /** True when the artist page exposed no release grid at all. */
+    empty: releases.length === 0,
+    seenCursors,
+  };
+  if (truncated) {
+    // We stopped at the page cap with more still offered — the one state
+    // that must never be presented as complete.
+    return { ...stated, complete: false, truncated: true };
+  }
+  return stated;
+}
+
+/** Result of following one release's tracklist to its stated end. */
+export interface TracklistResult {
+  tracks: BrowseTrack[];
+  /** Cursor to continue from, or null when the provider (honestly) ended. */
+  nextCursor: string | null;
+  /** Provider requests made. */
+  pages: number;
+  /** True when we stopped at MAX_TRACKLIST_PAGES with a cursor still offered. */
+  truncated: boolean;
+  /** Continuation tokens already followed. */
+  seenCursors: string[];
 }
 
 /**
- * Read one release's complete tracklist.
+ * Follow one release's tracklist through its continuation tokens.
  *
- * Same contract as the release grid: follow the token, stop on the provider's
- * end, and keep a ceiling for a malformed loop. Version differences survive
- * because identity is the provider's recording id (`videoId`), never the title:
- * a live take and the studio take are two rows, while the same recording seen
- * twice is one.
+ * `readPage` receives `{ browseId }` for the first call and `{ continuation }`
+ * for every later one — the same shapes the Convex `releaseTracks` action
+ * accepts. A token that repeats (a provider quirk) is treated as the end
+ * rather than as a new page, so a broken cursor cannot loop forever.
  */
-export async function readTracklist(
-  fetchPage: (args: {
-    releaseId: string;
-    cursor?: string;
-  }) => Promise<{ tracks: BrowseTrack[]; nextCursor: string | null }>,
+export async function readTracklistPages(
+  readPage: ReadBrowsePage,
   releaseId: string,
-  isCancelled: () => boolean,
-  maxPages: number = MAX_TRACKLIST_PAGES,
-): Promise<BrowseTrack[]> {
-  const all: BrowseTrack[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
+): Promise<TracklistResult> {
+  const tracks: BrowseTrack[] = [];
+  const seenCursors: string[] = [];
+  let truncated = false;
+  let pages = 0;
+  let cursor: string | null = null;
 
-  for (let page = 0; page < maxPages; page++) {
-    if (isCancelled()) return all;
-    const result = await fetchPage({
-      releaseId,
-      ...(cursor ? { cursor } : {}),
-    });
-    all.push(...result.tracks);
-    const next = result.nextCursor;
-    if (!next) break;
-    if (seenCursors.has(next)) break;
-    seenCursors.add(next);
+  for (;;) {
+    const page: unknown = cursor
+      ? await readPage({ continuation: cursor })
+      : await readPage({ browseId: releaseId });
+    pages += 1;
+    const parsed = parseReleaseTracks(page);
+    tracks.push(...parsed.tracks);
+    // An end-of-list message carries no rows and no cursor: report the list
+    // as finished instead of pointing at a page that will never arrive.
+    const next = parsed.tracks.length === 0 ? null : findContinuation(page);
+    if (!next || seenCursors.includes(next) || pages >= MAX_TRACKLIST_PAGES) {
+      if (next && seenCursors.includes(next)) {
+        truncated = false; // repeating token — treat as the end, not a cap hit
+      } else if (next && pages >= MAX_TRACKLIST_PAGES) {
+        truncated = true;
+      }
+      cursor = null;
+      break;
+    }
+    seenCursors.push(next);
     cursor = next;
   }
 
   const seen = new Set<string>();
-  return all.filter((track) => {
-    if (!track.videoId || seen.has(track.videoId)) return false;
-    seen.add(track.videoId);
-    return true;
-  });
+  return {
+    tracks: tracks.filter((track) => {
+      if (!track.videoId || seen.has(track.videoId)) return false;
+      seen.add(track.videoId);
+      return true;
+    }),
+    nextCursor: cursor,
+    pages,
+    truncated,
+    seenCursors,
+  };
 }

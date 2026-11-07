@@ -21,22 +21,6 @@ import type { FileSink } from "@/lib/downloadManager";
 
 const DIR = "synq-downloads";
 
-/**
- * The manifest that turns a directory of opaque files back into a library.
- *
- * OPFS entry names only survive as `<trackId>__<title>`: enough to find a file
- * again, not enough to render a row (artist, album, licence, size) or to play
- * the track after a reload. Keeping the metadata next to the audio is what
- * makes the downloads page a real library instead of a file listing, and it is
- * what offline playback reads when the network — and therefore every metadata
- * lookup — is gone.
- *
- * It lives in the same directory as the audio on purpose: deleting the audio
- * deletes its row, and cache cleanup that clears disposable caches cannot
- * reach it. The manifest holds no audio, so it stays tiny.
- */
-export const MANIFEST_NAME = "synq-downloads.json";
-
 export function opfsSupported(): boolean {
   return (
     typeof navigator !== "undefined" &&
@@ -71,22 +55,6 @@ function parseName(name: string): { id: string; filename: string } {
 }
 
 /**
- * Names that are not a finished track.
- *
- * `.part` is our resumable partial, and `.crswap` is the swap file the browser
- * itself stages writes into while a `createWritable` stream is open. Neither
- * is music, and listing either as a download would over-report what is saved.
- */
-function isTransientName(name: string): boolean {
-  return /\.(?:part|crswap)$/.test(name) || name === MANIFEST_NAME;
-}
-
-/** The finished entry a transient name belongs to, or the name itself. */
-function baseNameOf(name: string): string {
-  return name.replace(/\.(?:part|crswap)(?:\.crswap)?$/, "");
-}
-
-/**
  * Every FINISHED download on this device, read from the real filesystem.
  *
  * WHY THIS EXISTS. `DownloadManager` keeps its records in a `Map`, so a page
@@ -117,7 +85,7 @@ export async function listStoredDownloads(): Promise<StoredFile[]> {
       for await (const handle of iterable.values()) names.push(handle.name);
     }
     for (const name of names) {
-      if (isTransientName(name)) continue;
+      if (name.endsWith(".part")) continue;
       try {
         const handle = await directory.getFileHandle(name);
         const file = await handle.getFile();
@@ -141,159 +109,14 @@ export async function listStoredDownloads(): Promise<StoredFile[]> {
 
 /** Remove one stored download by its OPFS entry name. */
 export async function deleteStoredDownload(name: string): Promise<boolean> {
-  if (!opfsSupported() || name === MANIFEST_NAME) return false;
+  if (!opfsSupported()) return false;
   try {
     const directory = await dir();
     await directory.removeEntry(name);
-    // The library row goes with the audio, so a deleted file cannot leave a
-    // playable-looking entry behind.
-    const { id } = parseName(name);
-    if (id) await removeManifestEntry(id);
     return true;
   } catch {
     return false;
   }
-}
-
-/** One completed download, as the library knows it. */
-export interface DownloadedTrack {
-  /** The id playback looks the copy up by (a YouTube id or `jamendo:<id>`). */
-  id: string;
-  /** The human-readable file name, e.g. `Artist - Title.mp3`. */
-  filename: string;
-  size: number;
-  title: string;
-  artistName: string;
-  albumName: string;
-  coverUrl: string;
-  duration: number;
-  /** The licensed release this file came from. */
-  providerId: string;
-  licenseUrl: string;
-  attribution: string;
-  contentType: string;
-  completedAt: number;
-}
-
-/**
- * Serialised writes.
- *
- * Two transfers can finish at the same moment, and read-modify-write on one
- * JSON file would lose one of them. Every mutation therefore queues behind the
- * previous one.
- */
-let manifestQueue: Promise<unknown> = Promise.resolve();
-
-async function readManifest(): Promise<Record<string, DownloadedTrack>> {
-  if (!opfsSupported()) return {};
-  try {
-    const directory = await dir();
-    const handle = await directory.getFileHandle(MANIFEST_NAME);
-    const text = await (await handle.getFile()).text();
-    const parsed = JSON.parse(text) as {
-      version?: number;
-      tracks?: Record<string, DownloadedTrack>;
-    };
-    const tracks = parsed?.tracks;
-    if (!tracks || typeof tracks !== "object") return {};
-    const out: Record<string, DownloadedTrack> = {};
-    for (const [id, entry] of Object.entries(tracks)) {
-      if (entry && typeof entry === "object" && entry.id === id) out[id] = entry;
-    }
-    return out;
-  } catch {
-    // Missing, unreadable or corrupt: the audio still exists, so the library
-    // reports nothing rather than inventing rows.
-    return {};
-  }
-}
-
-async function writeManifest(
-  tracks: Record<string, DownloadedTrack>,
-): Promise<void> {
-  if (!opfsSupported()) return;
-  try {
-    const directory = await dir();
-    const handle = await directory.getFileHandle(MANIFEST_NAME, {
-      create: true,
-    });
-    const writer = await handle.createWritable();
-    await writer.write(JSON.stringify({ version: 1, tracks }));
-    await writer.close();
-  } catch {
-    // A manifest that cannot be written must not fail a finished download:
-    // the audio is already on disk and `listStoredDownloads` will still show
-    // it, just without metadata.
-  }
-}
-
-function enqueueManifest(task: () => Promise<void>): Promise<void> {
-  const next = manifestQueue.then(task, task);
-  manifestQueue = next.catch(() => undefined);
-  return next.catch(() => undefined);
-}
-
-/** Record a completed transfer. Called only after the bytes are committed. */
-export async function recordDownloadedTrack(
-  entry: DownloadedTrack,
-): Promise<void> {
-  if (!opfsSupported() || !entry.id) return;
-  await enqueueManifest(async () => {
-    const tracks = await readManifest();
-    tracks[entry.id] = entry;
-    await writeManifest(tracks);
-  });
-}
-
-/** Every completed download the library knows about, newest first. */
-export async function readDownloadedTracks(): Promise<DownloadedTrack[]> {
-  const tracks = await readManifest();
-  return Object.values(tracks).sort((a, b) => b.completedAt - a.completedAt);
-}
-
-async function removeManifestEntry(id: string): Promise<void> {
-  await enqueueManifest(async () => {
-    const tracks = await readManifest();
-    if (!(id in tracks)) return;
-    delete tracks[id];
-    await writeManifest(tracks);
-  });
-}
-
-/**
- * Remove a track's saved copy: audio, any partial, and its library row.
- *
- * Deliberately keyed by TRACK id, because that is what the player, the hub and
- * the manifest all identify a track by. Deleting by manager id used to leave
- * the real file in place — the row vanished and the song kept playing offline.
- */
-export async function removeDownloadedTrack(trackId: string): Promise<boolean> {
-  if (!opfsSupported() || !trackId) return false;
-  let removed = false;
-  try {
-    const directory = await dir();
-    const names: string[] = [];
-    const iterable = directory as unknown as {
-      entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
-    };
-    if (typeof iterable.entries === "function") {
-      for await (const [name] of iterable.entries()) names.push(name);
-    }
-    for (const name of names) {
-      if (name === MANIFEST_NAME) continue;
-      if (parseName(baseNameOf(name)).id !== trackId) continue;
-      try {
-        await directory.removeEntry(name);
-        removed = true;
-      } catch {
-        /* already gone */
-      }
-    }
-  } catch {
-    return false;
-  }
-  await removeManifestEntry(trackId);
-  return removed;
 }
 
 export { parseName as parseStoredName };
@@ -337,24 +160,9 @@ export class OpfsSink implements FileSink {
   }
 
   async bytesWritten(): Promise<number> {
-    // WHILE A WRITER IS OPEN the file's reported size is NOT what has been
-    // written: `createWritable` stages the data in a `.crswap` side file and
-    // the real entry stays at its last closed size until `close()`. Reading the
-    // file here therefore returned 0 for a fresh download, the engine asked for
-    // the same first range again and again, and the swap file grew without
-    // bound instead of finishing. The in-memory count is exact while the
-    // writer is open; the file is authoritative only once it has been closed
-    // (which is also the crash-recovery path, where it may legitimately be
-    // shorter than what was in flight).
-    if (this.writer) return this.knownBytes;
     if (this.handle) {
-      try {
-        this.knownBytes = (await this.handle.getFile()).size;
-      } catch {
-        // The entry is gone: it was promoted to its final name by `commit()`
-        // or removed by `cancel()`. The last known count is all that is left,
-        // and throwing here turned a finished download into a failed one.
-      }
+      // Authoritative, not a counter: this survives a crash mid-write.
+      this.knownBytes = (await this.handle.getFile()).size;
     }
     return this.knownBytes;
   }
@@ -380,16 +188,13 @@ export class OpfsSink implements FileSink {
   }
 
   async truncate(to: number): Promise<void> {
-    // An open writer cannot shrink the file it is writing, so the partial is
-    // closed and reopened. Only reached when a range came back short, where
-    // the bytes BEFORE the segment must survive: `keepExistingData` is what
-    // preserves them. Dropping it produced a file of the right LENGTH full of
-    // zeros — worse than a short one, because it looks complete.
+    // An open writer cannot shrink a file, so the partial is rewritten.
+    // Only reached when a range came back short.
     await this.closeWriter();
     if (!this.handle) throw new Error("Sink is closed");
-    const writer = await this.handle.createWritable({ keepExistingData: true });
-    await writer.truncate(to);
-    await writer.close();
+    const empty = await this.handle.createWritable({ keepExistingData: false });
+    await empty.truncate(to);
+    await empty.close();
     this.knownBytes = to;
   }
 
@@ -398,31 +203,19 @@ export class OpfsSink implements FileSink {
     if (!this.handle) throw new Error("Sink is closed");
     const directory = await dir();
     const name = safeName(this.filename, this.id);
-    const partName = `${name}.part`;
-    // Downloading a track again has to REPLACE its previous copy. The old code
-    // only copied when the final name was absent, so a re-download quietly
-    // kept the stale audio and left a `.part` file behind for ever.
-    await directory.removeEntry(name).catch(() => undefined);
-    // Absent on the normal path: copy the verified `.part` across, then drop
-    // it. Only reached after the engine confirmed the full length.
-    const from = await directory.getFileHandle(partName, { create: false });
-    const file = await from.getFile();
-    const to = await directory.getFileHandle(name, { create: true });
-    const writer = await to.createWritable();
-    // Copied in bounded chunks, not as one `arrayBuffer()`: a long track is
-    // tens of megabytes and holding it all in memory is the exact cost OPFS
-    // exists to avoid.
-    const CHUNK = 4 * 1024 * 1024;
-    try {
-      for (let at = 0; at < file.size; at += CHUNK) {
-        const slice = file.slice(at, Math.min(file.size, at + CHUNK));
-        await writer.write(new Uint8Array(await slice.arrayBuffer()));
-      }
-    } finally {
+    await directory.getFileHandle(name, { create: false }).catch(async () => {
+      // Absent on the normal path: copy the verified `.part` across, then drop
+      // it. Only reached after the engine confirmed the full length.
+      const from = await directory.getFileHandle(`${name}.part`, {
+        create: false,
+      });
+      const file = await from.getFile();
+      const to = await directory.getFileHandle(name, { create: true });
+      const writer = await to.createWritable();
+      await writer.write(await file.arrayBuffer());
       await writer.close();
-    }
-    await directory.removeEntry(partName).catch(() => undefined);
-    this.knownBytes = file.size;
+      await directory.removeEntry(`${name}.part`);
+    });
   }
 
   async discardIncomplete(): Promise<void> {
@@ -475,7 +268,7 @@ export async function openStoredTrack(trackId: string): Promise<File | null> {
     // The filename half varies (it is the human-readable title), so the track
     // id prefix is what identifies the file.
     const match = names.find(
-      (n) => !isTransientName(n) && parseName(n).id === trackId,
+      (n) => !n.endsWith(".part") && parseName(n).id === trackId,
     );
     if (!match) return null;
     const handle = await directory.getFileHandle(match);
@@ -525,4 +318,82 @@ export async function localAudioUrl(trackId: string): Promise<string | null> {
 /** True when this track has a complete copy on the device. */
 export async function isDownloaded(trackId: string): Promise<boolean> {
   return (await openStoredTrack(trackId)) !== null;
+}
+
+/**
+ * Prepend bytes (an ID3 tag) to a FINISHED download, in place, streamed.
+ *
+ * Runs AFTER the engine has committed a verified file — the tag is decoration
+ * on a complete download, never part of the transfer, so resume math and
+ * integrity checks never see it. The replacement is written to a sibling
+ * name first and only swapped in when complete: a crash mid-tag leaves the
+ * original file intact rather than a half-tagged one.
+ *
+ * Returns true when the file now starts with the given bytes, false when the
+ * tag could not be applied (no OPFS, entry gone mid-run). Failure must never
+ * cost the listener their download.
+ */
+export async function prependToStoredDownload(
+  trackId: string,
+  prefix: Uint8Array,
+): Promise<boolean> {
+  if (!opfsSupported() || !trackId || prefix.length === 0) return false;
+  try {
+    const directory = await dir();
+    const names: string[] = [];
+    const iterable = directory as unknown as {
+      entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
+    };
+    if (typeof iterable.entries === "function") {
+      for await (const [name] of iterable.entries()) names.push(name);
+    }
+    const target = names.find(
+      (n) => !n.endsWith(".part") && !n.endsWith(".tagging") && parseName(n).id === trackId,
+    );
+    if (!target) return false;
+
+    const sourceHandle = await directory.getFileHandle(target);
+    const source = await sourceHandle.getFile();
+    // Already tagged? A re-download that overwrote its own copy could be run
+    // through this twice; a file starting with "ID3" is left alone.
+    const head = new Uint8Array(await source.slice(0, 3).arrayBuffer());
+    if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) return true;
+
+    const stagingName = `${target}.tagging`;
+    const staging = await directory.getFileHandle(stagingName, { create: true });
+    const writer = await staging.createWritable();
+    await writer.write(new Uint8Array(prefix));
+    // Stream the original through: disk-to-disk, never a full-size buffer.
+    const reader = source.stream().getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) await writer.write(value);
+    }
+    await writer.close();
+
+    // Swap: drop the original, then move the staged copy into its name.
+    await directory.removeEntry(target);
+    const stagedHandle = await directory.getFileHandle(stagingName);
+    type MovableHandle = FileSystemFileHandle & {
+      move?: (name: string) => Promise<void>;
+    };
+    const movable = stagedHandle as MovableHandle;
+    if (typeof movable.move === "function") {
+      // Chromium: a native same-directory rename — no second pass, no copy.
+      await movable.move(target);
+    } else {
+      // Fallback: byte-copy through memory. The staged copy already exists,
+      // so the worst case is a large transient buffer, not data loss.
+      const stagedFile = await stagedHandle.getFile();
+      const finalHandle = await directory.getFileHandle(target, { create: true });
+      const finalWriter = await finalHandle.createWritable();
+      await finalWriter.write(await stagedFile.arrayBuffer());
+      await finalWriter.close();
+      await directory.removeEntry(stagingName);
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }

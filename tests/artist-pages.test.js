@@ -298,23 +298,16 @@ describe("routes", () => {
     expect(mainSrc).toMatch(/path=\s*"\/album\/:artist\/:album"/);
   });
 
-  test("both pages load through the guarded lazy loader, inside the boundary", () => {
-    // Routes are lazy for bundle size, but they must go through `lazyRoute`,
-    // which races the fetch against a timeout. A route chunk whose deps 404
-    // after a dev-server restart used to leave the listener on "Loading..."
-    // forever, with only a manual refresh recovering it — the guard turns that
-    // into a rejection the PageBoundary below can render as a retry card.
-    expect(mainSrc).toMatch(
-      /const Artist = lazyRoute\(\(\) => import\("\.\/pages\/Artist\.tsx"\)\);/,
-    );
-    expect(mainSrc).toMatch(
-      /const Album = lazyRoute\(\(\) => import\("\.\/pages\/Album\.tsx"\)\);/,
-    );
-    // No bare static import left behind — that would silently re-inflate the
-    // entry chunk.
-    expect(mainSrc).not.toMatch(
-      /^import (Artist|Album) from "\.\/pages\/(Artist|Album)\.tsx";/m,
-    );
+  test("both pages load through static imports, inside the boundary", () => {
+    // The route layer settled on eager static imports: nothing is fetched at
+    // navigation time, so the dev-server restart bug (a route chunk whose
+    // deps 404 under a stale `?v=` hash, leaving the listener on "Loading..."
+    // forever) cannot occur. See the route-layer comment in `src/main.tsx`
+    // and `dead-route-chunk.test.js`, which pin that contract for all pages.
+    expect(mainSrc).toMatch(/^import Artist from "\.\/pages\/Artist\.tsx";/m);
+    expect(mainSrc).toMatch(/^import Album from "\.\/pages\/Album\.tsx";/m);
+    // No dynamic import left behind — that is the failure mode returning.
+    expect(mainSrc).not.toMatch(/import\("\.\/pages\/(Artist|Album)\.tsx"\)/);
   });
 
   test("both routes sit inside the authenticated group", () => {

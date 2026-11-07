@@ -4,11 +4,11 @@
     <meta charset="UTF-8" />
     <!-- `?v=2`: a /public asset keeps its URL, so an unversioned href lets the
        browser keep serving the previous mark from cache. Bump on every change. -->
-    <link rel="icon" type="image/svg+xml" href="/logo.svg?v=6" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=4" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=4" />
-    <link rel="mask-icon" href="/logo.svg?v=6" color="#b12cf0" />
-    <!-- Social share card. Regenerate with: node scripts/generate-logo-assets.mjs -->
+    <link rel="icon" type="image/svg+xml" href="/logo.svg?v=4" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=3" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=3" />
+    <link rel="mask-icon" href="/logo.svg" color="#c42ad6" />
+    <!-- Social share card. Regenerate with: python3 scripts/generate-brand-assets.py -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="SYNQ" />
     <meta property="og:title" content="SYNQ — Your music, uninterrupted." />
@@ -30,7 +30,7 @@
     <!-- iOS ignores the manifest for the home-screen icon and uses this link
        instead, so it needs the full-bleed 180px render (a transparent corner
        shows as black on iOS). `?v=1` because /public assets keep their URL. -->
-    <link rel="apple-touch-icon" href="/icons/apple-180.png?v=4" />
+    <link rel="apple-touch-icon" href="/icons/apple-180.png?v=3" />
     <!-- Installed-app hints. `mobile-web-app-capable` is the legacy name iOS
        still reads; `apple-mobile-web-app-*` are what Safari actually uses. -->
     <meta name="mobile-web-app-capable" content="yes" />
@@ -53,13 +53,6 @@
       content="SYNQ — your music, uninterrupted. Music-only discovery with smart queues, playlists, lyrics and a listening visualizer, on desktop and mobile."
     />
     <meta name="theme-color" content="#12141c" />
-    <!-- YouTube's embedded player rejects requests without a usable HTTP
-       referrer and reports "Error 153: Video player configuration error".
-       That was surfacing as a false "your blocker is blocking YouTube". The
-       default is already this value in modern browsers, but a hosting
-       provider or extension that sets `no-referrer` document-wide would strip
-       it, so it is stated explicitly here. -->
-    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="preconnect" href="https://www.youtube.com" />
     <link rel="preconnect" href="https://www.youtube-nocookie.com" />
     <link rel="preconnect" href="https://i.ytimg.com" />

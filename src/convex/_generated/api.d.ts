@@ -36,10 +36,12 @@ import type * as recommendVectors from "../recommendVectors.js";
 import type * as sharing from "../sharing.js";
 import type * as smartPlaylists from "../smartPlaylists.js";
 import type * as social from "../social.js";
+import type * as soundcloud from "../soundcloud.js";
 import type * as spotify from "../spotify.js";
 import type * as tidal from "../tidal.js";
 import type * as userPreferences from "../userPreferences.js";
 import type * as users from "../users.js";
+import type * as wordLyrics from "../wordLyrics.js";
 import type * as youtube from "../youtube.js";
 
 import type {
@@ -77,10 +79,12 @@ declare const fullApi: ApiFromModules<{
   sharing: typeof sharing;
   smartPlaylists: typeof smartPlaylists;
   social: typeof social;
+  soundcloud: typeof soundcloud;
   spotify: typeof spotify;
   tidal: typeof tidal;
   userPreferences: typeof userPreferences;
   users: typeof users;
+  wordLyrics: typeof wordLyrics;
   youtube: typeof youtube;
 }>;
 

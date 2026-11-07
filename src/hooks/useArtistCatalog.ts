@@ -2,7 +2,7 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "@/convex/_generated/api";
-import { readTracklist } from "@/lib/artistPagination";
+import { readTracklistPages } from "@/lib/artistPagination";
 import type { BrowseRelease, BrowseTrack } from "@/lib/musicBrowse";
 
 /**
@@ -76,10 +76,35 @@ type FetchTracks = (args: {
   cursor?: string;
 }) => Promise<{ tracks: BrowseTrack[]; nextCursor: string | null }>;
 
-// The tracklist reader lives in a dependency-free module so its paging rules
-// (multi-page albums, repeated cursors, duplicate rows, version identity) can
-// be tested without a React runtime or a live provider.
-export { readTracklist };
+/**
+ * One release's tracklist, following continuation tokens until it ends.
+ * Exported so the album page can read exactly one release without hydrating a
+ * whole artist's catalogue first.
+ *
+ * The paging rules (page cap, repeating-cursor safety, dedupe) live in the
+ * pure `artistPagination` module so the artist page, the album page and the
+ * tests all exercise the SAME loop; this wrapper only adapts the action's
+ * fetch shape to the module's reader shape and keeps cancellation support.
+ */
+export async function readTracklist(
+  fetchPage: FetchTracks,
+  releaseId: string,
+  isCancelled: () => boolean,
+): Promise<BrowseTrack[]> {
+  const result = await readTracklistPages(
+    (body) => {
+      if (isCancelled()) return Promise.resolve({});
+      const releaseIdArg = typeof body.browseId === "string" ? body.browseId : releaseId;
+      const cursorArg = typeof body.continuation === "string" ? body.continuation : undefined;
+      return fetchPage({
+        releaseId: releaseIdArg,
+        ...(cursorArg ? { cursor: cursorArg } : {}),
+      });
+    },
+    releaseId,
+  );
+  return result.tracks;
+}
 
 /** Albums first: they carry most of a catalogue and are what listeners open. */
 const KIND_PRIORITY: Record<string, number> = {

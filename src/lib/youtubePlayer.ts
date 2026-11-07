@@ -139,25 +139,6 @@ const OFFSCREEN_STYLE =
 let apiPromise: Promise<void> | null = null;
 
 /**
- * True when `youtube.com/iframe_api` itself failed to load (script `error` or
- * timeout). This is the ONLY observation in the engine that is evidence that
- * the listener's network/extension is stopping YouTube, and therefore the only
- * thing allowed to produce "your blocker is blocking YouTube".
- *
- * An IFrame error code is NOT that evidence: 153 is a player-configuration
- * failure (YouTube rejects the embed when it gets no usable HTTP referrer), and
- * it happens with no blocker installed at all — including in this app's own
- * `app://` Electron shell. Blaming a blocker for it is a false accusation the
- * listener cannot act on.
- */
-let apiBlocked = false;
-
-/** Whether the YouTube IFrame API script failed to load for this session. */
-export function isApiBlocked(): boolean {
-  return apiBlocked;
-}
-
-/**
  * How long to wait for `youtube.com/iframe_api` before declaring it blocked.
  * The script is tiny and normally arrives in well under a second, so this is
  * deliberately short: the listener is waiting on music, not on a spinner.
@@ -175,14 +156,7 @@ function loadApi(): Promise<void> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (!err) {
-        apiBlocked = false;
-        return resolve();
-      }
-      // The script never arrived: a content blocker, DNS filtering or a
-      // captive network is genuinely stopping youtube.com. This is the flag
-      // the UI may attribute a blocker to.
-      apiBlocked = true;
+      if (!err) return resolve();
       // Don't cache the failure forever: the listener may allow youtube.com
       // (or switch the blocker off) and press play again.
       apiPromise = null;
@@ -193,7 +167,7 @@ function loadApi(): Promise<void> {
       () =>
         finish(
           new Error(
-            "YouTube's player script could not be loaded — youtube.com may be blocked on this network",
+            "YouTube player API timed out — a blocker may be blocking youtube.com",
           ),
         ),
       API_LOAD_TIMEOUT_MS,
@@ -213,7 +187,7 @@ function loadApi(): Promise<void> {
     tag.onerror = () =>
       finish(
         new Error(
-          "YouTube's player script could not be loaded — youtube.com may be blocked on this network",
+          "YouTube player API blocked — a blocker may be blocking youtube.com",
         ),
       );
     document.head.appendChild(tag);
@@ -244,137 +218,96 @@ function startPolling() {
   }, 250);
 }
 
-/**
- * In-flight player construction.
- *
- * `ensurePlayer()` is called by `warmup()`, by the first `play()`, and by the
- * fullscreen player's own retry loop. Those can overlap — warmup starts one
- * build during idle time, the listener clicks before it finishes — and with a
- * bare `if (player) return player` check each overlapping call appended ANOTHER
- * host element and constructed ANOTHER YT.Player. Two live iframes meant two
- * audio sources for one track (doubled, out-of-phase sound), an overlay that
- * could show the wrong video, and a leak: only the last `player` was ever
- * addressable. Sharing one promise makes construction single-shot.
- */
-let playerPromise: Promise<YtPlayerLike> | null = null;
-
 async function ensurePlayer(): Promise<YtPlayerLike> {
+  await loadApi();
   if (player) return player;
-  if (playerPromise) return playerPromise;
+  const YT = window.YT;
+  if (!YT?.Player) throw new Error("YouTube IFrame API unavailable");
 
-  playerPromise = (async () => {
-    await loadApi();
-    if (player) return player;
-    const YT = window.YT;
-    if (!YT?.Player) throw new Error("YouTube IFrame API unavailable");
+  // YT.Player REPLACES the element you pass it with an iframe. So we pass an
+  // inner div (mountEl) and keep a stable wrapper (hostEl) that we can move
+  // between the off-screen parking spot and the fullscreen video frame.
+  const host = document.createElement("div");
+  host.style.cssText = OFFSCREEN_STYLE;
+  const mount = document.createElement("div");
+  mount.style.cssText = "width:100%;height:100%;";
+  host.appendChild(mount);
+  document.body.appendChild(host);
+  hostEl = host;
 
-    // YT.Player REPLACES the element you pass it with an iframe. So we pass an
-    // inner div (mountEl) and keep a stable wrapper (hostEl) that we can move
-    // between the off-screen parking spot and the fullscreen video frame.
-    const host = document.createElement("div");
-    host.style.cssText = OFFSCREEN_STYLE;
-    const mount = document.createElement("div");
-    mount.style.cssText = "width:100%;height:100%;";
-    host.appendChild(mount);
-    document.body.appendChild(host);
-    hostEl = host;
-
-    player = await new Promise<YtPlayerLike>((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error("YT player init timed out")),
-        10_000,
-      );
-      try {
-        new YT.Player(mount, {
-          height: "100%",
-          width: "100%",
-          playerVars: {
-            autoplay: 1,
-            controls: 0,
-            disablekb: 1,
-            playsinline: 1,
-            rel: 0,
-            // The IFrame API requires the embedding origin for postMessage.
-            // It only accepts a real web origin, so it is omitted in the
-            // Electron shell (`app://`) and in `file://` documents where
-            // sending one would be a lie about where the frame is embedded.
-            ...(isWebOrigin() ? { origin: window.location.origin } : {}),
-            // Strip YouTube's own UI: no branding, no annotations, no captions,
-            // no fullscreen button.
-            modestbranding: 1,
-            iv_load_policy: 3,
-            cc_load_policy: 0,
-            fs: 0,
+  player = await new Promise<YtPlayerLike>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("YT player init timed out")),
+      10_000,
+    );
+    try {
+      new YT.Player(mount, {
+        height: "100%",
+        width: "100%",
+        playerVars: {
+          autoplay: 1,
+          controls: 0,
+          disablekb: 1,
+          playsinline: 1,
+          rel: 0,
+          // Strip YouTube's own UI: no branding, no annotations, no captions,
+          // no fullscreen button.
+          modestbranding: 1,
+          iv_load_policy: 3,
+          cc_load_policy: 0,
+          fs: 0,
+        },
+        events: {
+          onReady: (e) => {
+            clearTimeout(timeout);
+            applyRate();
+            resolve(e.target);
           },
-          events: {
-            onReady: (e) => {
-              clearTimeout(timeout);
-              applyRate();
-              resolve(e.target);
-            },
-            onStateChange: (e) => {
-              lastState = e.data;
-              if (e.data === 1 || e.data === 0) {
-                // Read back the real video id whenever the player reports a
-                // state, so autoplay drift is detectable.
-                try {
-                  const data = e.target.getVideoData?.();
-                  if (data?.video_id) actualVideoId = data.video_id;
-                } catch {
-                  /* player not ready */
-                }
+          onStateChange: (e) => {
+            lastState = e.data;
+            if (e.data === 1 || e.data === 0) {
+              // Read back the real video id whenever the player reports a
+              // state, so autoplay drift is detectable.
+              try {
+                const data = e.target.getVideoData?.();
+                if (data?.video_id) actualVideoId = data.video_id;
+              } catch {
+                /* player not ready */
               }
-              if (slaveMode) return; // muted visual slave — store never hears this
-              handlers.onStateChange?.(e.data);
-              // YouTube resets the playback rate on state changes — re-apply
-              // whenever the video (re)starts playing or buffers.
-              if (e.data === 1 || e.data === 3) applyRate();
-              // Hide YouTube's pause overlay (related-videos grid etc.) by
-              // showing our own cover while not actively playing.
-              setPauseCoverVisible(e.data !== 1);
-              // State 0 (ended) doesn't fire onTime again — push a final time
-              // sample so the store can run A-B repeat / auto-advance logic.
-              if (e.data === 0) {
-                try {
-                  const d = e.target.getDuration() ?? 0;
-                  handlers.onTime?.(d > 0 ? d : 0, d);
-                } catch {
-                  /* ignore */
-                }
+            }
+            if (slaveMode) return; // muted visual slave — store never hears this
+            handlers.onStateChange?.(e.data);
+            // YouTube resets the playback rate on state changes — re-apply
+            // whenever the video (re)starts playing or buffers.
+            if (e.data === 1 || e.data === 3) applyRate();
+            // Hide YouTube's pause overlay (related-videos grid etc.) by
+            // showing our own cover while not actively playing.
+            setPauseCoverVisible(e.data !== 1);
+            // State 0 (ended) doesn't fire onTime again — push a final time
+            // sample so the store can run A-B repeat / auto-advance logic.
+            if (e.data === 0) {
+              try {
+                const d = e.target.getDuration() ?? 0;
+                handlers.onTime?.(d > 0 ? d : 0, d);
+              } catch {
+                /* ignore */
               }
-            },
-            onError: (e) => {
-              if (slaveMode) return;
-              handlers.onError?.(e.data);
-            },
+            }
           },
-        });
-      } catch (err) {
-        clearTimeout(timeout);
-        reject(err instanceof Error ? err : new Error("YT player init failed"));
-      }
-    });
+          onError: (e) => {
+            if (slaveMode) return;
+            handlers.onError?.(e.data);
+          },
+        },
+      });
+    } catch (err) {
+      clearTimeout(timeout);
+      reject(err instanceof Error ? err : new Error("YT player init failed"));
+    }
+  });
 
-    startPolling();
-    return player;
-  })()
-    // A failed build must not poison every later attempt: without this the
-    // rejected promise stayed cached and every play reported the first error
-    // forever, even after the network recovered.
-    .catch((error: unknown) => {
-      playerPromise = null;
-      throw error;
-    });
-
-  return playerPromise;
-}
-
-/** True when the document has a real web origin (not `app://` or `file://`). */
-function isWebOrigin(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    (window.location.protocol === "https:" || window.location.protocol === "http:")
-  );
+  startPolling();
+  return player;
 }
 
 export function setHandlers(next: YtEngineHandlers): void {
@@ -479,7 +412,7 @@ function ensureShields(): void {
     const logo = document.createElement("img");
     // Versioned for the same reason as the in-app Logo: a /public asset keeps
     // its URL, so an unversioned one can be served stale from cache.
-    logo.src = publicAsset("logo.svg?v=6");
+    logo.src = publicAsset("logo.svg?v=4");
     logo.style.cssText = "width:56px;opacity:.5;";
     logo.onerror = () => {
       logo.style.display = "none";
@@ -657,23 +590,15 @@ export function isFatalError(code: number): boolean {
 }
 
 /**
- * TRUE when YouTube REFUSED TO SERVE THIS EMBED — an embed refusal, nothing
- * more.
+ * TRUE only when the failure is evidence that the LISTENER's browser blocked
+ * the embed — the one case where it is honest to name a blocker.
  *
- * 153 is YouTube's "video player configuration error". It is what the player
- * reports when the embed request carries no usable HTTP referrer (a strict
- * `Referrer-Policy`, a `file://`/`app://` document, a privacy browser) or when
- * a proxy/CDN answers the iframe with a challenge. A content blocker can also
- * cause it, but it is one of several causes and not evidence of one.
- *
- * THIS IS NOT "A BLOCKER IS PRESENT". The UI must never turn this code into
- * "your blocker is blocking YouTube": that message accused listeners who had
- * no blocker installed, and offered a fix they could not apply. `isApiBlocked()`
- * is the only blocker signal in this engine, because it is the only one
- * measured directly (the API script itself never loaded).
- *
- * 101/150 (the VIDEO OWNER disabled embedding) and 2/5/100 (bad or removed
- * video) are deliberately excluded — the embed was not refused by configuration.
+ * Only 153 qualifies: it is what a network blocker (uBlock, AdGuard,
+ * 1Blocker) produces when it stops `youtube.com/embed/*`. Deliberately
+ * EXCLUDES 101/150 (the VIDEO OWNER disabled embedding — nothing the listener
+ * can fix) and 2/5/100 (bad or removed video). Attributing any of those to a
+ * blocker is exactly how the "your blocker is blocking YouTube" message used
+ * to appear to listeners who had no blocker running.
  */
 export function isEmbedBlocked(code: number): boolean {
   return code === 153;

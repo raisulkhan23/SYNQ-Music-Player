@@ -94,13 +94,7 @@ export default function Artist() {
   const [filter, setFilter] = useState("");
   const [expandedFor, setExpandedFor] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<ReleaseType | "all">("all");
-  /**
-   * Rendered song rows. The catalogue itself is never truncated: "Show all"
-   * reveals it in pages so a 500-track discography does not mount 500 rows at
-   * once — and, crucially, the button says how many are left instead of
-   * silently stopping at a hard-coded 200.
-   */
-  const [songLimit, setSongLimit] = useState(200);
+  const [songLimit, setSongLimit] = useState(100);
 
   useEffect(() => {
     if (!query) return;
@@ -339,9 +333,22 @@ export default function Artist() {
   const artwork = catalog.identity?.thumbnail ?? catalogItems[0]?.thumbnail ?? "";
   const canPlay = searchView.popular.length > 0 || catalogItems.length > 0;
   const showAllSongs = expandedFor === query;
+  /**
+   * How many songs the expanded "All songs" list renders before the listener
+   * presses "Show more songs".
+   *
+   * This is NOT the old silent ceiling: the old hard cap hid songs the page
+   * never mentioned, while Play queued a different (50-row) sample, so "all
+   * songs" was a lie twice over. The limit here only paces RENDERING — the
+   * full loaded list is one "Show more" press away, the button states how
+   * many rows are waiting, and Play always queues everything loaded. As
+   * tracklists keep arriving the list grows past the limit again, and the
+   * button reappears.
+   */
   const songsForList = showAllSongs
     ? visibleCatalog.slice(0, songLimit)
     : visibleCatalog.slice(0, 10);
+  const songsBeyondLimit = Math.max(0, visibleCatalog.length - songLimit);
   const upstreamEmpty =
     catalog.identity === null && !searchFailed && (popularSource?.length ?? 0) === 0;
 
@@ -390,6 +397,7 @@ export default function Artist() {
                   type="button"
                   onClick={() =>
                     playAll(
+                      // Everything the catalogues have loaded — never a sample.
                       catalogItems.length > 0 ? catalogItems : searchView.popular,
                     )
                   }
@@ -586,14 +594,7 @@ export default function Artist() {
                         ? `${release.tracks.length} ${
                             release.tracks.length === 1 ? "track" : "tracks"
                           }`
-                        : catalog.loadingTracks
-                          ? "tracklist loading…"
-                          : // Queued behind "Read more tracklists", not in flight.
-                            // Calling this "loading" made the page look hung on an
-                            // artist with more releases than one batch.
-                            release.failed
-                            ? "tracklist unread"
-                            : "tracklist not read yet",
+                        : "tracklist loading…",
                     ]
                       .filter(Boolean)
                       .join(" · ")}
@@ -624,9 +625,7 @@ export default function Artist() {
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {catalogItems.length} loaded
                 {catalog.hasMoreTracks
-                  ? catalog.loadingTracks
-                    ? ` · reading ${catalog.releases.length - catalog.hydrated} more releases…`
-                    : ` · ${catalog.releases.length - catalog.hydrated} releases still unread`
+                  ? ` · reading ${catalog.releases.length - catalog.hydrated} more releases…`
                   : " · every listed release read"}
               </p>
             </div>
@@ -670,24 +669,22 @@ export default function Artist() {
             ))}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            {showAllSongs && visibleCatalog.length > songLimit ? (
+            {showAllSongs && songsBeyondLimit > 0 ? (
               <button
                 type="button"
-                onClick={() => setSongLimit((limit) => limit + 200)}
+                onClick={() => setSongLimit((limit) => limit + 100)}
                 className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
               >
-                <ChevronDown className="size-3.5" />
-                Show {Math.min(200, visibleCatalog.length - songLimit)} more songs
-                ({visibleCatalog.length - songLimit} left)
+                Show more songs
+                <span className="text-[10px] text-muted-foreground/70">
+                  ({songsBeyondLimit} more songs loaded)
+                </span>
               </button>
             ) : null}
             {visibleCatalog.length > 10 || showAllSongs ? (
               <button
                 type="button"
-                onClick={() => {
-                  setExpandedFor(showAllSongs ? null : query);
-                  setSongLimit(200);
-                }}
+                onClick={() => setExpandedFor(showAllSongs ? null : query)}
                 className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
               >
                 {showAllSongs ? (
@@ -699,11 +696,6 @@ export default function Artist() {
                   ? "Show less"
                   : `Show all ${visibleCatalog.length} songs`}
               </button>
-            ) : null}
-            {showAllSongs && visibleCatalog.length > 10 ? (
-              <span className="text-[11px] text-muted-foreground">
-                Showing {songsForList.length} of {visibleCatalog.length}
-              </span>
             ) : null}
             {catalog.hasMoreTracks ? (
               <button

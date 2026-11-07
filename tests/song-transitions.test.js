@@ -445,7 +445,12 @@ describe("crossfade is built on two real audio decks", () => {
   });
 
   test("both decks feed the same EQ / balance / effects chain", () => {
-    expect(audioSource).toMatch(/gainOut\.connect\(analyser\)/);
+    // The chain now ends `gainOut → postFxDry → [normalization] → analyser`
+    // (the post-effect stage the 10-band EQ, reverb, distortion and volume
+    // normalization added) — the invariant is that the decks' shared
+    // downstream chain still reaches the one analyser.
+    expect(audioSource).toMatch(/gainOut\.connect\(postFxDry\)/);
+    expect(audioSource).toMatch(/postFxDry\.connect\(analyser\)|postFxDry\.connect\(normGain\)/);
     expect(audioSource).toMatch(/filterSource = d\[activeDeck\]\.source/);
   });
 
@@ -631,11 +636,11 @@ describe("queue and playback state stay correct", () => {
 
   test("a crossfaded load does not reassign src and restart the song", () => {
     expect(playerSource).toMatch(/if \(opts\?\.deckAlreadyPlaying\) \{/);
-    // The start position is passed through so an AutoMix blend that entered the
-    // incoming track on a beat is reflected in the store's own position; a
-    // plain crossfade passes `undefined` and still starts at zero.
+    // The incoming track is already playing on the promoted deck, so the start
+    // position comes from that element itself — `loadTrack` passes `undefined`
+    // and must NOT restart the song at zero or re-assign its src.
     expect(playerSource).toMatch(
-      /loadTrack\(s\.queue\[index\], startSeconds, \{ deckAlreadyPlaying: true \}\)/,
+      /loadTrack\(s\.queue\[index\], undefined, \{ deckAlreadyPlaying: true \}\)/,
     );
   });
 

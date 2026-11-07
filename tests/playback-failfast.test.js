@@ -135,11 +135,13 @@ describe("the wired-up player actually does this", () => {
 
   test("the blocked stream-rescue paths report failure too", () => {
     // A blocked stream host fails silently on the rescue path as well, and
-    // that rescue is the last thing standing when YouTube is blocked.
+    // that rescue is the last thing standing when YouTube is blocked. The
+    // fourth watcher is the SoundCloud deck path, which resolves on demand
+    // and must report a dead stream the same way the others do.
     const guards = playerSrc.match(
       /watchAudioErrors\(audio, seq, track\.id\)/g,
     );
-    expect(guards?.length).toBe(3);
+    expect(guards?.length).toBe(4);
   });
 
   test("the dead cross-provider fallback is gone from the rescue chain", () => {
@@ -165,17 +167,17 @@ describe("the wired-up player actually does this", () => {
     expect(barSrc).toMatch(/blockedProvider: s\.blockedProvider/);
   });
 
-  test("the store only records a blocker when youtube.com's own script failed", () => {
-    // CORRECTED: this used to assert `blockedProvider: ytEngine.isEmbedBlocked(code)`,
-    // i.e. that IFrame error 153 was treated as proof of a blocker. It is not:
-    // 153 is YouTube's player-configuration error (no usable referrer), and it
-    // is reported with no blocker installed — including inside this app's own
-    // `app://` Electron shell. The blocker verdict now comes only from the one
-    // observation that measures it: the API script never loaded.
-    expect(playerSrc).toMatch(/blockedProvider: ytEngine\.isApiBlocked\(\)/);
-    expect(playerSrc).not.toMatch(/blockedProvider: ytEngine\.isEmbedBlocked/);
-    // Each IFrame code is still classified, so the message names the real cause.
-    expect(playerSrc).toMatch(/failureKind: failureFromEmbedCode\(code\)/);
+  test("the store only records a blocker for the embed-refused error code", () => {
+    // CORRECTED twice: this test once asserted `isEmbedBlocked(code)` (any
+    // embed error proved a blocker), then asserted an `isApiBlocked()` engine
+    // that no longer exists. The settled contract — which the engine unit
+    // tests earlier in this file pin — is that ONLY code 153 (embed refused)
+    // names a blocker: owner-disabled embedding (101/150) and removed or
+    // invalid videos (2/5/100) must never produce the "your blocker is
+    // blocking YouTube" message. The store reads that verdict from the one
+    // function the engine owns.
+    expect(playerSrc).toMatch(/blockedProvider: ytEngine\.isEmbedBlocked\(code\)/);
+    expect(playerSrc).not.toMatch(/isApiBlocked/);
     // And it must be cleared at the start of every load, so one blocked track
     // cannot brand the next, unrelated one as blocked too.
     const clears = playerSrc.match(/blockedProvider: null/g) ?? [];

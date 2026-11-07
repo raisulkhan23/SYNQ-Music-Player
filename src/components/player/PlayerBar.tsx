@@ -8,8 +8,8 @@ import { VolumeControl } from "@/components/player/VolumeControl";
 import { accentFromString, dominantColor } from "@/lib/covers";
 import { formatTime } from "@/lib/format";
 import { toPlayableYoutube } from "@/lib/playable";
-import { giveUpNotice, matchScore } from "@/lib/playbackFallback";
-import { artistSearchQuery, cleanTrackTitle } from "@/lib/youtube";
+import { giveUpNotice } from "@/lib/playbackFallback";
+import { artistSearchQuery } from "@/lib/youtube";
 import { getAudio } from "@/lib/audio";
 import {
   publishPlaybackState,
@@ -320,10 +320,6 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
   const setFullscreen = usePlayerStore((s) => s.setFullscreen);
   const setAccent = usePlayerStore((s) => s.setAccent);
   const errorNonce = usePlayerStore((s) => s.errorNonce);
-  // Non-null only while AutoMix is mixing this boundary; a chip is the whole
-  // indicator, because a beat-aligned blend is otherwise indistinguishable
-  // from a long crossfade.
-  const autoMixIndicator = usePlayerStore((s) => s.autoMixIndicator);
   const replaceCurrentStream = usePlayerStore((s) => s.replaceCurrentStream);
   const playViaStream = usePlayerStore((s) => s.playViaStream);
   const searchSameSong = useAction(api.youtube.searchYoutube);
@@ -392,12 +388,11 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
       rescueExhausted.current = true;
       toast.error(
         giveUpNotice({
-          // A blocker is named ONLY from `isApiBlocked()` (youtube.com's own
-          // script never loaded). Every other failure report its real cause
-          // instead: "embed-refused" is YouTube rejecting the embed (often a
-          // missing referrer), which happens with no blocker at all.
+          // Named ONLY when the engine actually reported a refused embed
+          // (101/150/153). Otherwise this is an ordinary failure and blaming a
+          // blocker would be a false accusation against a listener who has
+          // none running.
           blockedProvider: s.blockedProvider,
-          failure: s.failureKind,
           hasAlternatives: (track.alternatives ?? []).length > 0,
         }),
         { id: "yt-fallback" },
@@ -417,7 +412,6 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
       toast.error(
         giveUpNotice({
           blockedProvider: s.blockedProvider,
-          failure: s.failureKind,
           hasAlternatives: alternatives.length > 0,
         }),
         { id: "yt-fallback" },
@@ -459,32 +453,13 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
       const artist = track.artistName.split(",")[0]?.trim() ?? "";
       void searchSameSong({ query: `${track.title} ${artist}`.trim() })
         .then(({ items }) => {
-          // The replacement must be the SAME SONG. Taking the first upload that
-          // merely shared a word swapped "Loser" (Tame Impala) for "Loser Song
-          // (From \"I'M Game\")" and kept playing, while the toast still named
-          // the song the listener chose — a substitution that is worse than
-          // silence because it sounds like it worked. `matchScore` is the
-          // app's single rule for "same song": 0.75 is an exact title (artist
-          // spelling is deliberately lenient), 0.5 is a partial title that only
-          // counts alongside a matching artist, and 0 is a different song.
-          const candidate = items
-            .filter(
-              (it) =>
-                it.id !== track.id &&
-                it.id !== track.youtubeId &&
-                !(track.alternatives ?? []).some((a) => a.id === it.id) &&
-                (it.duration === 0 ||
-                  (it.duration >= 30 && it.duration <= 900)),
-            )
-            .map((it) => ({
-              it,
-              score: matchScore(
-                { title: track.title, artist: track.artistName },
-                { title: it.title, artist: it.artist ?? "" },
-              ),
-            }))
-            .filter((c) => c.score >= 0.75)
-            .sort((a, b) => b.score - a.score)[0]?.it;
+          const candidate = items.find(
+            (it) =>
+              it.id !== track.id &&
+              it.id !== track.youtubeId &&
+              !(track.alternatives ?? []).some((a) => a.id === it.id) &&
+              (it.duration === 0 || (it.duration >= 30 && it.duration <= 900)),
+          );
           if (!candidate) {
             toast.error(giveUpNotice({ hasAlternatives: true }), {
               id: "yt-fallback",
@@ -499,11 +474,7 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
             ),
           );
           totalSwaps.current += 1;
-          // Name the upload that is actually playing, not the song that
-          // failed: the two can be different versions.
-          toast.success(`Playing "${cleanTrackTitle(candidate.title)}"`, {
-            id: "yt-fallback",
-          });
+          toast.success(`Playing "${track.title}"`, { id: "yt-fallback" });
         })
         .catch(() =>
           toast.error("Playback failed — try another song", {
@@ -523,7 +494,6 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
       toast.error(
         giveUpNotice({
           blockedProvider: s.blockedProvider,
-          failure: s.failureKind,
           hasAlternatives: alternatives.length > 0,
         }),
         { id: "yt-fallback" },
@@ -749,14 +719,6 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
                 <i />
               </span>
             </div>
-            {autoMixIndicator && (
-              <span
-                className="mt-0.5 hidden max-w-full truncate rounded-full border border-[rgb(var(--tint)_/_0.35)] bg-[rgb(var(--tint)_/_0.12)] px-1.5 py-px text-[10px] font-semibold tracking-wide text-[rgb(var(--tint))] sm:inline-block"
-                title={autoMixIndicator}
-              >
-                {autoMixIndicator}
-              </span>
-            )}
             <p className="block truncate text-xs text-muted-foreground">
               {/* Tapping the artist is the fastest route to more of the same.
                 It was static text, so finding an artist's other songs meant

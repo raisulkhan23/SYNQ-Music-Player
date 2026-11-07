@@ -25,15 +25,15 @@ const read = (relative) => readFileSync(join(root, relative), "utf8");
 describe("discover route", () => {
   const main = read("src/main.tsx");
 
-  test("is registered through the guarded lazy loader", () => {
-    // Lazy for bundle size, but it must go through `lazyRoute` so a chunk that
-    // never arrives rejects into PageBoundary instead of hanging on "Loading…".
-    expect(main).toMatch(
-      /const Discover = lazyRoute\(\(\) => import\("\.\/pages\/Discover\.tsx"\)\)/,
-    );
-    // No leftover bare static import, which would silently pull Discover back
-    // into the entry chunk.
-    expect(main).not.toMatch(/^import Discover from "\.\/pages\/Discover\.tsx";/m);
+  test("is statically imported, so no route chunk can fail to arrive", () => {
+    // The route layer went through a guarded lazy loader (`lazyRoute`) and
+    // settled on eager static imports: nothing is fetched at navigation time,
+    // so the dev-server restart bug (a stale `?v=` dep hash making the first
+    // dynamic import hang forever) cannot occur. See the route-layer comment
+    // in `src/main.tsx` and `dead-route-chunk.test.js`.
+    expect(main).toMatch(/^import Discover from "\.\/pages\/Discover\.tsx";/m);
+    // No dynamic import of the page survives — that is the failure mode.
+    expect(main).not.toMatch(/import\("\.\/pages\/Discover\.tsx"\)/);
   });
 
   test("sits inside the authenticated group with the page boundary", () => {

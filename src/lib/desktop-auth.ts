@@ -30,11 +30,7 @@
 //
 // The bridge is `window.synqDesktop` (electron/preload.cjs). Every entry point
 // answers `false`/`null` when it is absent — the hosted web build and the
-// Android shell take their existing path for sign-in unchanged.
-//
-// The bridge surface this module expects is the desktop OAuth surface from
-// electron/preload.cjs: `{ beginOAuth, onAuthResult }`. The download surface
-// from electron/preload-download.cjs is intentionally NOT expected here.
+// Android shell take their existing path unchanged.
 // ---------------------------------------------------------------------------
 
 export interface DesktopOAuthBeginParams {
@@ -60,42 +56,11 @@ export interface DesktopOAuthResult {
 /** True when the app is running inside the Electron shell AND the OAuth
  * surface of the bridge is available. */
 export function isDesktopRuntime(): boolean {
-  const desktop = typeof window !== "undefined" ? window.synqDesktop : undefined;
   return (
-    desktop !== undefined &&
-    typeof desktop.beginOAuth === "function" &&
-    typeof desktop.onAuthResult === "function"
+    typeof window !== "undefined" &&
+    !!window.synqDesktop?.beginOAuth &&
+    !!window.synqDesktop?.onAuthResult
   );
-}
-
-/**
- * The bridge with its OAuth surface narrowed to callable functions.
- *
- * `startDesktopOAuth` used to call `isDesktopRuntime()` — which returns a
- * BOOLEAN — and then use that value as if it were the bridge:
- *
- *     const desktop = isDesktopRuntime();
- *     desktop.onAuthResult(...)   // TypeError: not a function
- *
- * The gate passed, the very next line threw, and the dialog reported
- * "desktop.onAuthResult is not a function" instead of opening the browser.
- * Desktop sign-in could therefore never start, whatever the server did with
- * the redirect. Returning the bridge itself (or null) keeps one gate and one
- * object, so the two cannot drift apart again.
- */
-export function desktopOAuthBridge(): {
-  beginOAuth: (clientId: string, params: DesktopOAuthBeginParams) => void;
-  onAuthResult: (listener: (result: DesktopOAuthResult) => void) => () => void;
-} | null {
-  const desktop = typeof window !== "undefined" ? window.synqDesktop : undefined;
-  if (
-    !desktop ||
-    typeof desktop.beginOAuth !== "function" ||
-    typeof desktop.onAuthResult !== "function"
-  ) {
-    return null;
-  }
-  return { beginOAuth: desktop.beginOAuth, onAuthResult: desktop.onAuthResult };
 }
 
 /**
@@ -132,8 +97,9 @@ export async function startDesktopOAuth(
   startSignIn: (redirectTo: string) => Promise<unknown>,
   options: { timeoutMs?: number } = {},
 ): Promise<DesktopOAuthResult | null> {
-  const desktop = desktopOAuthBridge();
-  if (!desktop) return null;
+  const desktop =
+    typeof window !== "undefined" ? window.synqDesktop : undefined;
+  if (!desktop?.beginOAuth || !desktop.onAuthResult) return null;
 
   const client = `${provider}-${Date.now().toString(36)}-${Math.random()
     .toString(36)
@@ -148,25 +114,16 @@ export async function startDesktopOAuth(
   // (as an error the caller can show) instead of hanging to the timeout.
   const result = new Promise<DesktopOAuthResult | null>((resolve) => {
     const timeoutMs = options.timeoutMs ?? 5 * 60 * 1000;
-    // The subscription and the watchdog are held on one object so `finish` can
-    // release them without either becoming a `let` that TypeScript's TDZ
-    // analysis cannot see through: a shell may deliver a result synchronously
-    // from `onAuthResult`, which would hit an unassigned `const` binding.
-    const control: {
-      settled: boolean;
-      unsubscribe?: () => void;
-      timer?: ReturnType<typeof setTimeout>;
-    } = { settled: false };
+    let settled = false;
     const finish = (value: DesktopOAuthResult | null) => {
-      if (control.settled) return;
-      control.settled = true;
-      if (control.timer !== undefined) clearTimeout(control.timer);
-      control.unsubscribe?.();
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe?.();
       resolve(value);
     };
     const timer = setTimeout(() => finish(null), timeoutMs);
-    control.timer = timer;
-    control.unsubscribe = desktop.onAuthResult((incoming) => {
+    const unsubscribe = desktop.onAuthResult!((incoming) => {
       if (incoming && incoming.client === client) finish(incoming);
     });
   });

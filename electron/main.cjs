@@ -27,16 +27,6 @@ const { pathToFileURL } = require("node:url");
 const oauth = require("./oauth-deep-link.cjs");
 const tray = require("./tray.cjs");
 
-// Optional desktop download bridge for yt-dlp-backed downloads.
-// Present only on the desktop build; the web build never imports this.
-let ytDlpBridge = null;
-try {
-  ytDlpBridge = require("../src/lib/yt-dlp-bridge.mjs");
-} catch {
-  // Packaged builds may not have the source tree at this path; that is fine.
-  ytDlpBridge = null;
-}
-
 /** Where the Vite build lands. Packaged builds carry it inside app.asar. */
 const DIST = path.join(__dirname, "..", "dist");
 const APP_ORIGIN = "app://synq";
@@ -151,14 +141,6 @@ function createWindow() {
     // Matches `--background` so the first paint is not a white flash.
     backgroundColor: "#0A0B10",
     title: "SYNQ",
-    // Window and taskbar icon. The exe itself carries no embedded icon while
-    // `signAndEditExecutable` is off (rcedit needs a privilege this build
-    // environment lacks), so the window states it here. `extraResources` puts
-    // the same logo.png next to the packaged app; in development it is read
-    // from public/.
-    icon: app.isPackaged
-      ? path.join(process.resourcesPath, "logo.png")
-      : path.join(__dirname, "..", "public", "logo.png"),
     autoHideMenuBar: true,
     // The renderer draws its own chrome; the window keeps the native frame and
     // system controls so maximise/restore/snap behave like every other Windows
@@ -413,11 +395,6 @@ if (!app.requestSingleInstanceLock()) {
       tray.setMinimizeToTray(enable);
     });
 
-    // Prepare the download directory the bridge writes into, if present.
-    if (ytDlpBridge && typeof ytDlpBridge.safeMkdirDownloads === "function") {
-      try { ytDlpBridge.safeMkdirDownloads(); } catch {}
-    }
-
     createWindow();
 
     // Tray. Optional by design: without a usable icon (or a platform without
@@ -440,12 +417,6 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     // Remove the tray icon BEFORE teardown so it cannot survive the process.
     tray.unload();
-    // Abort any download the bridge is in flight. This is not a normal path
-    // today (there is no live bridge in this environment), but when one exists
-    // it must stop cleanly rather than leaving a half-written file.
-    if (ytDlpBridge && typeof ytDlpBridge.abortDownloads === "function") {
-      try { ytDlpBridge.abortDownloads(); } catch {}
-    }
   });
 
   app.on("activate", () => {

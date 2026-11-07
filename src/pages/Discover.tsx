@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useAction, useConvexAuth, useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { Compass, Loader2, Search, Sparkles, Wand2 } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
@@ -50,19 +50,7 @@ export default function Discover() {
   const [indexing, setIndexing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // `indexStatus` calls `requireOwner`, which THROWS rather than returning an
-  // empty result when there is no session. Convex re-throws that during render,
-  // so a signed-out visitor who reaches this page from the ⌘K palette got the
-  // route error card — "This page didn't load" — instead of the page. Both
-  // actions below are already try/caught, so the query is the only unguarded
-  // one. Skipping it while unauthenticated leaves `status` undefined, which
-  // `indexed = status?.indexed ?? 0` below already renders as an empty state.
-  // Same "skip" convention `usePreferencesSync` and `ShareDialog` use.
-  const { isAuthenticated } = useConvexAuth();
-  const status = useQuery(
-    api.libraryVectors.indexStatus,
-    isAuthenticated ? {} : "skip",
-  );
+  const status = useQuery(api.libraryVectors.indexStatus);
   const discover = useAction(api.libraryVectors.discover);
   const syncLibrary = useAction(api.libraryVectors.syncLibrary);
   const searchYt = useAction(api.youtube.searchYoutube);

@@ -3,6 +3,7 @@ import { action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { TTL, cacheKey, dedupeRequest, takeRateSlot } from "./providerCache";
 import { browseMusic, searchMusicArtists } from "./youtube";
+import { readReleaseGrid, MAX_RELEASE_PAGES as PAGING_MAX_RELEASE_PAGES } from "../lib/artistPagination";
 import {
   parseAlbumMeta,
   parseArtistHeader,
@@ -11,7 +12,6 @@ import {
   type BrowseRelease,
   type BrowseTrack,
 } from "../lib/musicBrowse";
-import { MAX_RELEASE_PAGES, readReleaseGrid } from "../lib/artistPagination";
 
 /**
  * The artist catalogue, from the endpoint that actually has one.
@@ -84,18 +84,21 @@ export interface ReleasesResult {
  */
 export const ARTIST_CACHE_VERSION = 2;
 
-/**
- * Version of the release-grid cache namespace.
- *
- * A cached `ReleasesResult` is the OUTPUT of the pagination loop, so a paging
- * fix cannot reach anyone holding an entry written by the old, short cap: the
- * incomplete list keeps being served for the whole 12h TTL. Bump this whenever
- * the release-list pipeline changes so those entries are left behind.
- */
-export const CATALOG_CACHE_VERSION = 3;
+/** Hard cap on release-grid pages followed in one call (kept in sync with the
+ * pure paging rules in `src/lib/artistPagination.ts`, which owns the loop). */
+export const MAX_RELEASE_PAGES = PAGING_MAX_RELEASE_PAGES;
 
-/** Safety ceiling on release-grid pages followed in one call. */
-export { MAX_RELEASE_PAGES };
+/**
+ * Version of the releases/tracklists pipeline, mixed into its cache keys.
+ *
+ * Like ARTIST_CACHE_VERSION: the cached value is parser output, so a parser or
+ * paging fix must not be shadowed by entries written before it. Bump when the
+ * release-grid or tracklist parsing changes shape.
+ */
+export const CATALOG_CACHE_VERSION = 1;
+
+/** Cap on tracklist pages followed in one call. */
+export const MAX_TRACK_PAGES = 4;
 
 /** Provider request body for a release grid page. */
 async function browsePage(body: Record<string, unknown>) {
@@ -249,44 +252,22 @@ export const artistReleases = action({
       };
       walk(artist);
 
-      const releases: BrowseRelease[] = [];
-      const seen = new Set<string>();
-      let pages = 0;
-      // Per-grid, and sticky. The old code reset this to `false` whenever ANY
-      // grid ended cleanly, so a second grid that hit the page cap was reported
-      // as a complete discography — a silent truncation, which is exactly what
-      // this flag exists to prevent.
-      let truncated = false;
-
-      for (const gridId of gridIds) {
-        const remaining = MAX_RELEASE_PAGES - pages;
-        if (remaining <= 0) {
-          truncated = true;
-          break;
-        }
-        const grid = await readReleaseGrid(
-          () => browsePage({ browseId: gridId }),
-          (cursor) => browsePage({ continuation: cursor }),
-          remaining,
-        );
-        pages += grid.pages;
-        if (!grid.complete) truncated = true;
-        for (const release of grid.releases) {
-          if (seen.has(release.id)) continue;
-          seen.add(release.id);
-          releases.push(release);
-        }
-      }
+      // The page-by-page rules (caps, end messages, dedupe, repeating-cursor
+      // safety) live in the pure module so tests can drive them against fake
+      // pages — this action only binds the rate-limited reader.
+      const paged = await readReleaseGrid(async (body) => browsePage(body), [
+        ...gridIds,
+      ]);
 
       return {
-        releases,
-        /** Provider said there is nothing further, for every grid. */
-        complete: !truncated,
-        /** Some grid still offered more when the safety ceiling was reached. */
-        truncated,
-        pages,
+        releases: paged.releases,
+        /** Provider said there is nothing further. */
+        complete: paged.complete,
+        /** We stopped at the page cap with more still offered. */
+        truncated: paged.truncated,
+        pages: paged.pages,
         /** True when the artist page exposed no release grid at all. */
-        empty: releases.length === 0,
+        empty: paged.empty,
       };
     });
 
@@ -294,10 +275,7 @@ export const artistReleases = action({
       key,
       value: result,
       provider: "youtube",
-      // A truncated answer is cached only briefly: it may be the best available
-      // now, but a retry should be able to extend it rather than have the
-      // partial list pinned for half a day.
-      ttlSeconds: result.complete ? TTL.artistCatalog : TTL.search,
+      ttlSeconds: TTL.collection,
     });
     return result;
   },
@@ -328,8 +306,14 @@ export const releaseTracks = action({
     }
 
     const key = continuation
-      ? cacheKey("youtube", "releaseTracks", { cursor: continuation })
-      : cacheKey("youtube", "releaseTracks", { releaseId: id });
+      ? cacheKey("youtube", "releaseTracks", {
+          cursor: continuation,
+          v: CATALOG_CACHE_VERSION,
+        })
+      : cacheKey("youtube", "releaseTracks", {
+          releaseId: id,
+          v: CATALOG_CACHE_VERSION,
+        });
     const cached = await ctx.runQuery(api.providerCache.cacheGet, { key });
     if (cached) {
       return cached.value as {

@@ -3,8 +3,9 @@ import {
   forgetResolved,
   rememberResolved,
 } from "@/lib/downloads";
-import { downloadProxyUrl } from "@/lib/convexSite";
+import { createTrackAdapter } from "@/lib/trackSource";
 import { authorizedFilename, refuse, type DownloadRefusal } from "@/lib/downloadAuth";
+import { buildId3Tag } from "@/lib/id3";
 
 /**
  * The authorized-download bridge: authorization -> bytes -> OPFS.
@@ -24,33 +25,79 @@ import { authorizedFilename, refuse, type DownloadRefusal } from "@/lib/download
  * and a duplicate guard. It is not the thing that was wrong — the thing that was
  * wrong was what it was pointed at. So this module keeps the engine untouched
  * and replaces only the source decision.
- *
- * ── Why the bytes come from SYNQ ────────────────────────────────────────────
- *
- * The provider's storage sends no CORS headers, so the browser cannot read a
- * licensed file directly. The transfer therefore targets `/download-proxy`,
- * which re-verifies the release server-side for every ranged request. The URL
- * is built from the release id the SERVER authorized, never from anything the
- * caller supplied, so a forged request still lands on a permission check.
  */
 
 /** What the backend said about a track. */
 export interface AuthorizationResult {
-  /** The licensed release this permission is for. */
-  providerId: string;
+  downloadUrl: string;
   filename: string;
   contentType: string;
   licenseUrl: string;
   attribution: string;
+  /** Cover art to embed, when the provider supplies one. */
+  artworkUrl?: string;
+  /** Track length in ms, for the ID3 tag. */
+  durationMs?: number;
+  /** Track title, for the ID3 tag. */
+  title?: string;
+  /** Track artist, for the ID3 tag. */
+  artist?: string;
+  /** The source that granted this download. */
+  provider?: "jamendo" | "soundcloud";
 }
 
-/** The metadata a download carries into the local library. */
-export interface DownloadTrackInfo {
-  title: string;
-  artistName: string;
-  albumName?: string;
-  coverUrl?: string;
-  duration?: number;
+const ARTWORK_FETCH_TIMEOUT_MS = 8_000;
+/** Covers above this are not worth the time — the tag still carries the text. */
+const MAX_ARTWORK_BYTES = 8 * 1024 * 1024;
+
+async function fetchArtwork(
+  url: string,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(ARTWORK_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+    if (!/^image\/(jpeg|png)$/.test(mime)) return null;
+    const buffer = await res.arrayBuffer();
+    if (buffer.byteLength === 0 || buffer.byteLength > MAX_ARTWORK_BYTES) return null;
+    return { bytes: new Uint8Array(buffer), mime };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build the ID3 tag for one authorized download.
+ *
+ * Pure decoration on top of an already-authorized transfer: a missing cover,
+ * a failed artwork fetch or a non-image response all leave the tag text-only
+ * rather than failing the download. The licence URL and attribution travel
+ * with the file because attribution is the one condition those licences carry.
+ */
+export async function buildDownloadTag(input: {
+  title?: string;
+  artist?: string;
+  attribution?: string;
+  licenseUrl?: string;
+  artworkUrl?: string;
+  durationMs?: number;
+}): Promise<Uint8Array | null> {
+  let artwork: { bytes: Uint8Array; mime: string } | null = null;
+  if (input.artworkUrl) artwork = await fetchArtwork(input.artworkUrl);
+  try {
+    return buildId3Tag({
+      title: input.title,
+      artist: input.artist,
+      durationMs: input.durationMs,
+      comment: input.attribution,
+      licenseUrl: input.licenseUrl,
+      ...(artwork ? { artwork: artwork.bytes, artworkMime: artwork.mime } : {}),
+    });
+  } catch {
+    return null;
+  }
 }
 
 /** The outcome of asking to download, with copy the UI can show verbatim. */
@@ -61,14 +108,15 @@ export type AuthorizedDownloadResult =
 /**
  * Ask the backend to authorize `trackId`, then start the transfer.
  *
- * The source URL never comes from the caller: this function only forwards the
- * SYNQ track id to the server, which decides. A client that forges its way to
- * the manager directly still cannot obtain an unauthorized file, because the
- * relay it would have to fetch from re-checks the artist's permission itself.
+ * The URL never comes from the caller: this function only forwards the SYNQ
+ * track id to the server, which decides. A client that forges its way to the
+ * manager directly still cannot obtain an unauthorized file, because the
+ * manager's adapter factory below only ever accepts URLs that arrived through
+ * `authorize`.
  */
 export async function requestAuthorizedDownload(
   authorize: (args: { trackId: string }) => Promise<
-    | ({ authorized: true } & AuthorizationResult)
+    | { authorized: true } & AuthorizationResult
     | { authorized: false; decision: DownloadRefusal }
   >,
   trackId: string,
@@ -81,8 +129,6 @@ export async function requestAuthorizedDownload(
      * for the Jamendo release. Default: same as `trackId`.
      */
     storageKey?: string;
-    /** Title/artist/artwork, so the saved file can describe itself offline. */
-    meta?: DownloadTrackInfo;
   } = {},
 ): Promise<AuthorizedDownloadResult> {
   const storageKey = opts.storageKey ?? trackId;
@@ -105,38 +151,36 @@ export async function requestAuthorizedDownload(
   if (!decision.authorized) {
     return { started: false, refusal: decision.decision };
   }
-
-  const proxyUrl = downloadProxyUrl(decision.providerId);
-  if (!proxyUrl || !/^https:\/\//i.test(proxyUrl)) {
-    // Without a known deployment origin there is no relay to fetch. Guessing
-    // one would send a transfer to an unrelated host.
-    return { started: false, refusal: refuse("not-configured") };
+  if (!decision.downloadUrl || !/^https:\/\//i.test(decision.downloadUrl)) {
+    // An authorized response with an unusable URL is still a refusal; it must
+    // not fall back to any other source.
+    return { started: false, refusal: refuse("not-found") };
   }
 
   const filename =
-    decision.filename?.trim() ||
-    authorizedFilename(decision.providerId, "", "");
+    decision.filename?.trim() || authorizedFilename(trackId, "", "");
 
-  const meta = opts.meta;
+  // Build the ID3 tag BEFORE the transfer starts, so the finished file is
+  // tagged the moment its commit lands. Failure here is cosmetic — a download
+  // without tags is still the authorized file — so every step is guarded and
+  // null-tag flows through unchanged.
+  const tag = await buildDownloadTag({
+    title: decision.title,
+    artist: decision.artist,
+    attribution: decision.attribution,
+    licenseUrl: decision.licenseUrl,
+    artworkUrl: decision.artworkUrl,
+    durationMs: decision.durationMs,
+  });
 
   try {
     // The authorized source is recorded first, so the adapter factory can never
     // start a transfer without one. Recorded under the STORAGE key, because
     // that is the id the manager and offline playback both use.
     rememberResolved(storageKey, {
-      url: proxyUrl,
+      url: decision.downloadUrl,
       filename,
-      meta: {
-        title: meta?.title ?? "",
-        artistName: meta?.artistName ?? "",
-        albumName: meta?.albumName ?? "",
-        coverUrl: meta?.coverUrl ?? "",
-        duration: meta?.duration ?? 0,
-        providerId: decision.providerId,
-        licenseUrl: decision.licenseUrl,
-        attribution: decision.attribution,
-        contentType: decision.contentType,
-      },
+      ...(tag ? { tag } : {}),
     });
     getDownloadManager().enqueue({
       trackId: storageKey,
@@ -154,4 +198,20 @@ export async function requestAuthorizedDownload(
       ),
     };
   }
+}
+
+/**
+ * Build the adapter for an authorized transfer.
+ *
+ * Identical mechanics to the old stream adapter (ranged GETs, streamed to the
+ * OPFS sink) — the only difference is what the bytes come from. Kept as a named
+ * export so the download pipeline has a single, auditable source factory and
+ * nothing else can quietly register a different one.
+ */
+export function createAuthorizedAdapter(
+  url: string,
+  filename: string,
+  trackId: string,
+) {
+  return createTrackAdapter(url, filename, trackId);
 }

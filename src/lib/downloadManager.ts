@@ -460,16 +460,6 @@ export class ResumableDownload {
         return;
       }
 
-      if (response.status !== 206) {
-        // A refused or failed range is a transport problem, not a corrupt
-        // Content-Range. Reporting it as the latter sent people looking at
-        // the wrong thing entirely.
-        throw new DownloadError(
-          `The audio source answered HTTP ${response.status}`,
-          "network",
-        );
-      }
-
       const check = validateContentRange(
         response.headers.get("content-range"),
         segment,
@@ -630,15 +620,6 @@ export interface DownloadAdapter {
   ): Promise<{ status: number; headers: Headers; body: ReadableStream<Uint8Array> | null }>;
   /** The only thing that touches storage. */
   sink: FileSink;
-  /**
-   * Delete this track's finished copy as well as any partial.
-   *
-   * Optional because the engine works with any sink, but a sink that keeps a
-   * committed file MUST implement it: removing a completed download used to
-   * discard only the `.part`, so the row disappeared while the audio stayed on
-   * disk and kept playing offline.
-   */
-  removeStored?(): Promise<void>;
 }
 
 export interface FileSink {
@@ -753,8 +734,7 @@ export class DownloadManager {
     d.cancel();
     try {
       const adapter = await this.adapterFor(d);
-      if (adapter.removeStored) await adapter.removeStored();
-      else await adapter.sink.discardIncomplete();
+      await adapter.sink.discardIncomplete();
     } catch {
       // A file that is already gone is the outcome we wanted anyway.
     }

@@ -43,11 +43,7 @@ import {
   UserRound,
   WifiOff,
 } from "lucide-react";
-import {
-  hydrateDownloadedTracks,
-  usePlayerStore,
-  type RemoteLikeSnapshot,
-} from "@/store/player";
+import { usePlayerStore, type RemoteLikeSnapshot } from "@/store/player";
 import { shuffleStateOf, shuffleToastFor } from "@/lib/shuffleState";
 import { track } from "@/lib/analytics";
 import {
@@ -123,10 +119,6 @@ function useAnimatedCssTint(
   // manager that had no adapter yet.
   useEffect(() => {
     installDownloadAdapter();
-    // Read once which tracks are already on disk, so the first play after a
-    // reload routes a downloaded track to the audio deck instead of trying the
-    // network-only YouTube player.
-    void hydrateDownloadedTracks();
   }, []);
 
   // Single-profile sync: hydrate server preferences on sign-in and push local

@@ -23,11 +23,7 @@ const PLAYER_ACTIONS: Record<
 export function useTrayBridge(): void {
   useEffect(() => {
     const desktop = window.synqDesktop;
-    if (
-      !desktop ||
-      typeof desktop.onTrayAction !== "function"
-    )
-      return;
+    if (!desktop?.onTrayAction) return;
 
     return desktop.onTrayAction((action: string) => {
       const handler = PLAYER_ACTIONS[action as keyof typeof PLAYER_ACTIONS];

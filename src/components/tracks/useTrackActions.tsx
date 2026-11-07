@@ -328,19 +328,8 @@ export function TrackActionsMenu({
                     downloadTargetId(item.id, item.jamendoId) ?? item.id,
                     // The copy is stored under the PLAYABLE's id (the YouTube
                     // upload offline playback looks up), while authorization
-                    // is granted for the licensed Jamendo release. The row's
-                    // own metadata travels with it so the saved file can
-                    // describe itself with the network switched off.
-                    {
-                      storageKey: item.id,
-                      meta: {
-                        title,
-                        artistName: actions.artistName,
-                        albumName: item.album,
-                        coverUrl: item.thumbnail,
-                        duration: item.duration,
-                      },
-                    },
+                    // is granted for the licensed Jamendo release.
+                    item.jamendoId ? { storageKey: item.id } : undefined,
                   );
                   if (result.started) {
                     toast.success("Download started");

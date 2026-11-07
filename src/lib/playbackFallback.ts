@@ -75,31 +75,23 @@ export function matchScore(
 }
 
 /**
- * Why the engine could not play a track. Each value is a DIFFERENT fact, so the
- * UI can say something true instead of one catch-all sentence.
+ * The neutral fact one IFrame error code represents.
  *
- * `"api-blocked"` is the only blocker diagnosis and is set from the engine's
- * direct observation that `youtube.com/iframe_api` never loaded. Everything
- * else describes YouTube's own answer about the embed or the video.
+ * This is the FACT layer, deliberately separate from the blocker VERDICT
+ * (`isEmbedBlocked` in `youtubePlayer.ts`): a code may later contribute to a
+ * verdict, but the fact itself never accuses anyone. "embed-refused" says the
+ * embed was refused — it does not say by whom, which is exactly why a refused
+ * embed cannot be reported to the listener as their blocker's fault here.
  */
-export type PlaybackFailureKind =
-  | "api-blocked"
+export type EmbedFailure =
   | "embed-refused"
   | "owner-disabled"
   | "unavailable"
   | "player-error"
   | "timeout";
 
-/**
- * Map a YouTube IFrame error code to the failure it actually represents.
- *
- * 153 is NOT a blocker diagnosis: it is YouTube's player-configuration error,
- * reported when the embed request carries no usable HTTP referrer (strict
- * Referrer-Policy, a `file://` or `app://` document, a privacy browser) or when
- * a proxy answers the iframe with a challenge. Naming a blocker for it told
- * listeners with no blocker installed to disable something they did not have.
- */
-export function failureFromEmbedCode(code: number): PlaybackFailureKind {
+/** Map a YouTube IFrame player error code to the fact it represents. */
+export function failureFromEmbedCode(code: number): EmbedFailure {
   if (code === 153) return "embed-refused";
   if (code === 101 || code === 150) return "owner-disabled";
   if (code === 100) return "unavailable";
@@ -109,32 +101,35 @@ export function failureFromEmbedCode(code: number): PlaybackFailureKind {
 /**
  * What to tell the listener when EVERY rescue path for this track is dead.
  *
- * The message names the actual cause when one is known. Naming a blocker is
- * reserved for an observed block (`blockedProvider`/`"api-blocked"`); a refused
- * embed, a removed video and a disabled embed are reported as themselves.
+ * Naming a blocked provider is the whole point: it is the only thing the
+ * listener can act on, and it is what was missing when playback was reported
+ * as simply broken.
+ *
+ * A known `failure` fact (see `failureFromEmbedCode`) gets a message that
+ * says what actually happened. Facts never accuse a blocker — an accusation
+ * may come only from an observed block (`blockedProvider`, or the
+ * `api-blocked` fact, which IS an observation).
  */
 export function giveUpNotice(options: {
   blockedProvider?: string | null;
-  failure?: PlaybackFailureKind | null;
   hasAlternatives?: boolean;
+  failure?: string | null;
 }): string {
   if (options.blockedProvider)
     return `Your blocker is blocking ${options.blockedProvider} — allow it to hear this song`;
   switch (options.failure) {
-    case "api-blocked":
-      return "YouTube's player couldn't load — youtube.com may be blocked on this network";
     case "embed-refused":
-      return "YouTube refused to play this song's embed";
+      return "YouTube refused to embed this song here";
     case "owner-disabled":
-      return "This video's owner doesn't allow it to play outside YouTube";
+      return "The owner of this song disabled embedding";
     case "unavailable":
-      return "This video is no longer available on YouTube";
-    case "player-error":
-      return "YouTube's player couldn't play this video";
+      return "This song is no longer available";
+    case "api-blocked":
+      return "YouTube's API was blocked from loading — allow it to hear this song";
     case "timeout":
-      return "YouTube never started this song";
-    default:
-      break;
+      return "This song took too long to start";
+    case "player-error":
+      return "This song failed to play";
   }
   if (options.hasAlternatives)
     return "Every version of this song failed to play";

@@ -61,112 +61,62 @@ if (savedTheme === "light") {
 }
 
 /**
- * Route components are LAZY, behind a timeout guard.
+ * Route components are imported EAGERLY, not with React.lazy().
  *
- * ## Why they were eager before, and why that is no longer the case
- *
- * Every route here used to be a dynamic import. That made the app
- * intermittently unusable: clicking a link changed the URL and then sat on
+ * Every one of these used to be a dynamic import, and that is what made the
+ * app intermittently unusable: clicking a link changed the URL and then sat on
  * "Loading..." forever, while a hard refresh of that exact URL rendered the
  * page perfectly.
  *
- * The cause was the DEV server. Vite stamps every pre-bundled dependency with
- * a `?v=<hash>`, and when the server restarts it re-optimises and issues a NEW
- * hash. A tab open across a restart keeps the old module graph, so the first
- * dynamic import after it asks for deps under a hash the server no longer
- * serves. That request NEVER SETTLES, so React stays in the Suspense fallback
- * indefinitely. The previous fix was to import every route eagerly — which
- * removed the hang but cost a ~1 MB initial bundle on every single load.
+ * The cause is the dev server. Vite stamps every pre-bundled dependency with a
+ * `?v=<hash>`, and when the server restarts it re-optimises and issues a NEW
+ * hash. A tab open across a restart keeps the module graph it already has, so
+ * the first DYNAMIC import after it — a route chunk, because those were only
+ * ever fetched on navigation — asks for deps under a hash the server no longer
+ * serves. That request never settles, so React stays in the Suspense fallback
+ * indefinitely. Every later click repeated it. A full page load does not hit
+ * this, because it re-reads the entry document and gets a current graph, which
+ * is the only reason a refresh ever appeared to fix it.
  *
- * `lazyRoute` fixes the actual failure instead of abandoning the mechanism:
- * it races each import against a timeout. A chunk that never arrives REJECTS,
- * which bubbles to that route's error boundary and renders the existing
- * "This page didn't load — Try again" card instead of an infinite spinner.
- * On a refresh the module graph is current, so retry genuinely works — the
- * same reason a manual refresh used to fix it. Production chunks are
- * content-addressed and cannot go stale, so the guard never fires there.
+ * Detecting and retrying that was not enough — it kept coming back, and every
+ * retry cost the listener a spinner and a reload. Removing the dynamic imports
+ * removes the failure mode: there is no chunk to fetch at navigation time, so
+ * there is nothing that can fail to arrive and nothing to wait for. Navigation
+ * is instant and cannot hang.
  *
- * ## The trade
+ * The cost is a larger initial bundle, which is a deliberate trade: a slightly
+ * heavier first paint beats a page that will not open. Reliability first.
  *
- * Each route now ships as its own chunk, so first paint downloads the shell
- * (player, queue, nav) plus the landing route instead of all ~24 pages. In dev
- * the guard converts a previously permanent hang into a recoverable card.
- *
- * AppShell is imported HERE, eagerly, so the player, queue and nav are never
- * torn down during a navigation either.
+ * AppShell is imported here too, so the player, queue and nav are never torn
+ * down during a navigation either.
  */
 import AppShell from "./components/layout/AppShell.tsx";
-
-/**
- * How long a route chunk may take before we stop waiting and show the retry
- * card. Generous enough that a cold production fetch never trips it (chunks
- * land in well under a second on any real connection), short enough that a
- * dead dev-server hash fails while the user is still looking at the page.
- */
-const ROUTE_CHUNK_TIMEOUT_MS = 10_000;
-
-/**
- * Wrap a route import so a chunk that never arrives becomes a caught error,
- * not an eternal Suspense fallback.
- *
- * `Promise.race` attaches a handler to the loader immediately, so an import
- * that settles later is still handled — no unhandled rejection, and nothing is
- * cancelled underneath React.
- */
-function lazyRoute<T extends { default: React.ComponentType }>(
-  load: () => Promise<T>,
-): React.LazyExoticComponent<T["default"]> {
-  return React.lazy(async () => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        load(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () =>
-              reject(
-                new Error(
-                  "This page's code chunk never arrived. Reload or try again.",
-                ),
-              ),
-            ROUTE_CHUNK_TIMEOUT_MS,
-          );
-        }),
-      ]);
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-    }
-  });
-}
-
-// Pages load on demand. Only AppShell (and what it pulls in for playback) is
-// part of the initial bundle.
-const AuthPage = lazyRoute(() => import("./pages/Auth.tsx"));
-const TrackLink = lazyRoute(() => import("./pages/TrackLink.tsx"));
-const Home = lazyRoute(() => import("./pages/Home.tsx"));
-const Search = lazyRoute(() => import("./pages/Search.tsx"));
-const Discover = lazyRoute(() => import("./pages/Discover.tsx"));
-const DownloadHub = lazyRoute(() => import("./pages/DownloadHub.tsx"));
-const ImportHub = lazyRoute(() => import("./pages/ImportHub.tsx"));
-const Artist = lazyRoute(() => import("./pages/Artist.tsx"));
-const Album = lazyRoute(() => import("./pages/Album.tsx"));
-const Liked = lazyRoute(() => import("./pages/Liked.tsx"));
-const Playlists = lazyRoute(() => import("./pages/Playlists.tsx"));
-const PlaylistDetail = lazyRoute(() => import("./pages/PlaylistDetail.tsx"));
-const Admin = lazyRoute(() => import("./pages/Admin.tsx"));
-const Stats = lazyRoute(() => import("./pages/Stats.tsx"));
-const Recap = lazyRoute(() => import("./pages/Recap.tsx"));
-const Recent = lazyRoute(() => import("./pages/Recent.tsx"));
-const Social = lazyRoute(() => import("./pages/Social.tsx"));
-const Profile = lazyRoute(() => import("./pages/Profile.tsx"));
-const Settings = lazyRoute(() => import("./pages/Settings.tsx"));
-const NotFound = lazyRoute(() => import("./pages/NotFound.tsx"));
+import AuthPage from "./pages/Auth.tsx";
+import TrackLink from "./pages/TrackLink.tsx";
+import Home from "./pages/Home.tsx";
+import Search from "./pages/Search.tsx";
+import Discover from "./pages/Discover.tsx";
+import DownloadHub from "./pages/DownloadHub.tsx";
+import ImportHub from "./pages/ImportHub.tsx";
+import Artist from "./pages/Artist.tsx";
+import Album from "./pages/Album.tsx";
+import Liked from "./pages/Liked.tsx";
+import Playlists from "./pages/Playlists.tsx";
+import PlaylistDetail from "./pages/PlaylistDetail.tsx";
+import Admin from "./pages/Admin.tsx";
+import Stats from "./pages/Stats.tsx";
+import Recap from "./pages/Recap.tsx";
+import Recent from "./pages/Recent.tsx";
+import Social from "./pages/Social.tsx";
+import Profile from "./pages/Profile.tsx";
+import Settings from "./pages/Settings.tsx";
+import NotFound from "./pages/NotFound.tsx";
 // Public information pages linked from the landing footer. They sit OUTSIDE
 // the RequireAuth group on purpose: a privacy notice or a support answer
 // shouldn't require an account to read.
-const Support = lazyRoute(() => import("./pages/Support.tsx"));
-const Privacy = lazyRoute(() => import("./pages/Privacy.tsx"));
-const Terms = lazyRoute(() => import("./pages/Terms.tsx"));
+import Support from "./pages/Support.tsx";
+import Privacy from "./pages/Privacy.tsx";
+import Terms from "./pages/Terms.tsx";
 
 // Simple loading fallback for route transitions
 function RouteLoading() {
@@ -459,20 +409,9 @@ createRoot(document.getElementById("root")!).render(
               <Routes>
                 <Route
                   path="/auth"
-                  element={
-                    <PageBoundary>
-                      <AuthPage redirectAfterAuth="/home" />
-                    </PageBoundary>
-                  }
+                  element={<AuthPage redirectAfterAuth="/home" />}
                 />
-                <Route
-                  path="/t/:trackId"
-                  element={
-                    <PageBoundary>
-                      <TrackLink />
-                    </PageBoundary>
-                  }
-                />
+                <Route path="/t/:trackId" element={<TrackLink />} />
                 <Route
                   path="/dashboard"
                   element={
@@ -678,41 +617,10 @@ createRoot(document.getElementById("root")!).render(
                     }
                   />
                 </Route>
-                <Route
-                  path="/support"
-                  element={
-                    <PageBoundary>
-                      <Support />
-                    </PageBoundary>
-                  }
-                />
-                <Route
-                  path="/privacy"
-                  element={
-                    <PageBoundary>
-                      <Privacy />
-                    </PageBoundary>
-                  }
-                />
-                <Route
-                  path="/terms"
-                  element={
-                    <PageBoundary>
-                      <Terms />
-                    </PageBoundary>
-                  }
-                />
-                {/* The 404 is lazy like everything else, so it gets the same
-                    boundary — a failed chunk must degrade to the retry card,
-                    not unwind the whole app to the root error screen. */}
-                <Route
-                  path="*"
-                  element={
-                    <PageBoundary>
-                      <NotFound />
-                    </PageBoundary>
-                  }
-                />
+                <Route path="/support" element={<Support />} />
+                <Route path="/privacy" element={<Privacy />} />
+                <Route path="/terms" element={<Terms />} />
+                <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
             {/* Deferred-auth bridge. Inside `ConvexAuthProvider` because it

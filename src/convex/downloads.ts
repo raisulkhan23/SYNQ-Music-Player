@@ -1,7 +1,19 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { authorizedProviderId, refuse, type DownloadRefusal } from "../lib/downloadAuth";
-import { releaseFilename, resolveJamendoDownload } from "../lib/jamendoDownload";
+import {
+  refuse,
+  refusalFromFailure,
+  authorizedFilename,
+  authorizedProviderId,
+  soundcloudProviderId,
+  AUTHORIZED_CONTENT_TYPE,
+  type DownloadRefusal,
+} from "../lib/downloadAuth";
+import { unwrap, networkFailure, notConfiguredFailure } from "../lib/jamendo";
+import {
+  fetchSoundcloudTrackRecord,
+  fetchSoundcloudDownloadUrl,
+} from "./soundcloud";
 
 /**
  * SYNQ's download API — the authority on what may be downloaded.
@@ -12,20 +24,28 @@ import { releaseFilename, resolveJamendoDownload } from "../lib/jamendoDownload"
  * explicitly released for download on Jamendo. It is deliberately incapable of
  * authorizing anything else — a request for a YouTube video id is refused
  * before any network call, because SYNQ holds a right to STREAM that upload and
- * no right to make a copy of it.
+ * no right to make a copy of it. This replaces the previous pipeline, which
+ * resolved InnerTube streams and public Piped mirrors in order to save them.
+ * That pipeline was not a bug to be tuned; it was the wrong source, so it was
+ * removed rather than made more reliable.
  *
  * ── Why the client is never trusted ────────────────────────────────────────
  *
- * The client sends only a SYNQ track id. The provider id is parsed server-side,
- * the provider is asked whether that specific release may be downloaded, and
- * the answer is a decision, not a URL the browser can substitute. The bytes
- * themselves are streamed through `/download-proxy`, which re-runs this exact
- * eligibility check for every ranged request, so even a hand-written proxy URL
- * cannot fetch an unauthorized file.
+ * `requestTrackDownload` previously took a fully-formed URL from the browser
+ * and fetched it. That made authorization a client-side concern, and a client
+ * is not a place authorization can live. Here the client sends only a SYNQ
+ * track id; the provider id is parsed out server-side, the provider is asked
+ * whether that release may be downloaded, and the resulting URL never passes
+ * through the browser's hands on the way to a decision.
  *
  * The provider key stays in the server environment (`JAMENDO_CLIENT_ID`) and is
  * never returned to the caller.
  */
+
+const API = "https://api.jamendo.com/v3.0/tracks/";
+const REQUEST_TIMEOUT_MS = 15_000;
+/** One provider call per request: a download is a user action, not a crawl. */
+const MAX_LIMIT = 1;
 
 /** Read the provider key, or explain precisely what is missing. */
 function clientId(): string | null {
@@ -34,12 +54,156 @@ function clientId(): string | null {
 }
 
 /**
+ * Ask the provider whether one release may be downloaded, and for its file.
+ *
+ * `audioformat=audiodownload` is the field that actually carries the
+ * downloadable asset; `mp31` (used for search) does not. The two are requested
+ * in different queries on purpose, which is why this cannot be folded into
+ * `jamendo.searchJamendo`.
+ */
+async function fetchAuthorizedRelease(
+  providerId: string,
+  key: string,
+): Promise<
+  | { ok: true; url: string; title: string; artist: string; licenseUrl: string }
+  | { ok: false; decision: DownloadRefusal }
+> {
+  const url = new URL(API);
+  url.searchParams.set("client_id", key);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("id", providerId);
+  url.searchParams.set("limit", String(MAX_LIMIT));
+  url.searchParams.set("include", "musicinfo");
+  url.searchParams.set("audioformat", "audiodownload");
+
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    return { ok: false, decision: refusalFromFailure(networkFailure()) };
+  }
+  if (response.status === 429) {
+    return { ok: false, decision: refuse("rate-limited") };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return { ok: false, decision: refusalFromFailure(networkFailure()) };
+  }
+
+  // This API reports failures inside HTTP 200 (see convex/jamendo.ts).
+  const unwrapped = unwrap(body);
+  if (!unwrapped.ok) {
+    return {
+      ok: false,
+      decision: refusalFromFailure(unwrapped.failure ?? networkFailure()),
+    };
+  }
+
+  const results = unwrapped.results;
+  if (!Array.isArray(results) || results.length === 0) {
+    return { ok: false, decision: refuse("not-found") };
+  }
+  const track = results[0] as Record<string, unknown>;
+
+  /**
+   * The authority. A release is downloadable ONLY when the provider says so for
+   * this specific track. The presence of an `audio` URL proves nothing — the
+   * streaming field is always present — so this flag is checked before the URL
+   * is even read, and a missing flag is treated as "not allowed" rather than
+   * "probably fine".
+   */
+  if (track.audiodownload_allowed !== true) {
+    return { ok: false, decision: refuse("not-authorized") };
+  }
+
+  const audio = typeof track.audio === "string" ? track.audio.trim() : "";
+  if (!audio || !/^https:\/\//i.test(audio)) {
+    // An authorized flag with no https file is a broken release, not a licence
+    // to fall back to anything else.
+    return { ok: false, decision: refuse("not-found") };
+  }
+
+  return {
+    ok: true,
+    url: audio,
+    title: typeof track.name === "string" ? track.name.trim() : "",
+    artist: typeof track.artist_name === "string" ? track.artist_name.trim() : "",
+    licenseUrl:
+      typeof track.license_ccurl === "string" ? track.license_ccurl.trim() : "",
+  };
+}
+
+/**
+ * Authorize a SoundCloud download, or explain why it cannot be authorized.
+ *
+ * The authority is the artist's own `downloadable` flag, re-read here on every
+ * request: a track that streams but was never offered for download is refused
+ * exactly like a YouTube upload would be. A SNIP preview is refused too — a
+ * 30-second teaser is not the song, and handing it out as one is a
+ * fabrication.
+ */
+async function fetchAuthorizedSoundcloudRelease(
+  providerId: string,
+): Promise<
+  | {
+      ok: true;
+      url: string;
+      title: string;
+      artist: string;
+      durationMs: number;
+      artwork: string;
+      permalinkUrl: string;
+    }
+  | { ok: false; decision: DownloadRefusal }
+> {
+  let record;
+  try {
+    record = await fetchSoundcloudTrackRecord(providerId);
+  } catch {
+    return { ok: false, decision: refuse("network") };
+  }
+  if (!record) return { ok: false, decision: refuse("not-found") };
+  if (record.policy === "SNIP") {
+    return { ok: false, decision: refuse("not-found") };
+  }
+  // THE GRANT. `downloadable` is the artist's explicit per-track permission;
+  // `hasDownloadsLeft` is SoundCloud's own cap on that grant. Both must hold.
+  if (record.downloadable !== true || !record.hasDownloadsLeft) {
+    return { ok: false, decision: refuse("not-authorized") };
+  }
+
+  let url: string | null = null;
+  try {
+    url = await fetchSoundcloudDownloadUrl(providerId);
+  } catch {
+    return { ok: false, decision: refuse("network") };
+  }
+  if (!url) return { ok: false, decision: refuse("not-found") };
+
+  return {
+    ok: true,
+    url,
+    title: record.title,
+    artist: record.artist,
+    durationMs: record.durationMs,
+    artwork: record.artwork,
+    permalinkUrl: record.permalinkUrl,
+  };
+}
+
+/**
  * Authorize a download, or explain why it cannot be authorized.
  *
- * Returns the file's format and licensing metadata. The provider's own URL is
- * deliberately NOT part of the response: the browser cannot fetch it anyway
- * (no CORS), and withholding it means the only way to obtain the bytes is the
- * proxy, which re-verifies this same permission.
+ * Returns the authorized file's URL and metadata. The URL is a provider
+ * temporary-asset URL, not a SYNQ-signed one: the asset is already public and
+ * unlicensed-by-Jamendo is impossible here, because authorization was just
+ * re-verified. The provider key is never included in the response.
  */
 export const authorizeDownload = action({
   args: { trackId: v.string() },
@@ -49,17 +213,49 @@ export const authorizeDownload = action({
   ): Promise<
     | {
         authorized: true;
-        /** The licensed release this permission is for. */
-        providerId: string;
+        downloadUrl: string;
         filename: string;
         contentType: string;
         licenseUrl: string;
         /** Attribution is a licence condition, so it travels with the file. */
         attribution: string;
+        /** Cover art to embed (URL the client fetches), when known. */
+        artworkUrl?: string;
+        /** Track length in ms, for the ID3 tag. */
+        durationMs?: number;
+        /** Track title, for the ID3 tag. */
+        title?: string;
+        /** Track artist, for the ID3 tag. */
+        artist?: string;
+        /** The source that granted this download. */
+        provider: "jamendo" | "soundcloud";
       }
     | { authorized: false; decision: DownloadRefusal }
   > => {
-    void ctx;
+    // SoundCloud branch: same authority pattern, different grant field. The
+    // id parse happens before ANY network call, exactly like the Jamendo one.
+    const scId = soundcloudProviderId(trackId);
+    if (scId !== null) {
+      const release = await fetchAuthorizedSoundcloudRelease(scId);
+      if (!release.ok) return { authorized: false, decision: release.decision };
+      const attribution = [release.artist, release.title]
+        .filter(Boolean)
+        .join(" — ");
+      return {
+        authorized: true,
+        downloadUrl: release.url,
+        filename: authorizedFilename(scId, release.title, release.artist),
+        contentType: AUTHORIZED_CONTENT_TYPE,
+        licenseUrl: release.permalinkUrl,
+        attribution,
+        ...(release.title ? { title: release.title } : {}),
+        ...(release.artist ? { artist: release.artist } : {}),
+        ...(release.artwork ? { artworkUrl: release.artwork } : {}),
+        ...(release.durationMs > 0 ? { durationMs: release.durationMs } : {}),
+        provider: "soundcloud",
+      };
+    }
+
     const providerId = authorizedProviderId(trackId);
     if (providerId === null) {
       // Refused before any I/O and without consulting the provider: this id
@@ -71,21 +267,24 @@ export const authorizeDownload = action({
     if (!key) {
       return {
         authorized: false,
-        decision: refuse("not-configured"),
+        decision: refusalFromFailure(notConfiguredFailure()),
       };
     }
 
-    const resolved = await resolveJamendoDownload(providerId, key);
-    if (!resolved.ok) return { authorized: false, decision: resolved.decision };
+    const release = await fetchAuthorizedRelease(providerId, key);
+    if (!release.ok) return { authorized: false, decision: release.decision };
 
-    const { release } = resolved;
+    const attribution = [release.artist, release.title].filter(Boolean).join(" — ");
     return {
       authorized: true,
-      providerId: release.providerId,
-      filename: releaseFilename(release),
-      contentType: release.asset.contentType,
+      downloadUrl: release.url,
+      filename: authorizedFilename(providerId, release.title, release.artist),
+      contentType: AUTHORIZED_CONTENT_TYPE,
       licenseUrl: release.licenseUrl,
-      attribution: release.attribution,
+      attribution,
+      ...(release.title ? { title: release.title } : {}),
+      ...(release.artist ? { artist: release.artist } : {}),
+      provider: "jamendo",
     };
   },
 });

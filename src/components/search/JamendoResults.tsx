@@ -1,11 +1,7 @@
 import { useAction } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
-
 import {
-  Check,
   Disc3,
-  Download,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -18,9 +14,6 @@ import { usePlayerStore } from "@/store/player";
 import type { JamendoTrack } from "@/lib/jamendo";
 import { matchDiscovery } from "@/lib/jamendoDiscovery";
 import type { ImportFailure } from "@/lib/importModel";
-import { requestAuthorizedDownload } from "@/lib/authorizedDownload";
-import { downloadTargetId } from "@/lib/downloadAuth";
-
 
 /**
  * Jamendo search results — a DISCOVERY index, not a playback source.
@@ -49,15 +42,6 @@ import { downloadTargetId } from "@/lib/downloadAuth";
 export function JamendoResults({ query }: { query: string }) {
   const searchJamendo = useAction(api.jamendo.searchJamendo);
   const searchYoutube = useAction(api.youtube.searchYoutube);
-  // The Convex action, resolved as a client hook.
-  //
-  // This used to be `import { authorizeDownload } from "@/convex/downloads"` —
-  // the SERVER module — which dragged `convex/values` and the server-only
-  // Jamendo helper into the browser bundle and handed
-  // `requestAuthorizedDownload` a `RegisteredAction` instead of the callable
-  // the component actually invokes. Every other download surface resolves the
-  // same action with `useAction`; this one now matches them.
-  const authorizeDownload = useAction(api.downloads.authorizeDownload);
   const playTrack = usePlayerStore((s) => s.playTrack);
 
   /**
@@ -82,7 +66,6 @@ export function JamendoResults({ query }: { query: string }) {
   // Guards against a stale response overwriting a newer one when the listener
   // keeps typing: the last request wins, and the rest are dropped.
   const requestId = useRef(0);
-  const navigate = useNavigate();
 
   const trimmed = query.trim();
   const runnable = trimmed.length > 1;
@@ -178,49 +161,6 @@ export function JamendoResults({ query }: { query: string }) {
     [resolvingId, searchYoutube, playTrack],
   );
 
-  const onDownload = useCallback(
-    async (track: JamendoTrack) => {
-      if (!track.downloadAllowed) {
-        toast.error(
-          "This release is not licensed for download by its artist.",
-          { id: "jamendo-download" },
-        );
-        return;
-      }
-      void (async () => {
-        const result = await requestAuthorizedDownload(
-          authorizeDownload,
-          downloadTargetId(track.jamendoId) ?? "",
-          {
-            storageKey: track.jamendoId,
-            meta: {
-              title: track.title,
-              artistName: track.artistName,
-              albumName: track.albumName,
-              coverUrl: track.coverUrl,
-              duration: track.duration,
-            },
-          },
-        );
-        if (result.started) {
-          toast.success("Download started", {
-            description: `Saving “${track.title}” — it will appear in Downloads when complete.`,
-            id: "jamendo-download",
-          });
-        } else if (result.refusal.retryable) {
-          toast.error(result.refusal.message, {
-            description: "Try again in a moment.",
-            id: "jamendo-download",
-          });
-        } else {
-          toast.error(result.refusal.message, { id: "jamendo-download" });
-        }
-        navigate("/downloads");
-      })();
-    },
-    [authorizeDownload, navigate],
-  );
-
   if (!runnable) return null;
 
   return (
@@ -248,13 +188,12 @@ export function JamendoResults({ query }: { query: string }) {
           failure={failure}
           onRetry={() => setAttempt((n) => n + 1)}
         />
-      )        : tracks && tracks.length > 0 ? (
+      ) : tracks && tracks.length > 0 ? (
         <>
           <p className="mb-2 text-xs text-muted-foreground">
             Independent and Creative Commons licensed releases that YouTube
             search rarely surfaces. Picking one finds it on YouTube and plays it
-            through yt-dlp on the desktop build; the download button is wired to
-            the same service.
+            there.
           </p>
           <div className="flex flex-col gap-0.5">
             {tracks.map((track) => (
@@ -264,7 +203,6 @@ export function JamendoResults({ query }: { query: string }) {
                 resolving={resolvingId === track.jamendoId}
                 disabled={resolvingId !== null}
                 onPlay={onPick}
-                onDownload={onDownload}
               />
             ))}
           </div>
@@ -322,13 +260,11 @@ function JamendoRow({
   resolving,
   disabled,
   onPlay,
-  onDownload,
 }: {
   track: JamendoTrack;
   resolving: boolean;
   disabled: boolean;
   onPlay: (track: JamendoTrack) => void;
-  onDownload: (track: JamendoTrack) => void;
 }) {
   return (
     <button
@@ -336,7 +272,6 @@ function JamendoRow({
       disabled={disabled}
       onClick={() => onPlay(track)}
       className="group flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/[0.05] disabled:cursor-progress disabled:opacity-60"
-
     >
       {track.coverUrl ? (
         <img
@@ -362,20 +297,8 @@ function JamendoRow({
       {resolving ? (
         <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
       ) : null}
-      <span className="shrink-0 flex items-center gap-2">
-        <span className="text-[11px] text-muted-foreground tabular-nums">
-          {formatDuration(track.duration)}
-        </span>
-        {track.downloadAllowed ? (
-          <Download
-            size={12}
-            className="shrink-0 text-emerald-400/70 group-hover:text-emerald-300"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDownload(track);
-            }}
-          />
-        ) : null}
+      <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+        {formatDuration(track.duration)}
       </span>
     </button>
   );
@@ -387,6 +310,3 @@ function formatDuration(seconds: number): string {
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
-
-
-

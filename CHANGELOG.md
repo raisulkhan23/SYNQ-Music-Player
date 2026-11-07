@@ -55,40 +55,8 @@ Electron shell (`electron/main.cjs`) serving `dist/` from `app://synq/`,
 `electron-builder` NSIS packaging, generated `build/icon.ico`, and
 `npm run desktop:installer` → `desktop-dist/SYNQ-Setup-<version>.exe`.
 
-#### Offline downloads that actually download
-
-Downloads now work end to end for Creative Commons releases the artist released
-for download. The authorization action asks Jamendo for the release's
-`audiodownload` file (not the streaming URL) and refuses unless
-`audiodownload_allowed` is true; `/download-proxy` streams the bytes because the
-provider sends no CORS headers, re-checking permission for every ranged request
-and accepting only a numeric release id; `downloadManager` + `opfsSink` write
-them into OPFS with a manifest of title, artist, size and licence; and a
-downloaded track is routed to the audio decks and resolved from disk, so it
-plays with the network off.
-
 ### Fixed
 
-- **Downloads could never start.** The action requested
-  `audioformat=audiodownload`, which the live Jamendo API rejects
-  (`accept only values in [mp31,mp32,ogg,flac]`); the refusal arrived inside a
-  `200` envelope and surfaced as "Jamendo rejected the app's API key". The file
-  now comes from the `audiodownload` field, with its host and format validated.
-- **A download looped forever instead of finishing.** `OpfsSink.bytesWritten()`
-  re-read the file, but a browser stages writes in a `.crswap` file while the
-  writer is open and keeps reporting the last closed size — so the engine
-  re-requested the first range indefinitely. The open writer's count is
-  authoritative, the file is authoritative once closed, and `.crswap` files are
-  never listed as music or left behind by a delete.
-- **A finished download was reported as failed.** The manifest row read the
-  partial file's size *after* `commit()` had renamed it away, so a completed
-  transfer threw. The size is captured before promotion.
-- **Removing a download left the audio on disk.** The manager discarded only
-  the `.part` file; removal now deletes the committed file, any partial, and the
-  library row together.
-- **A refused probe was treated as audio.** A `403` on the first byte produced a
-  streaming plan, so the error page was written to disk and marked complete. A
-  non-`206` probe is now a refusal, and a failed range names its HTTP status.
 - **A stale negative result could hide an artist for a day.** `resolveArtist`
   cached `found: false` with the 24h artist TTL, but an empty search shelf is
   also what a throttled or malformed request returns. One bad parse left the

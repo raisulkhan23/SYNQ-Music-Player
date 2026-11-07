@@ -1,30 +1,5 @@
-import {
-  OpfsSink,
-  opfsSupported,
-  recordDownloadedTrack,
-  removeDownloadedTrack,
-} from "@/lib/opfsSink";
+import { OpfsSink, opfsSupported } from "@/lib/opfsSink";
 import type { DownloadAdapter, Segment } from "@/lib/downloadManager";
-
-/**
- * What a finished transfer should remember about its track.
- *
- * The engine only knows bytes and a filename. Without this, a reloaded page
- * could list files but not the artist, licence or format of anything in them —
- * and offline playback would have nothing to build a queue row from.
- */
-export interface DownloadMeta {
-  title: string;
-  artistName: string;
-  albumName: string;
-  coverUrl: string;
-  duration: number;
-  /** The licensed release this file came from. */
-  providerId: string;
-  licenseUrl: string;
-  attribution: string;
-  contentType: string;
-}
 
 /**
  * The download SOURCE adapter.
@@ -65,7 +40,6 @@ export function createTrackAdapter(
   url: string,
   filename: string,
   id: string,
-  meta?: DownloadMeta,
 ): DownloadAdapter {
   if (!opfsSupported()) {
     throw new Error(
@@ -106,9 +80,9 @@ export function createTrackAdapter(
       });
       // A 200 here means the origin ignored the range and is streaming the
       // whole entity — record that rather than assuming ranges work.
-      if (res.status !== 206) {
+      if (res.status === 200) {
         return {
-          status: res.status,
+          status: 200,
           contentLength: numberHeader(res, "content-length"),
           acceptRanges: false,
         };
@@ -147,29 +121,9 @@ export function createTrackAdapter(
       bytesWritten: () => getSink().then((s) => s.bytesWritten()),
       append: (chunk: Uint8Array) => getSink().then((s) => s.append(chunk)),
       truncate: (to: number) => getSink().then((s) => s.truncate(to)),
-      commit: async () => {
-        const sink = await getSink();
-        // Read the size BEFORE promoting the file: `commit()` renames the
-        // `.part` away, so asking for its size afterwards fails on a real
-        // filesystem — which made a fully committed download report as failed.
-        const size = await sink.bytesWritten();
-        await sink.commit();
-        // Registered only AFTER the bytes are committed, so an interrupted
-        // transfer can never leave a library row pointing at a partial file.
-        if (meta) {
-          await recordDownloadedTrack({
-            id,
-            filename,
-            size,
-            completedAt: Date.now(),
-            ...meta,
-          });
-        }
-      },
+      commit: () => getSink().then((s) => s.commit()),
       discardIncomplete: () => getSink().then((s) => s.discardIncomplete()),
     },
-
-    removeStored: () => removeDownloadedTrack(id).then(() => undefined),
   };
 }
 

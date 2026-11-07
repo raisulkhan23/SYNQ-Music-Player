@@ -142,14 +142,74 @@ export function useAudioRate(rate: number): void {
 export function setDeckRate(rate: number): void {
   if (typeof window === "undefined") return;
   const d = ensureDecks();
-  const r = Math.min(2, Math.max(0.5, rate));
+  deckRate = Math.min(2, Math.max(0.5, rate));
+  applyDeckRateAndPitch(d);
+}
+
+/**
+ * Tape-style pitch: the deck plays at rate × 2^(n/12) with pitch preservation
+ * disabled, so +1..+12 genuinely raises the key (Nightcore) and −N lowers it.
+ * At 0 the listener's preserve-pitch preference rules.
+ */
+export function setDeckPitch(semitones: number): void {
+  if (typeof window === "undefined") return;
+  const d = ensureDecks();
+  deckPitch = Math.min(12, Math.max(-12, Math.round(semitones)));
+  applyDeckRateAndPitch(d);
+}
+
+/** The listener's "speed changes keep the key" preference (used at pitch 0). */
+export function setRatePreservesPitch(preserve: boolean): void {
+  if (typeof window === "undefined") return;
+  const d = ensureDecks();
+  ratePreservesPitch = preserve;
+  applyDeckRateAndPitch(d);
+}
+
+function applyDeckRateAndPitch(d: Record<"a" | "b", Deck>): void {
+  const shifted = deckPitch !== 0;
+  // The pitch shift rides ON the rate: rate × 2^(semitones/12). Clamped to a
+  // range every browser accepts.
+  const effective = Math.min(
+    4,
+    Math.max(0.25, deckRate * Math.pow(2, deckPitch / 12)),
+  );
+  const preserve = shifted ? false : ratePreservesPitch;
   for (const slot of ["a", "b"] as const) {
+    const el = d[slot].el;
     try {
-      d[slot].el.playbackRate = r;
+      el.playbackRate = effective;
     } catch {
       /* not ready */
     }
+    try {
+      el.preservesPitch = preserve;
+      (
+        el as HTMLAudioElement & {
+          webkitPreservesPitch?: boolean;
+          mozPreservesPitch?: boolean;
+        }
+      ).webkitPreservesPitch = preserve;
+      (
+        el as HTMLAudioElement & {
+          webkitPreservesPitch?: boolean;
+          mozPreservesPitch?: boolean;
+        }
+      ).mozPreservesPitch = preserve;
+    } catch {
+      /* older engine without the property — the rate still applies */
+    }
   }
+}
+
+/** The current pitch (semitones), for settings UI to render. */
+export function getDeckPitch(): number {
+  return deckPitch;
+}
+
+/** The current preserve-pitch preference. */
+export function getRatePreservesPitch(): boolean {
+  return ratePreservesPitch;
 }
 
 /**
@@ -285,10 +345,155 @@ function setPan(node: PannerLike | null | undefined, value: number): void {
   }
 }
 
+// --- vibe helpers -------------------------------------------------------------
+
+/**
+ * Generate the reverb impulse response: exponentially-decaying noise, the
+ * classic synthetic room. Ported from melo's engine (0.6 s decay), scaled to
+ * a gentle stereo tail. Returns null-ish safe: callers guard on the convolver.
+ */
+function makeReverbImpulse(
+  ctx: AudioContext,
+  seconds: number,
+  decay: number,
+): AudioBuffer {
+  const rate = ctx.sampleRate;
+  const length = Math.max(1, Math.floor(rate * seconds));
+  const impulse = ctx.createBuffer(2, length, rate);
+  for (let channel = 0; channel < 2; channel++) {
+    const data = impulse.getChannelData(channel);
+    for (let i = 0; i < length; i++) {
+      // White noise × exponential decay — a plausible small room.
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+    }
+  }
+  return impulse;
+}
+
+/**
+ * Cubic soft-clip curve for the distortion WaveShaper, matching melo's
+ * `_makeDistortionCurve` shape: k drives how hard the wave is folded.
+ */
+function makeDistortionCurve(amount: number): Float32Array<ArrayBuffer> {
+  const k = amount * 1.2;
+  const samples = 1024;
+  const curve = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) {
+    const x = (i * 2) / samples - 1;
+    curve[i] = ((3 + k) * x * 20 * Math.PI) / (Math.PI + k * Math.abs(x));
+  }
+  return curve;
+}
+
+/**
+ * Dry/wet mix for a given distortion amount (0..100), melo's blend: the wet
+ * path carries up to 0.75 of the signal, the dry path is ducked to 0.6 at
+ * full drive so the two sum back near unity.
+ */
+function applyDistortionMix(amount: number): { wet: number; dry: number } {
+  const a = Math.min(100, Math.max(0, amount));
+  return { wet: (a / 100) * 0.75, dry: 1 - (a / 100) * 0.4 };
+}
+
+/**
+ * Configure the normalization nodes for the current toggle state.
+ *
+ * OFF must be TRANSPARENT, not "off but still limiting": the limiter sits in
+ * the dry path, so when normalization is disabled its threshold goes to 0 dB
+ * and its ratio to 1 — a no-op. When enabled it becomes the brickwall melo
+ * uses (threshold −2 dB, ratio 20) and the RMS loop steers `normGain`.
+ */
+function applyNormalizationNodes(): void {
+  if (!normLimiter) return;
+  try {
+    if (volumeNormalization) {
+      normLimiter.threshold.value = -2;
+      normLimiter.ratio.value = 20;
+      normLimiter.attack.value = 0.003;
+      normLimiter.release.value = 0.25;
+    } else {
+      normLimiter.threshold.value = 0;
+      normLimiter.ratio.value = 1;
+      normGain?.gain.cancelScheduledValues(0);
+      if (normGain) normGain.gain.value = 1;
+    }
+  } catch {
+    /* context not running */
+  }
+}
+
+/** The RMS target the normalization loop aims for, in dBFS. */
+const NORMALIZE_TARGET_DB = -18;
+/** How far the correction gain may swing from unity, in either direction. */
+const NORMALIZE_GAIN_LIMIT = 4;
+
+/**
+ * One normalization step: read the current RMS, aim the gain so it lands on
+ * the target, smooth the move. Runs on an interval only while enabled —
+ * melo's equivalent fed its loop from a level watcher in the renderer; here
+ * the graph module owns the whole loop so no other file needs to care.
+ */
+function normalizationStep(): void {
+  if (!volumeNormalization || !normGain || !audioCtx) return;
+  const level = getSignalLevel();
+  // -1 = the analyser is not built; no measurement, no correction.
+  if (level <= 0) return;
+  const levelDb = 20 * Math.log10(level);
+  // Anything below −60 dBFS is silence between songs: park at unity so the
+  // gain does not creep toward its limit waiting for the next track.
+  if (levelDb < -60) return;
+  const target = Math.pow(
+    10,
+    Math.min(
+      Math.log10(NORMALIZE_GAIN_LIMIT),
+      Math.max(
+        Math.log10(1 / NORMALIZE_GAIN_LIMIT),
+        (NORMALIZE_TARGET_DB - levelDb) / 20,
+      ),
+    ),
+  );
+  try {
+    // ~0.8 s smoothing, like melo's ramped correction — audible pumping
+    // would be worse than an imperfect match.
+    normGain.gain.setTargetAtTime(target, audioCtx.currentTime, 0.4);
+  } catch {
+    /* context not running */
+  }
+}
+
+function startNormalizationLoop(): void {
+  if (normalizationTimer || typeof window === "undefined") return;
+  normalizationTimer = window.setInterval(normalizationStep, 250);
+}
+
+function stopNormalizationLoop(): void {
+  if (!normalizationTimer) return;
+  clearInterval(normalizationTimer);
+  normalizationTimer = 0;
+}
+
 // --- dedicated USER EQ nodes (always active once the graph exists) ------------
 let eqBassNode: BiquadFilterNode | null = null; // low shelf
 let eqTrebleNode: BiquadFilterNode | null = null; // high shelf
 let balanceNode: PannerLike | null = null;
+
+// --- 10-band graphic EQ (between the shelves and balance) ---------------------
+//
+// Ported from the melo desktop player's audio engine: ten peaking filters at
+// one-octave spacing with Q 1.1, each clamped to ±12 dB. They sit BETWEEN the
+// two shelf knobs and the balance node, so the bass/treble sliders, the 10-band
+// sliders and every effect preset all compose instead of overwriting each
+// other — the dedicated-node rule that fixed the "changing one reset the
+// other" bug applies here too.
+export const EQ_BAND_FREQUENCIES = [
+  32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000,
+] as const;
+export const EQ_BAND_MIN_DB = -12;
+export const EQ_BAND_MAX_DB = 12;
+const EQ_BAND_Q = 1.1;
+let eqBandNodes: Array<BiquadFilterNode | null> = EQ_BAND_FREQUENCIES.map(
+  () => null,
+);
 
 // --- effect chain nodes (driven by the active sound effect) -------------------
 let fxIn: GainNode | null = null; // effects tap in here
@@ -298,11 +503,41 @@ let nightLow: BiquadFilterNode | null = null;
 let panner: PannerLike | null = null;
 let gainOut: GainNode | null = null;
 
+// --- post-effect stage: dry path + vibe taps + normalization ------------------
+// After the effect chain the signal splits: a dry path (which the distortion
+// tap ducks when active), the reverb and distortion taps in parallel, and then
+// volume normalization (a gain the RMS loop steers, followed by a brickwall
+// limiter) before the analyser.
+let postFxDry: GainNode | null = null;
+let reverbConvolver: ConvolverNode | null = null;
+let reverbWet: GainNode | null = null;
+let distortionShaper: WaveShaperNode | null = null;
+let distortionWet: GainNode | null = null;
+let normGain: GainNode | null = null;
+let normLimiter: DynamicsCompressorNode | null = null;
+
 // User EQ state (persisted by settings; applied whenever the graph exists)
 let eqBass = 0; // dB
 let eqTreble = 0; // dB
 let eqBalance = 0; // -1 (left) → +1 (right)
 let eqMono = false;
+// Mutated only through index assignment (setEqBand), so the binding itself
+// never reassigns.
+const eqBands: number[] = EQ_BAND_FREQUENCIES.map(() => 0); // dB per band
+
+// --- vibe state (pitch / reverb / distortion) ---------------------------------
+// Pitch is tape-style: the deck's effective rate becomes rate × 2^(n/12) with
+// pitch preservation disabled, so a positive value genuinely raises the key
+// (the Nightcore mechanism) rather than resampling it back to the original.
+let deckRate = 1;
+let deckPitch = 0; // semitones, -12..+12
+let ratePreservesPitch = true; // the user's "speed keeps the key" preference
+let reverbMix = 0; // 0..1 wet level of the room simulation
+let distortionAmount = 0; // 0..100
+
+// --- volume normalization -----------------------------------------------------
+let volumeNormalization = false;
+let normalizationTimer = 0;
 
 let activeFilter: AudioFilterId = "off";
 let rotateRaf = 0;
@@ -337,13 +572,16 @@ export function audioGraphFailed(): boolean {
 
 /**
  * Lazily create the shared audio graph:
- *   <audio> → [user EQ: bass → treble] → balance → [effects: bass → vocal →
- *   night → pan → gain] → analyser → destination
+ *   <audio> → [deck gain] → [user EQ: bass shelf → 10 peaking bands → treble
+ *   shelf] → balance → [effects: bass → vocal → night → pan → gain] →
+ *   [post-FX: dry ‖ reverb ‖ distortion] → [normalization gain → limiter] →
+ *   analyser → destination
  *
  * The user EQ lives on its OWN nodes, separate from the effect nodes, so
  * presets/sound-effects can never clobber the user's bass/treble/balance
  * settings (the old bug: both wrote to the same BiquadFilter gains, so
- * changing one silently reset the other).
+ * changing one silently reset the other). The 10-band EQ sits between the two
+ * shelves for the same reason — everything composes.
  *
  * Must be called from a user-gesture context the first time (browsers block
  * suspended AudioContexts). YouTube IFrame playback isn't tappable here —
@@ -416,6 +654,21 @@ export function ensureGraph(): boolean {
     balanceNode = createPanner(audioCtx);
     setPan(balanceNode, eqMono ? 0 : eqBalance);
 
+    // 10-band graphic EQ: ten peaking filters chained between the shelves and
+    // balance. Created before anything is captured, like every other node —
+    // a missing BiquadFilter here must cost the band, never the graph.
+    // `ctx` captures the narrowed binding: inside a callback, TS will not
+    // carry the enclosing null-check across.
+    const ctx = audioCtx;
+    eqBandNodes = EQ_BAND_FREQUENCIES.map((freq, index) => {
+      const node = ctx.createBiquadFilter();
+      node.type = "peaking";
+      node.frequency.value = freq;
+      node.Q.value = EQ_BAND_Q;
+      node.gain.value = eqBands[index] ?? 0;
+      return node;
+    });
+
     // effects stage (tapped after the user EQ)
     fxIn = audioCtx.createGain();
 
@@ -438,12 +691,54 @@ export function ensureGraph(): boolean {
     panner = createPanner(audioCtx);
     gainOut = audioCtx.createGain();
 
+    // post-effect stage. Every node is created inside its own guarded block
+    // and connected only after all exist, mirroring the capture-block rule:
+    // any failure here must leave the dry path intact, not orphan the decks.
+    postFxDry = audioCtx.createGain();
+    postFxDry.gain.value = 1;
+
+    try {
+      reverbConvolver = audioCtx.createConvolver();
+      reverbConvolver.buffer = makeReverbImpulse(audioCtx, 0.6, 2.4);
+      reverbWet = audioCtx.createGain();
+      reverbWet.gain.value = reverbMix;
+    } catch {
+      reverbConvolver = null;
+      reverbWet = null;
+    }
+
+    try {
+      distortionShaper = audioCtx.createWaveShaper();
+      distortionShaper.curve = makeDistortionCurve(distortionAmount);
+      distortionShaper.oversample = "2x";
+      distortionWet = audioCtx.createGain();
+      distortionWet.gain.value = applyDistortionMix(distortionAmount).wet;
+      postFxDry.gain.value = applyDistortionMix(distortionAmount).dry;
+    } catch {
+      distortionShaper = null;
+      distortionWet = null;
+    }
+
+    try {
+      normGain = audioCtx.createGain();
+      normGain.gain.value = 1;
+      normLimiter = audioCtx.createDynamicsCompressor();
+      applyNormalizationNodes();
+    } catch {
+      normGain = null;
+      normLimiter = null;
+    }
+
     // Deck wiring happens after the chain is complete — see the capture block
     // below. Connecting here would need `eqBassNode` to exist first, which it
     // does, but keeping every element-touching step in one place is what makes
     // the failure argument above checkable.
 
-    eqBassNode.connect(eqTrebleNode);
+    eqBassNode.connect(eqBandNodes[0]!);
+    for (let i = 0; i < eqBandNodes.length - 1; i++) {
+      eqBandNodes[i]!.connect(eqBandNodes[i + 1]!);
+    }
+    eqBandNodes[eqBandNodes.length - 1]!.connect(eqTrebleNode);
     eqTrebleNode.connect(balanceNode);
     balanceNode.connect(fxIn);
     fxIn.connect(bassFilter);
@@ -460,11 +755,44 @@ export function ensureGraph(): boolean {
     try {
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
-      gainOut.connect(analyser);
+      // Dry path (ducked by the distortion mix), then normalization, then the
+      // analyser — the taps feed the analyser directly in parallel.
+      gainOut.connect(postFxDry);
+      if (normGain && normLimiter) {
+        postFxDry.connect(normGain);
+        normGain.connect(normLimiter);
+        normLimiter.connect(analyser);
+      } else {
+        postFxDry.connect(analyser);
+      }
+      if (reverbConvolver && reverbWet) {
+        gainOut.connect(reverbConvolver);
+        reverbConvolver.connect(reverbWet);
+        reverbWet.connect(analyser);
+      }
+      if (distortionShaper && distortionWet) {
+        gainOut.connect(distortionShaper);
+        distortionShaper.connect(distortionWet);
+        distortionWet.connect(analyser);
+      }
       analyser.connect(audioCtx.destination);
     } catch {
       analyser = null;
-      gainOut.connect(audioCtx.destination);
+      // Fallback: the dry path must reach the speakers even if nothing else
+      // of this stage survived.
+      try {
+        if (normGain && normLimiter) {
+          postFxDry.connect(normGain);
+          normGain.connect(normLimiter);
+          normLimiter.connect(audioCtx.destination);
+        } else {
+          postFxDry.connect(audioCtx.destination);
+        }
+      } catch {
+        // Last resort — direct. The decks were not captured yet, so this
+        // still leaves them free to play on their own.
+        gainOut.connect(audioCtx.destination);
+      }
     }
 
     // ---------------------------------------------------------------------
@@ -515,6 +843,9 @@ export function ensureGraph(): boolean {
       return false;
     }
     graphBuildFailed = false;
+    // The graph arrived after normalization was switched on (e.g. the toggle
+    // ran before any user gesture): start its loop now.
+    if (volumeNormalization) startNormalizationLoop();
     return true;
   } catch {
     // Everything that can throw now runs BEFORE any element is captured, so by
@@ -541,6 +872,7 @@ export function ensureGraph(): boolean {
       filterSource = null;
       eqBassNode = null;
       eqTrebleNode = null;
+      eqBandNodes = EQ_BAND_FREQUENCIES.map(() => null);
       balanceNode = null;
       fxIn = null;
       bassFilter = null;
@@ -548,6 +880,13 @@ export function ensureGraph(): boolean {
       nightLow = null;
       panner = null;
       gainOut = null;
+      postFxDry = null;
+      reverbConvolver = null;
+      reverbWet = null;
+      distortionShaper = null;
+      distortionWet = null;
+      normGain = null;
+      normLimiter = null;
       analyser = null;
       return false;
     }
@@ -606,9 +945,10 @@ export function isGraphReady(): boolean {
 
 /**
  * True when the user has ANY non-default audio processing configured (EQ
- * sliders, mono, balance or an effect preset). Playback MUST then run through
- * the <audio> element — the YouTube IFrame cannot be tapped by Web Audio, so
- * these settings would otherwise be inaudible.
+ * sliders, 10-band curve, mono, balance, pitch, reverb, distortion, an effect
+ * preset or normalization). Playback MUST then run through the <audio>
+ * element — the YouTube IFrame cannot be tapped by Web Audio, so these
+ * settings would otherwise be inaudible.
  */
 export function hasAudioProcessing(): boolean {
   return (
@@ -616,7 +956,12 @@ export function hasAudioProcessing(): boolean {
     eqBass !== 0 ||
     eqTreble !== 0 ||
     eqBalance !== 0 ||
-    eqMono
+    eqMono ||
+    eqBands.some((band) => band !== 0) ||
+    deckPitch !== 0 ||
+    reverbMix > 0 ||
+    distortionAmount > 0 ||
+    volumeNormalization
   );
 }
 
@@ -763,6 +1108,103 @@ export function setEqMono(mono: boolean): void {
 export function applyEqPreset(preset: { bass: number; treble: number }): void {
   setEqBass(preset.bass);
   setEqTreble(preset.treble);
+}
+
+// --- 10-band graphic EQ -------------------------------------------------------
+
+/** Clamp to the band range and apply one band's gain. */
+export function setEqBand(index: number, db: number): void {
+  if (index < 0 || index >= EQ_BAND_FREQUENCIES.length) return;
+  const clamped = Math.min(EQ_BAND_MAX_DB, Math.max(EQ_BAND_MIN_DB, db));
+  eqBands[index] = clamped;
+  const node = eqBandNodes[index];
+  if (node) {
+    try {
+      node.gain.value = clamped;
+    } catch {
+      /* context not running */
+    }
+  }
+  notifyEqChange();
+}
+
+/** Apply a full 10-band curve at once (persisted settings restore path). */
+export function setEqBands(values: number[]): void {
+  for (let i = 0; i < EQ_BAND_FREQUENCIES.length; i++) {
+    setEqBand(i, values[i] ?? 0);
+  }
+}
+
+/** Copy of the current band curve, for persistence and UI. */
+export function getEqBands(): number[] {
+  return [...eqBands];
+}
+
+/** Flatten every band back to zero (the Reset button). */
+export function resetEqBands(): void {
+  setEqBands(EQ_BAND_FREQUENCIES.map(() => 0));
+}
+
+// --- vibe: reverb / distortion --------------------------------------------------
+
+/** Set the reverb wet level, 0 (dry) to 1 (a small hall). */
+export function setReverbMix(mix: number): void {
+  reverbMix = Math.min(1, Math.max(0, mix));
+  if (reverbWet) {
+    try {
+      reverbWet.gain.value = reverbMix;
+    } catch {
+      /* context not running */
+    }
+  }
+  notifyEqChange();
+}
+
+export function getReverbMix(): number {
+  return reverbMix;
+}
+
+/** Set the distortion drive, 0 (clean) to 100 (folded). */
+export function setDistortion(amount: number): void {
+  distortionAmount = Math.min(100, Math.max(0, amount));
+  const mix = applyDistortionMix(distortionAmount);
+  try {
+    if (distortionShaper) {
+      distortionShaper.curve = makeDistortionCurve(distortionAmount);
+    }
+    if (distortionWet) distortionWet.gain.value = mix.wet;
+    if (postFxDry) postFxDry.gain.value = mix.dry;
+  } catch {
+    /* context not running */
+  }
+  notifyEqChange();
+}
+
+export function getDistortion(): number {
+  return distortionAmount;
+}
+
+// --- volume normalization -------------------------------------------------------
+
+/**
+ * Enable or disable loudness normalization. Toggling OFF parks the gain at
+ * unity AND makes the limiter transparent (ratio 1, threshold 0) — "off" must
+ * be the same chain as before normalization existed.
+ */
+export function setVolumeNormalization(enabled: boolean): void {
+  volumeNormalization = enabled;
+  applyNormalizationNodes();
+  if (enabled) {
+    if (!ensureGraph()) return;
+    startNormalizationLoop();
+  } else {
+    stopNormalizationLoop();
+  }
+  notifyEqChange();
+}
+
+export function isVolumeNormalizationEnabled(): boolean {
+  return volumeNormalization;
 }
 
 /** Copy the current frequency magnitudes into `out` (0-255 per bin). */

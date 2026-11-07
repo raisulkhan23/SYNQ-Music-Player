@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { RemoteTrackRow } from "@/components/tracks/RemoteTrackRow";
+import { SoundCloudResults } from "@/components/search/SoundCloudResults";
 import { api } from "@/convex/_generated/api";
 import { toPlayableYoutube } from "@/lib/playable";
 import { cleanArtistName, type YtItem } from "@/lib/youtube";
@@ -489,14 +490,8 @@ export default function Search() {
             if (failed) {
               setYtResults([]);
               setSearching(false);
-              // `failed` is also set when the catalogue ANSWERED with a pool
-              // that shares no word with the query — which is exactly what a
-              // typo looks like. Telling those listeners the catalogue is
-              // unreachable sent them to "try again" forever instead of the
-              // spelling that was actually wrong, so the wording has to cover
-              // both cases and point at the query itself.
               setSearchError(
-                `We couldn't get a reliable answer for “${q}”. Check the spelling, or try again in a moment.`,
+                "We couldn't reach our music catalogue just now, so this isn't a real answer about your search. Usually temporary — try again in a moment.",
               );
               trackEvent("search_results", {
                 query: q.slice(0, 120),
@@ -919,6 +914,12 @@ export default function Search() {
               </div>
             )}
           </section>
+
+          {/* SoundCloud is a first-class playable source (unlike Jamendo, which
+              stayed a discovery index): its rows play from SoundCloud's own
+              progressive streams through the decks. Rendered whenever there is
+              something to look for; it owns its loading and failure states. */}
+          {hasQuery ? <SoundCloudResults query={query} /> : null}
 
           {/* Jamendo is intentionally NOT rendered here.
               Creative Commons discovery lives behind the header CC switch,

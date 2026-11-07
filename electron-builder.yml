@@ -20,19 +20,6 @@ files:
 
 asar: true
 
-# The tray icon and the window icon are read from `process.resourcesPath` at
-# runtime (see electron/tray.cjs and the BrowserWindow options in
-# electron/main.cjs). Only `files` is packed into the asar, so the logo has to be
-# copied out explicitly — otherwise every packaged build silently falls back to
-# the stock Electron glyph. Both files come from the same artwork: public/logo.png
-# is the mark, build/icon.ico is the installer icon `npm run build:icon` builds
-# from it.
-extraResources:
-  - from: public/logo.png
-    to: logo.png
-  - from: build/icon.ico
-    to: logo.ico
-
 win:
   target:
     - target: nsis

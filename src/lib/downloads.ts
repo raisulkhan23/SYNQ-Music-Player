@@ -4,7 +4,6 @@ import {
   type DownloadConfig,
 } from "@/lib/downloadManager";
 import type { Playable } from "@/lib/playable";
-import type { DownloadMeta } from "@/lib/trackSource";
 
 /**
  * The single, app-level download manager, and the bridge between "something
@@ -94,47 +93,19 @@ export interface DownloadRequestResult {
  * provider refusal surfaces to the user immediately, at press time, instead of
  * buried in a background transfer failure.
  */
-/** One authorized source, remembered between `enqueue` and the transfer. */
-export interface ResolvedDownload {
-  /** The URL the engine fetches. For downloads this is SYNQ's own relay. */
-  url: string;
-  filename: string;
-  /** Metadata written into the local library when the transfer completes. */
-  meta?: DownloadMeta;
-}
-
-const resolved = new Map<string, ResolvedDownload>();
+const resolved = new Map<
+  string,
+  { url: string; filename: string; tag?: Uint8Array }
+>();
 
 /** Called by the registered factory to claim a download's resolved stream. */
-export function takeResolved(trackId: string): ResolvedDownload | null {
+export function takeResolved(trackId: string) {
   return resolved.get(trackId) ?? null;
 }
 
 /** Forget a resolved stream so a signed URL is not kept around. */
 export function forgetResolved(trackId: string): void {
   resolved.delete(trackId);
-}
-
-/** A desktop-only relay URL resolved for one track, if the shell has started to resolve it. */
-export interface DesktopResolvedDownload extends ResolvedDownload {
-  relayUrl: string;
-}
-
-const desktopResolved = new Map<string, DesktopResolvedDownload>();
-
-/** Called by the desktop path before handing control to the shell. */
-export function rememberDesktopResolved(
-  trackId: string,
-  source: DesktopResolvedDownload,
-): void {
-  desktopResolved.set(trackId, source);
-}
-
-/** Read a desktop-resolved relay URL, if one was remembered. */
-export function takeDesktopResolved(
-  trackId: string,
-): DesktopResolvedDownload | null {
-  return desktopResolved.get(trackId) ?? null;
 }
 
 /**
@@ -147,7 +118,7 @@ export function takeDesktopResolved(
  */
 export function rememberResolved(
   trackId: string,
-  source: ResolvedDownload,
+  source: { url: string; filename: string; tag?: Uint8Array },
 ): void {
   resolved.set(trackId, source);
 }
