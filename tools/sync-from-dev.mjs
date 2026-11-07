@@ -101,7 +101,15 @@ function fail(text) {
 
 function run(cmd, cmdArgs, options = {}) {
   console.log(`\n$ ${cmd} ${cmdArgs.join(" ")}`);
-  return execFileSync(cmd, cmdArgs, { cwd: RELEASE_ROOT, stdio: "inherit", ...options });
+  // Windows ships `npm` and `npx` only as `.cmd` shims, and execFileSync does
+  // not search PATHEXT, so it throws ENOENT for both unless a shell resolves
+  // them. Git is a real executable and needs no shell either way.
+  return execFileSync(cmd, cmdArgs, {
+    cwd: RELEASE_ROOT,
+    stdio: "inherit",
+    shell: process.platform === "win32",
+    ...options,
+  });
 }
 
 function git(cmdArgs, options = {}) {
@@ -217,7 +225,7 @@ function checks() {
   }
 
   try {
-    run("npx", ["vitest", "run"]);
+    run("bun", ["test"]);
     console.log("\n✓ Build and tests passed against the release contents.");
   } catch {
     if (!flag("--allow-test-failures")) {
