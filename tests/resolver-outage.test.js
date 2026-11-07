@@ -47,7 +47,7 @@ describe("a total resolver outage must not stop playback", () => {
   test("the deck path races the resolver instead of waiting on it", () => {
     const branch = sliceBetween(
       player,
-      "const wantDeckEngine = wantFilter",
+      "const wantDeckEngine =",
       "getAudio().pause();",
     );
     // A raw `await ytResolve` here means a hung resolver keeps the track
@@ -75,7 +75,7 @@ describe("a total resolver outage must not stop playback", () => {
   test("the IFrame fallback is armed with a watchdog", () => {
     const branch = sliceBetween(
       player,
-      "const wantDeckEngine = wantFilter",
+      "const wantDeckEngine =",
       "getAudio().pause();",
     );
     // The defect in one line: this path had no timeout, so a refused stream
@@ -89,7 +89,7 @@ describe("a total resolver outage must not stop playback", () => {
   test("the watchdog ends in a visible error, not another silent stall", () => {
     const branch = sliceBetween(
       player,
-      "const wantDeckEngine = wantFilter",
+      "const wantDeckEngine =",
       "getAudio().pause();",
     );
     // `isBuffering: false` plus a bumped errorNonce is what raises the real

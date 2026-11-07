@@ -2,6 +2,7 @@ import { useAction } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerStore } from "@/store/player";
 import { api } from "@/convex/_generated/api";
+import type { WordLyricLine } from "@/lib/yrcParse";
 
 /** One line of lyrics. `blank` marks a section break, not a word. */
 export interface TrackLyricLine {
@@ -22,6 +23,13 @@ export interface UseTrackLyrics {
   /** The line before / after it, skipping section breaks. "" at the edges. */
   prevLine: string;
   nextLine: string;
+  /**
+   * Word-timed lines, when the source (NetEase YRC) had real per-word
+   * timings for this track. When present, these REPLACE `lines` — a karaoke
+   * view renders from one consistent line set, not from line lyrics matched
+   * onto word timings by timestamp.
+   */
+  wordLines: WordLyricLine[] | null;
   /** Attach to the scrolling panel so the active line can follow along. */
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -82,13 +90,23 @@ export function useTrackLyrics(
   const current = usePlayerStore((s) => s.current);
   const currentTime = usePlayerStore((s) => s.currentTime);
   const fetchLyrics = useAction(api.lyrics.fetchLyrics);
+  const fetchWordLyrics = useAction(api.wordLyrics.fetchWordLyrics);
 
   const [lines, setLines] = useState<TrackLyricLine[] | null>(null);
   const [synced, setSynced] = useState(true);
   const [loading, setLoading] = useState(false);
+  /**
+   * Word-timed lines from NetEase YRC. Fetched lazily — the karaoke layer is
+   * only worth its request when the panel is actually open, so a listener who
+   * never opens lyrics never pays for it. When it lands, it REPLACES the
+   * per-line lyrics (see wordLines' doc above).
+   */
+  const [wordLines, setWordLines] = useState<WordLyricLine[] | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   /** True once the panel has been centred on the active line for this open. */
   const hasCentredRef = useRef(false);
+  /** The track key the word-lyrics lookup already attempted, so one miss does not retry per frame. */
+  const wordTriedRef = useRef("");
 
   const key = current
     ? `${current.title}|${current.artistName}|${current.albumName}`
@@ -105,6 +123,12 @@ export function useTrackLyrics(
     setSynced(true);
     setLoading(true);
   }, [enabled, key]);
+
+  // Word lyrics reset when the track changes, whatever the panel is doing.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset when a new track loads
+    setWordLines(null);
+  }, [key]);
 
   useEffect(() => {
     if (!enabled || !current) return;
@@ -137,36 +161,78 @@ export function useTrackLyrics(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, fetchLyrics, key]);
 
+  // Word lyrics: fetched once per track, only while the panel is open (the
+  // karaoke layer is the sole consumer). A null result is final for this
+  // track — the per-line lyrics stay, karaoke simply never lights up.
+  useEffect(() => {
+    if (!enabled || !panelOpen || !current) return;
+    if (wordLines !== null || wordTriedRef.current === key) return;
+    wordTriedRef.current = key;
+    let cancelled = false;
+    void fetchWordLyrics({
+      title: cleanLyricsQuery(current.title),
+      artist: cleanLyricsQuery(current.artistName),
+      duration: current.duration > 0 ? current.duration * 1000 : undefined,
+    })
+      .then((res) => {
+        if (!cancelled && res?.words && res.words.length > 0) {
+          setWordLines(res.words);
+        }
+      })
+      .catch(() => {
+        /* per-line lyrics remain; karaoke stays off */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, panelOpen, key, fetchWordLyrics]);
+
+  // Word-timed lines REPLACE per-line lyrics when present: one consistent
+  // line set for every consumer (the karaoke fill, the active-line search and
+  // the prev/next stack all read the same rows).
+  const effectiveLines = useMemo<TrackLyricLine[] | null>(() => {
+    if (wordLines && wordLines.length > 0) {
+      return wordLines.map((line) => ({
+        t: line.t,
+        text: line.text,
+      }));
+    }
+    return lines;
+  }, [wordLines, lines]);
+
   const activeIndex = useMemo(() => {
-    if (!lines) return -1;
+    if (!effectiveLines) return -1;
     let idx = -1;
-    for (let i = 0; i < lines.length; i++) {
+    for (let i = 0; i < effectiveLines.length; i++) {
       // A section break is not a lyric. Highlighting it would flash an empty
       // gap between two words.
-      if (lines[i].blank) continue;
-      if (lines[i].t <= currentTime + 0.2) idx = i;
+      if (effectiveLines[i].blank) continue;
+      if (effectiveLines[i].t <= currentTime + 0.2) idx = i;
       else break;
     }
     return idx;
-  }, [lines, currentTime]);
+  }, [effectiveLines, currentTime]);
 
   const activeLine =
-    activeIndex >= 0 && lines ? (lines[activeIndex]?.text ?? "") : "";
+    activeIndex >= 0 && effectiveLines
+      ? (effectiveLines[activeIndex]?.text ?? "")
+      : "";
 
   // The lines either side of the current one, for the player's three-line
   // stack. Section breaks are skipped in both directions: showing an empty
   // gap where a word should be is worse than showing nothing.
   const { prevLine, nextLine } = useMemo(() => {
-    if (!lines || activeIndex < 0) return { prevLine: "", nextLine: "" };
+    if (!effectiveLines || activeIndex < 0) return { prevLine: "", nextLine: "" };
     let p = activeIndex - 1;
-    while (p >= 0 && lines[p]?.blank) p--;
+    while (p >= 0 && effectiveLines[p]?.blank) p--;
     let n = activeIndex + 1;
-    while (n < lines.length && lines[n]?.blank) n++;
+    while (n < effectiveLines.length && effectiveLines[n]?.blank) n++;
     return {
-      prevLine: p >= 0 ? (lines[p]?.text ?? "") : "",
-      nextLine: n < lines.length ? (lines[n]?.text ?? "") : "",
+      prevLine: p >= 0 ? (effectiveLines[p]?.text ?? "") : "",
+      nextLine: n < effectiveLines.length ? (effectiveLines[n]?.text ?? "") : "",
     };
-  }, [lines, activeIndex]);
+  }, [effectiveLines, activeIndex]);
 
   // Follow the active line in the scrolling panel. Skipped for unsynced
   // lyrics: their timings are guesses spread across the track, so following
@@ -201,13 +267,14 @@ export function useTrackLyrics(
   }, [enabled, panelOpen, activeIndex, synced]);
 
   return {
-    lines,
+    lines: effectiveLines,
     synced,
     loading,
     activeIndex,
     activeLine,
     prevLine,
     nextLine,
+    wordLines: wordLines && wordLines.length > 0 ? wordLines : null,
     containerRef,
   };
 }

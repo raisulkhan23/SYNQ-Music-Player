@@ -1,5 +1,7 @@
 import { registerDownloadAdapter, takeResolved } from "@/lib/downloads";
 import { createTrackAdapter } from "@/lib/trackSource";
+import { prependToStoredDownload } from "@/lib/opfsSink";
+import type { DownloadAdapter } from "@/lib/downloadManager";
 
 /**
  * Installs the download adapter once, at app level.
@@ -41,6 +43,37 @@ export function installDownloadAdapter(): void {
     // found again by anything looking up "the copy of this track" — which is
     // exactly what offline playback does. Keying by track id also means
     // re-downloading overwrites its own copy instead of piling up duplicates.
-    return createTrackAdapter(stream.url, stream.filename, download.trackId);
+    const base = createTrackAdapter(stream.url, stream.filename, download.trackId);
+    if (!stream.tag || stream.tag.length === 0) return base;
+    return withTaggingCommit(base, download.trackId, stream.tag);
   });
+}
+
+/**
+ * Wrap an adapter so a finished download gets its ID3 tag prepended.
+ *
+ * The hook runs on `commit` — after the engine has verified the full length —
+ * so the transfer's resume math and integrity checks never see the tag. A
+ * tagging failure must not fail the download: the file is already on disk and
+ * playable, the tag is decoration.
+ */
+function withTaggingCommit(
+  base: DownloadAdapter,
+  trackId: string,
+  tag: Uint8Array,
+): DownloadAdapter {
+  return {
+    ...base,
+    sink: {
+      ...base.sink,
+      commit: async () => {
+        await base.sink.commit();
+        try {
+          await prependToStoredDownload(trackId, tag);
+        } catch {
+          /* the file is complete and playable without the tag */
+        }
+      },
+    },
+  };
 }

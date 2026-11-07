@@ -2,6 +2,7 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "@/convex/_generated/api";
+import { readTracklistPages } from "@/lib/artistPagination";
 import type { BrowseRelease, BrowseTrack } from "@/lib/musicBrowse";
 
 /**
@@ -79,32 +80,30 @@ type FetchTracks = (args: {
  * One release's tracklist, following continuation tokens until it ends.
  * Exported so the album page can read exactly one release without hydrating a
  * whole artist's catalogue first.
+ *
+ * The paging rules (page cap, repeating-cursor safety, dedupe) live in the
+ * pure `artistPagination` module so the artist page, the album page and the
+ * tests all exercise the SAME loop; this wrapper only adapts the action's
+ * fetch shape to the module's reader shape and keeps cancellation support.
  */
 export async function readTracklist(
   fetchPage: FetchTracks,
   releaseId: string,
   isCancelled: () => boolean,
 ): Promise<BrowseTrack[]> {
-  const all: BrowseTrack[] = [];
-  let cursor: string | undefined;
-  // Bounded: a malformed cursor that never advances would otherwise loop
-  // forever. Four pages is far beyond any real album.
-  for (let page = 0; page < 4; page++) {
-    if (isCancelled()) return all;
-    const result = await fetchPage({
-      releaseId,
-      ...(cursor ? { cursor } : {}),
-    });
-    all.push(...result.tracks);
-    if (!result.nextCursor) break;
-    cursor = result.nextCursor;
-  }
-  const seen = new Set<string>();
-  return all.filter((track) => {
-    if (!track.videoId || seen.has(track.videoId)) return false;
-    seen.add(track.videoId);
-    return true;
-  });
+  const result = await readTracklistPages(
+    (body) => {
+      if (isCancelled()) return Promise.resolve({});
+      const releaseIdArg = typeof body.browseId === "string" ? body.browseId : releaseId;
+      const cursorArg = typeof body.continuation === "string" ? body.continuation : undefined;
+      return fetchPage({
+        releaseId: releaseIdArg,
+        ...(cursorArg ? { cursor: cursorArg } : {}),
+      });
+    },
+    releaseId,
+  );
+  return result.tracks;
 }
 
 /** Albums first: they carry most of a catalogue and are what listeners open. */

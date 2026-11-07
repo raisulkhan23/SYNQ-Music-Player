@@ -5,6 +5,7 @@ import {
 } from "@/lib/downloads";
 import { createTrackAdapter } from "@/lib/trackSource";
 import { authorizedFilename, refuse, type DownloadRefusal } from "@/lib/downloadAuth";
+import { buildId3Tag } from "@/lib/id3";
 
 /**
  * The authorized-download bridge: authorization -> bytes -> OPFS.
@@ -33,6 +34,70 @@ export interface AuthorizationResult {
   contentType: string;
   licenseUrl: string;
   attribution: string;
+  /** Cover art to embed, when the provider supplies one. */
+  artworkUrl?: string;
+  /** Track length in ms, for the ID3 tag. */
+  durationMs?: number;
+  /** Track title, for the ID3 tag. */
+  title?: string;
+  /** Track artist, for the ID3 tag. */
+  artist?: string;
+  /** The source that granted this download. */
+  provider?: "jamendo" | "soundcloud";
+}
+
+const ARTWORK_FETCH_TIMEOUT_MS = 8_000;
+/** Covers above this are not worth the time — the tag still carries the text. */
+const MAX_ARTWORK_BYTES = 8 * 1024 * 1024;
+
+async function fetchArtwork(
+  url: string,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(ARTWORK_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+    if (!/^image\/(jpeg|png)$/.test(mime)) return null;
+    const buffer = await res.arrayBuffer();
+    if (buffer.byteLength === 0 || buffer.byteLength > MAX_ARTWORK_BYTES) return null;
+    return { bytes: new Uint8Array(buffer), mime };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build the ID3 tag for one authorized download.
+ *
+ * Pure decoration on top of an already-authorized transfer: a missing cover,
+ * a failed artwork fetch or a non-image response all leave the tag text-only
+ * rather than failing the download. The licence URL and attribution travel
+ * with the file because attribution is the one condition those licences carry.
+ */
+export async function buildDownloadTag(input: {
+  title?: string;
+  artist?: string;
+  attribution?: string;
+  licenseUrl?: string;
+  artworkUrl?: string;
+  durationMs?: number;
+}): Promise<Uint8Array | null> {
+  let artwork: { bytes: Uint8Array; mime: string } | null = null;
+  if (input.artworkUrl) artwork = await fetchArtwork(input.artworkUrl);
+  try {
+    return buildId3Tag({
+      title: input.title,
+      artist: input.artist,
+      durationMs: input.durationMs,
+      comment: input.attribution,
+      licenseUrl: input.licenseUrl,
+      ...(artwork ? { artwork: artwork.bytes, artworkMime: artwork.mime } : {}),
+    });
+  } catch {
+    return null;
+  }
 }
 
 /** The outcome of asking to download, with copy the UI can show verbatim. */
@@ -95,11 +160,28 @@ export async function requestAuthorizedDownload(
   const filename =
     decision.filename?.trim() || authorizedFilename(trackId, "", "");
 
+  // Build the ID3 tag BEFORE the transfer starts, so the finished file is
+  // tagged the moment its commit lands. Failure here is cosmetic — a download
+  // without tags is still the authorized file — so every step is guarded and
+  // null-tag flows through unchanged.
+  const tag = await buildDownloadTag({
+    title: decision.title,
+    artist: decision.artist,
+    attribution: decision.attribution,
+    licenseUrl: decision.licenseUrl,
+    artworkUrl: decision.artworkUrl,
+    durationMs: decision.durationMs,
+  });
+
   try {
     // The authorized source is recorded first, so the adapter factory can never
     // start a transfer without one. Recorded under the STORAGE key, because
     // that is the id the manager and offline playback both use.
-    rememberResolved(storageKey, { url: decision.downloadUrl, filename });
+    rememberResolved(storageKey, {
+      url: decision.downloadUrl,
+      filename,
+      ...(tag ? { tag } : {}),
+    });
     getDownloadManager().enqueue({
       trackId: storageKey,
       filename,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { RemoteTrackRow } from "@/components/tracks/RemoteTrackRow";
+import { SoundCloudResults } from "@/components/search/SoundCloudResults";
 import { api } from "@/convex/_generated/api";
 import { toPlayableYoutube } from "@/lib/playable";
 import { cleanArtistName, type YtItem } from "@/lib/youtube";
@@ -913,6 +914,12 @@ export default function Search() {
               </div>
             )}
           </section>
+
+          {/* SoundCloud is a first-class playable source (unlike Jamendo, which
+              stayed a discovery index): its rows play from SoundCloud's own
+              progressive streams through the decks. Rendered whenever there is
+              something to look for; it owns its loading and failure states. */}
+          {hasQuery ? <SoundCloudResults query={query} /> : null}
 
           {/* Jamendo is intentionally NOT rendered here.
               Creative Commons discovery lives behind the header CC switch,

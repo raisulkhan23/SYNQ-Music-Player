@@ -93,7 +93,10 @@ export interface DownloadRequestResult {
  * provider refusal surfaces to the user immediately, at press time, instead of
  * buried in a background transfer failure.
  */
-const resolved = new Map<string, { url: string; filename: string }>();
+const resolved = new Map<
+  string,
+  { url: string; filename: string; tag?: Uint8Array }
+>();
 
 /** Called by the registered factory to claim a download's resolved stream. */
 export function takeResolved(trackId: string) {
@@ -115,7 +118,7 @@ export function forgetResolved(trackId: string): void {
  */
 export function rememberResolved(
   trackId: string,
-  source: { url: string; filename: string },
+  source: { url: string; filename: string; tag?: Uint8Array },
 ): void {
   resolved.set(trackId, source);
 }

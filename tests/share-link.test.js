@@ -166,9 +166,12 @@ describe("the share button copies the link straight away", () => {
   });
 
   test("the route is public so a link works for a first-time visitor", () => {
-    expect(mainSource).toMatch(
-      /<Route path="\/t\/:trackId" element={<TrackLink \/>} \/>/,
-    );
+    // The route must be declared for /t/:trackId. It renders TrackLink inside a
+    // PageBoundary (a lazy route needs a boundary to catch a rejected chunk),
+    // so assert the route exists and mounts TrackLink rather than pinning the
+    // exact JSX nesting.
+    expect(mainSource).toMatch(/path="\/t\/:trackId"/);
+    expect(mainSource).toMatch(/<TrackLink \/>/);
     // It must sit OUTSIDE the RequireAuth group, or sharing to someone who
     // has no account would bounce them to sign-up with no way back.
     const route = mainSource.slice(

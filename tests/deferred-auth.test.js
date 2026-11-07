@@ -286,7 +286,6 @@ describe("account actions are gated, and never lie about state", () => {
   const ACCOUNT = [
     ["toggleLike", "like a song"],
     ["toggleLikedAlbum", "save an album"],
-    ["toggleFollowArtist", "follow an artist"],
   ];
 
   test.each(ACCOUNT)("%s is gated (%s)", (fn) => {
@@ -296,7 +295,6 @@ describe("account actions are gated, and never lie about state", () => {
     const bodies = [
       `const ${fn} = (trackId: string`,
       `\n    ${fn}: (albumId) => {`,
-      `\n    ${fn}: (artistId) => {`,
     ];
     const at = bodies.map((m) => store.indexOf(m)).find((i) => i > -1);
     expect(at).toBeGreaterThan(-1);

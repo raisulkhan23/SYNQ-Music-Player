@@ -24,12 +24,16 @@ const STREAM_PROXY = httpAction(async (ctx, request) => {
   // Validate the target is an audio/video stream we expect to proxy.
   // Historically only googlevideo videoplayback URLs landed here; Piped's
   // own proxy endpoint is now also a supported upstream, so accept either.
+  // SoundCloud's CDN (sndcdn.com) joined them when SoundCloud became a
+  // playable source: its streams are public signed URLs, and the proxy is
+  // what lets the Web Audio graph tap them.
   if (
     !target.startsWith("https://") ||
     (!(target.includes("googlevideo.com/videoplayback") ||
       target.includes("player.odycdn.com") ||
       target.includes("piped-proxy.") ||
-      target.includes("odycdn.com")))
+      target.includes("odycdn.com") ||
+      target.includes("sndcdn.com")))
   ) {
     return new Response("Bad or missing stream url", { status: 400 });
   }

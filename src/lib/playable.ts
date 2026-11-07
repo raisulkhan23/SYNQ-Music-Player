@@ -19,21 +19,29 @@ export interface Playable {
   /**
    * Which engine owns this track.
    *
-   * Only `"youtube"` remains, and that is deliberate. Jamendo used to be a
-   * second playable source — a direct Creative Commons stream fed to the
-   * `<audio>` element — and every track came back silent, because that stream
-   * never made a sound for the listeners it was built for. A second source
-   * that cannot play is not a fallback, it is a second way to be silent, so
-   * the branch was removed rather than left to fail quietly.
+   * `"youtube"` — the IFrame engine, or the <audio> decks with a resolved
+   * stream. Jamendo used to be a second playable source and came back silent
+   * for its audience, so it was demoted to a DISCOVERY index on purpose (see
+   * `src/lib/jamendoDiscovery.ts`).
    *
-   * Jamendo itself is not gone: it is a DISCOVERY index. It names independent
-   * releases for search and recommendations, and each one is resolved to a
-   * real YouTube upload before it can be played. See
-   * `src/lib/jamendoDiscovery.ts`.
+   * `"soundcloud"` — a first-class playable source (ported from the melo
+   * player). Its progressive MP3s are real byte-range-able HTTP audio, so the
+   * decks play them directly; the stream is resolved per play through the
+   * Convex action and delivered via /audio-proxy. See `src/convex/soundcloud.ts`.
    */
-  source: "youtube";
+  source: "youtube" | "soundcloud";
   /** Set when this track plays through the YouTube IFrame engine (by video id). */
   youtubeId?: string;
+  /**
+   * The numeric SoundCloud track id when this track IS a SoundCloud upload.
+   * Never a re-matched substitute: SoundCloud tracks play from SoundCloud.
+   */
+  soundcloudId?: string;
+  /**
+   * The web page for this track, when the source has one (SoundCloud).
+   * Used for the "open original" affordance and for share links.
+   */
+  webUrl?: string;
   /**
    * The Jamendo release this track was discovered from, when it was.
    *
@@ -89,3 +97,41 @@ export function toPlayableYoutube(
  * idea lives in `src/lib/jamendoDiscovery.ts`, which resolves a Jamendo hit
  * to a YouTube upload before anything can be queued.
  */
+
+/**
+ * The marker a SoundCloud Playable carries in `audioUrl`.
+ *
+ * Like the `"stream"` rescue marker for YouTube, this is NOT a URL: it means
+ * "resolve this SoundCloud id on play". Resolving every search row up front
+ * would burn a network round trip per row; the store resolves lazily, exactly
+ * once, and caches the result (see `scResolve` in the player store).
+ */
+export const SOUNDCLOUD_RESOLVE_MARKER = "sc:resolve";
+
+/** The client-side shape of one SoundCloud search row (from the Convex action). */
+export interface SoundCloudItem {
+  id: string;
+  title: string;
+  artist: string;
+  durationMs: number;
+  artwork: string;
+  permalinkUrl: string;
+  explicit: boolean;
+}
+
+export function toPlayableSoundcloud(item: SoundCloudItem): Playable {
+  return {
+    // Prefixing the queue id keeps a SoundCloud track from ever colliding
+    // with a YouTube id of the same digits.
+    id: `sc:${item.id}`,
+    title: item.title,
+    artistName: item.artist,
+    albumName: "",
+    coverUrl: item.artwork,
+    audioUrl: SOUNDCLOUD_RESOLVE_MARKER,
+    duration: Math.round(item.durationMs / 1000),
+    source: "soundcloud",
+    soundcloudId: item.id,
+    ...(item.permalinkUrl ? { webUrl: item.permalinkUrl } : {}),
+  };
+}

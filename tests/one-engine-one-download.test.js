@@ -43,7 +43,7 @@ describe("one engine, one download", () => {
   test("the deck path no longer starts the YouTube IFrame alongside it", () => {
     const branch = sliceBetween(
       player,
-      "const wantDeckEngine = wantFilter",
+      "const wantDeckEngine =",
       "getAudio().pause();",
     );
     // The IFrame may still appear — as the FALLBACK when resolution fails —
@@ -73,7 +73,7 @@ describe("one engine, one download", () => {
   test("the IFrame is still a real fallback, not deleted", () => {
     const branch = sliceBetween(
       player,
-      "const wantDeckEngine = wantFilter",
+      "const wantDeckEngine =",
       "getAudio().pause();",
     );
     // Resolver failures must still produce sound rather than silence.

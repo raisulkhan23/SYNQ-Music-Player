@@ -40,8 +40,18 @@ import {
   setAudioFilter,
   setEqBalance,
   setEqBass,
+  setEqBand,
+  resetEqBands,
   setEqMono,
   setEqTreble,
+  setDeckPitch,
+  setRatePreservesPitch,
+  setReverbMix,
+  setDistortion,
+  setVolumeNormalization,
+  EQ_BAND_FREQUENCIES,
+  EQ_BAND_MIN_DB,
+  EQ_BAND_MAX_DB,
   type AudioFilterId,
   AUDIO_FILTERS,
   AUDIO_EFFECT_DELAY_MESSAGE,
@@ -414,6 +424,7 @@ export function SettingsDialog({
         treble?: number;
         balance?: number;
         mono?: boolean;
+        bands?: number[];
         filter?: AudioFilterId;
       };
       // Effects are session-scoped. Do not resurrect a previous Bass Boost
@@ -427,6 +438,63 @@ export function SettingsDialog({
     setEq(next);
     try {
       localStorage.setItem("ss.eq", JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Vibe settings (pitch / reverb / distortion) and loudness normalization —
+  // same pattern as the EQ: persisted locally, applied live to the graph.
+  const [pitch, setPitch] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("ss.pitch") ?? "{}") as {
+        semitones?: number;
+        preserve?: boolean;
+      };
+      return { semitones: saved.semitones ?? 0, preserve: saved.preserve ?? true };
+    } catch {
+      return { semitones: 0, preserve: true };
+    }
+  });
+  const persistPitch = (next: typeof pitch) => {
+    setPitch(next);
+    try {
+      localStorage.setItem("ss.pitch", JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
+  const [reverb, setReverb] = useState(() => {
+    const saved = Number(localStorage.getItem("ss.reverb"));
+    return Number.isFinite(saved) && saved > 0 ? Math.min(100, saved) : 0;
+  });
+  const persistReverb = (value: number) => {
+    setReverb(value);
+    try {
+      localStorage.setItem("ss.reverb", String(value));
+    } catch {
+      /* ignore */
+    }
+  };
+  const [distortion, setDistortionLevel] = useState(() => {
+    const saved = Number(localStorage.getItem("ss.distortion"));
+    return Number.isFinite(saved) && saved > 0 ? Math.min(100, saved) : 0;
+  });
+  const persistDistortion = (value: number) => {
+    setDistortionLevel(value);
+    try {
+      localStorage.setItem("ss.distortion", String(value));
+    } catch {
+      /* ignore */
+    }
+  };
+  const [normalize, setNormalize] = useState(
+    () => localStorage.getItem("ss.normalize") === "1",
+  );
+  const persistNormalize = (value: boolean) => {
+    setNormalize(value);
+    try {
+      localStorage.setItem("ss.normalize", value ? "1" : "0");
     } catch {
       /* ignore */
     }
@@ -1408,6 +1476,214 @@ export function SettingsDialog({
               if (next) toast(AUDIO_EFFECT_DELAY_MESSAGE);
             }}
           />
+
+          {/* 10-band graphic EQ */}
+          <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-sm font-medium">10-band equalizer</p>
+              <button
+                type="button"
+                onClick={() => {
+                  resetEqBands();
+                  persistEq({
+                    ...eq,
+                    bands: EQ_BAND_FREQUENCIES.map(() => 0),
+                  });
+                  toast("EQ bands reset");
+                }}
+                className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Reset
+              </button>
+            </div>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Fine control across the spectrum. Composes with the Bass/Treble
+              sliders and sound effects.
+            </p>
+            <div className="mt-3 grid grid-cols-10 items-end gap-1.5">
+              {EQ_BAND_FREQUENCIES.map((freq, index) => {
+                const value = eq.bands?.[index] ?? 0;
+                return (
+                  <div
+                    key={freq}
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <span className="text-[9px] tabular-nums text-muted-foreground/70">
+                      {value > 0 ? `+${Math.round(value)}` : Math.round(value)}
+                    </span>
+                    <Slider
+                      orientation="vertical"
+                      min={EQ_BAND_MIN_DB}
+                      max={EQ_BAND_MAX_DB}
+                      step={1}
+                      value={[value]}
+                      onValueChange={(values) => {
+                        const next = values[0] ?? 0;
+                        setEqBand(index, next);
+                        const bands = [...(eq.bands ?? EQ_BAND_FREQUENCIES.map(() => 0))];
+                        bands[index] = next;
+                        persistEq({ ...eq, bands });
+                      }}
+                      aria-label={`${freq} hertz band`}
+                      className="h-24 w-4 data-[orientation=vertical]:min-h-24"
+                    />
+                    <span className="text-[9px] text-muted-foreground/70">
+                      {freq >= 1000 ? `${freq / 1000}k` : freq}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* pitch / vibe */}
+          <EqSlider
+            label="Pitch"
+            min={-12}
+            max={12}
+            step={1}
+            value={pitch.semitones}
+            format={(v) => (v === 0 ? "Original key" : `${v > 0 ? "+" : ""}${v} semitones`)}
+            onChange={(v) => {
+              setDeckPitch(v);
+              persistPitch({ ...pitch, semitones: v });
+              if (v !== 0) toast(AUDIO_EFFECT_DELAY_MESSAGE);
+            }}
+          />
+          <ToggleRow
+            label="Speed keeps the key"
+            description="When on, changing playback speed preserves pitch. When off, speeding up raises it (the classic Nightcore / slowed mechanism)."
+            on={pitch.preserve}
+            onToggle={() => {
+              const next = !pitch.preserve;
+              setRatePreservesPitch(next);
+              persistPitch({ ...pitch, preserve: next });
+              if (!next) toast(AUDIO_EFFECT_DELAY_MESSAGE);
+            }}
+          />
+          <EqSlider
+            label="Reverb"
+            min={0}
+            max={100}
+            value={reverb}
+            format={(v) => (v === 0 ? "Dry" : `${Math.round(v)}% room`)}
+            onChange={(v) => {
+              setReverbMix(v / 100);
+              persistReverb(v);
+            }}
+          />
+          <EqSlider
+            label="Distortion"
+            min={0}
+            max={100}
+            value={distortion}
+            format={(v) => (v === 0 ? "Clean" : `${Math.round(v)}% drive`)}
+            onChange={(v) => {
+              setDistortion(v);
+              persistDistortion(v);
+            }}
+          />
+          <ToggleRow
+            label="Volume normalization"
+            description="Keeps loud and quiet songs near the same level by steering the gain toward a target loudness, with a limiter catching peaks."
+            on={normalize}
+            onToggle={() => {
+              const next = !normalize;
+              setVolumeNormalization(next);
+              persistNormalize(next);
+              if (next) toast(AUDIO_EFFECT_DELAY_MESSAGE);
+            }}
+          />
+
+          {/* vibe presets — one press composes speed/pitch/reverb/distortion */}
+          <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5">
+            <p className="text-sm font-medium">Vibe presets</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/80">
+              One press sets speed, pitch, reverb and drive together. The
+              playback speed menu still shows the result.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {[
+                {
+                  label: "Clean",
+                  apply: () => {
+                    setRate(1);
+                    setDeckPitch(0);
+                    setRatePreservesPitch(true);
+                    setReverbMix(0);
+                    setDistortion(0);
+                    persistPitch({ semitones: 0, preserve: true });
+                    persistReverb(0);
+                    persistDistortion(0);
+                  },
+                },
+                {
+                  label: "Nightcore",
+                  apply: () => {
+                    setRate(1.25);
+                    setRatePreservesPitch(false);
+                    setDeckPitch(0);
+                    setReverbMix(0);
+                    setDistortion(0);
+                    persistPitch({ semitones: 0, preserve: false });
+                    persistReverb(0);
+                    persistDistortion(0);
+                  },
+                },
+                {
+                  label: "Slowed + Reverb",
+                  apply: () => {
+                    setRate(0.85);
+                    setRatePreservesPitch(true);
+                    setDeckPitch(0);
+                    setReverbMix(0.35);
+                    setDistortion(0);
+                    persistPitch({ semitones: 0, preserve: true });
+                    persistReverb(35);
+                    persistDistortion(0);
+                  },
+                },
+                {
+                  label: "Speed up",
+                  apply: () => {
+                    setRate(1.15);
+                    setRatePreservesPitch(true);
+                    setDeckPitch(0);
+                    setReverbMix(0);
+                    setDistortion(0);
+                    persistPitch({ semitones: 0, preserve: true });
+                    persistReverb(0);
+                    persistDistortion(0);
+                  },
+                },
+                {
+                  label: "Daycore",
+                  apply: () => {
+                    setRate(0.75);
+                    setRatePreservesPitch(false);
+                    setDeckPitch(-2);
+                    setReverbMix(0.25);
+                    setDistortion(0);
+                    persistPitch({ semitones: -2, preserve: false });
+                    persistReverb(25);
+                    persistDistortion(0);
+                  },
+                },
+              ].map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => {
+                    preset.apply();
+                    toast(`Vibe: ${preset.label}`);
+                  }}
+                  className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:border-white/30 hover:text-foreground"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* live sound filters (8D etc.) */}
           <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5">

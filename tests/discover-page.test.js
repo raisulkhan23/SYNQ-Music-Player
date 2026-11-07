@@ -25,9 +25,15 @@ const read = (relative) => readFileSync(join(root, relative), "utf8");
 describe("discover route", () => {
   const main = read("src/main.tsx");
 
-  test("is registered as a static import, not a lazy chunk", () => {
-    expect(main).toMatch(/import Discover from "\.\/pages\/Discover\.tsx"/);
-    expect(main).not.toMatch(/import\([^)]*Discover/);
+  test("is statically imported, so no route chunk can fail to arrive", () => {
+    // The route layer went through a guarded lazy loader (`lazyRoute`) and
+    // settled on eager static imports: nothing is fetched at navigation time,
+    // so the dev-server restart bug (a stale `?v=` dep hash making the first
+    // dynamic import hang forever) cannot occur. See the route-layer comment
+    // in `src/main.tsx` and `dead-route-chunk.test.js`.
+    expect(main).toMatch(/^import Discover from "\.\/pages\/Discover\.tsx";/m);
+    // No dynamic import of the page survives — that is the failure mode.
+    expect(main).not.toMatch(/import\("\.\/pages\/Discover\.tsx"\)/);
   });
 
   test("sits inside the authenticated group with the page boundary", () => {
@@ -48,10 +54,11 @@ describe("discover route", () => {
     expect(searchIndex).toBeGreaterThan(-1);
     expect(artistIndex).toBeGreaterThan(-1);
     // It must not have been appended after the authenticated group's closing
-    // brace, which would put it outside RequireAuth/AppShell.
-    const groupEnd = main.lastIndexOf(
-      '</Route>\n                <Route path="/support"',
-    );
+    // brace, which would put it outside RequireAuth/AppShell. `/support` is the
+    // first route rendered OUTSIDE that group, so its path marks the boundary
+    // (the JSX is multi-line, so match the attribute, not the whole tag).
+    const groupEnd = main.lastIndexOf('path="/support"');
+    expect(groupEnd).toBeGreaterThan(-1);
     expect(discoverIndex).toBeLessThan(groupEnd);
   });
 });

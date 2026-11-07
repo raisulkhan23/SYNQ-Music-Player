@@ -65,8 +65,7 @@ export type AuthIntent =
   | { kind: "startPlaylistRadio"; tracks: unknown[]; label: string }
   | { kind: "playViaStream"; track: unknown; startSeconds?: number }
   | { kind: "like"; trackId: string; remote?: unknown }
-  | { kind: "likeAlbum"; albumId: string }
-  | { kind: "followArtist"; artistId: string };
+  | { kind: "likeAlbum"; albumId: string };
 
 interface AuthGateState {
   /**

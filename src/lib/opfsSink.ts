@@ -319,3 +319,81 @@ export async function localAudioUrl(trackId: string): Promise<string | null> {
 export async function isDownloaded(trackId: string): Promise<boolean> {
   return (await openStoredTrack(trackId)) !== null;
 }
+
+/**
+ * Prepend bytes (an ID3 tag) to a FINISHED download, in place, streamed.
+ *
+ * Runs AFTER the engine has committed a verified file — the tag is decoration
+ * on a complete download, never part of the transfer, so resume math and
+ * integrity checks never see it. The replacement is written to a sibling
+ * name first and only swapped in when complete: a crash mid-tag leaves the
+ * original file intact rather than a half-tagged one.
+ *
+ * Returns true when the file now starts with the given bytes, false when the
+ * tag could not be applied (no OPFS, entry gone mid-run). Failure must never
+ * cost the listener their download.
+ */
+export async function prependToStoredDownload(
+  trackId: string,
+  prefix: Uint8Array,
+): Promise<boolean> {
+  if (!opfsSupported() || !trackId || prefix.length === 0) return false;
+  try {
+    const directory = await dir();
+    const names: string[] = [];
+    const iterable = directory as unknown as {
+      entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
+    };
+    if (typeof iterable.entries === "function") {
+      for await (const [name] of iterable.entries()) names.push(name);
+    }
+    const target = names.find(
+      (n) => !n.endsWith(".part") && !n.endsWith(".tagging") && parseName(n).id === trackId,
+    );
+    if (!target) return false;
+
+    const sourceHandle = await directory.getFileHandle(target);
+    const source = await sourceHandle.getFile();
+    // Already tagged? A re-download that overwrote its own copy could be run
+    // through this twice; a file starting with "ID3" is left alone.
+    const head = new Uint8Array(await source.slice(0, 3).arrayBuffer());
+    if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) return true;
+
+    const stagingName = `${target}.tagging`;
+    const staging = await directory.getFileHandle(stagingName, { create: true });
+    const writer = await staging.createWritable();
+    await writer.write(new Uint8Array(prefix));
+    // Stream the original through: disk-to-disk, never a full-size buffer.
+    const reader = source.stream().getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) await writer.write(value);
+    }
+    await writer.close();
+
+    // Swap: drop the original, then move the staged copy into its name.
+    await directory.removeEntry(target);
+    const stagedHandle = await directory.getFileHandle(stagingName);
+    type MovableHandle = FileSystemFileHandle & {
+      move?: (name: string) => Promise<void>;
+    };
+    const movable = stagedHandle as MovableHandle;
+    if (typeof movable.move === "function") {
+      // Chromium: a native same-directory rename — no second pass, no copy.
+      await movable.move(target);
+    } else {
+      // Fallback: byte-copy through memory. The staged copy already exists,
+      // so the worst case is a large transient buffer, not data loss.
+      const stagedFile = await stagedHandle.getFile();
+      const finalHandle = await directory.getFileHandle(target, { create: true });
+      const finalWriter = await finalHandle.createWritable();
+      await finalWriter.write(await stagedFile.arrayBuffer());
+      await finalWriter.close();
+      await directory.removeEntry(stagingName);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -1,9 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { compile } from "tailwindcss";
 import { transform } from "lightningcss";
 
-const root = path.resolve(import.meta.dir, "..", "..");
+// `import.meta.dir` is Bun-only. Fall back to the ESM URL so the same helper
+// also works under vitest/Node, where the suite is run when Bun is absent.
+const here = import.meta.dir ?? path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(here, "..", "..");
 
 /** Compiles candidate class names through the project's real Tailwind build and
  *  returns the emitted CSS. `build([])` emits nothing, so an empty result

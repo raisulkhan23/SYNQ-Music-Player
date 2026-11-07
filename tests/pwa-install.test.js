@@ -291,15 +291,33 @@ describe("maskable icons survive cropping", () => {
   test("the any-purpose icon is the real logo, not a redraw", () => {
     // The installed app must carry the same mark as the header, so icon-192 is
     // a resample of logo.png rather than a separate drawing that can drift.
+    //
+    // Compared by mean colour and opaque coverage rather than by the single
+    // centre pixel: that probe only worked while the mark was a flat drawing
+    // whose middle bar covered the exact centre. The current artwork's middle
+    // bar starts a few pixels below the centre (its glass shading puts the
+    // brightest part off-axis), and any resample mixes the edge transition in,
+    // so a one-pixel equality check reports drift that is not there.
     const a = decodePng(readPng("/icons/icon-192.png"));
     const b = decodePng(readPng("/logo.png"));
-    // Compare the centre pixel of each, where both are the glyph.
-    const centre = (img) => {
-      const i =
-        ((img.width >> 1) + (img.height >> 1) * img.width) * img.channels;
-      return [img.data[i], img.data[i + 1], img.data[i + 2]];
+    const stats = (img) => {
+      let r = 0, g = 0, bl = 0, opaque = 0;
+      const px = img.width * img.height;
+      for (let i = 0; i < px; i++) {
+        const o = i * img.channels;
+        r += img.data[o];
+        g += img.data[o + 1];
+        bl += img.data[o + 2];
+        if (img.channels === 4 && img.data[o + 3] > 250) opaque += 1;
+      }
+      return { rgb: [r / px, g / px, bl / px], opaque: opaque / px };
     };
-    expect(centre(a)).toEqual(centre(b));
+    const sa = stats(a);
+    const sb = stats(b);
+    for (let c = 0; c < 3; c++) {
+      expect(Math.abs(sa.rgb[c] - sb.rgb[c])).toBeLessThan(3);
+    }
+    expect(Math.abs(sa.opaque - sb.opaque)).toBeLessThan(0.03);
   });
 });
 

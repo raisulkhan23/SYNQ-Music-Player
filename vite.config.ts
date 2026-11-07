@@ -22,42 +22,39 @@ export default defineConfig({
     // Optimize chunk splitting
     rollupOptions: {
       output: {
-        // Manual chunk splitting for better caching and lazy loading
-        manualChunks: {
-          // Vendor chunks for large libraries
-          'react-vendor': ['react', 'react-dom', 'react-router'],
-          'convex-vendor': ['convex'],
-          // Large UI library chunks
-          'radix-ui': [
-            '@radix-ui/react-accordion',
-            '@radix-ui/react-alert-dialog',
-            '@radix-ui/react-avatar',
-            '@radix-ui/react-checkbox',
-            '@radix-ui/react-collapsible',
-            '@radix-ui/react-context-menu',
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-hover-card',
-            '@radix-ui/react-label',
-            '@radix-ui/react-menubar',
-            '@radix-ui/react-navigation-menu',
-            '@radix-ui/react-popover',
-            '@radix-ui/react-progress',
-            '@radix-ui/react-radio-group',
-            '@radix-ui/react-scroll-area',
-            '@radix-ui/react-select',
-            '@radix-ui/react-separator',
-            '@radix-ui/react-slider',
-            '@radix-ui/react-switch',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-toggle',
-            '@radix-ui/react-toggle-group',
-            '@radix-ui/react-tooltip',
-          ],
-          // Heavy optional libraries - separate chunks for better lazy loading
-          'framer-motion': ['framer-motion'],
-          'charts': ['recharts'],
-          'forms': ['react-hook-form', '@hookform/resolvers', 'zod'],
+        // Manual chunking by matched PATH, not by package name.
+        //
+        // The earlier object form — `{ 'convex-vendor': ['convex'], 'forms':
+        // ['react-hook-form', ...] }` — resolves each entry to a single module
+        // id, so it only ever matched the bare `convex` and `react-hook-form`
+        // roots. The app imports `convex/react`, `convex/browser` and
+        // `@convex-dev/auth/react`, whose ids are DIFFERENT modules, so none of
+        // them matched: the build emitted `convex-vendor` at 0.00 kB and
+        // `forms` at 0.04 kB while the real Convex + form code sat inside the
+        // 1.2 MB entry chunk. The function form matches by path prefix, so it
+        // catches every subpath and actually moves these libraries out.
+        //
+        // Only node_modules are routed; app source keeps Rollup's default
+        // graph-based grouping.
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return;
+          // Shared UI utilities FIRST. `clsx` and `tailwind-merge` are depended
+          // on by BOTH the app's `cn()` helper (used by nearly every component)
+          // and by recharts. If they are left to Rollup's default chunking they
+          // get co-located into the heavy `charts` chunk, which makes the entry
+          // statically import all 357 kB of recharts just to render one class
+          // name. Pinning them to a tiny chunk keeps the chart library lazily
+          // reachable only from the Stats route.
+          if (/node_modules\/(clsx|tailwind-merge|class-variance-authority)/.test(id))
+            return 'ui-utils';
+          if (/node_modules\/(react|react-dom|scheduler|react-router)/.test(id))
+            return 'react-vendor';
+          if (/node_modules\/(convex|@convex-dev)/.test(id)) return 'convex-vendor';
+          if (/node_modules\/@radix-ui/.test(id)) return 'radix-ui';
+          if (/node_modules\/(framer-motion|motion-dom|motion-utils|popmotion)/.test(id))
+            return 'motion';
+          if (/node_modules\/(recharts|d3-|victory-vendor)/.test(id)) return 'charts';
+          if (/node_modules\/(react-hook-form|@hookform|zod)/.test(id)) return 'forms';
         },
         // Optimize chunk size
         chunkFileNames: 'assets/[name]-[hash].js',

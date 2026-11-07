@@ -5,6 +5,7 @@ import { useNavigate } from "react-router";
 import { SeekBar } from "@/components/player/SeekBar";
 import { TransportControls } from "@/components/player/TransportControls";
 import { useTrackLyrics } from "@/components/player/useTrackLyrics";
+import { wordFill } from "@/lib/yrcParse";
 import { VisualizerCanvas } from "@/components/player/VisualizerCanvas";
 import { VolumeControl } from "@/components/player/VolumeControl";
 import {
@@ -180,6 +181,7 @@ function LyricsPanel({
   synced,
   loading,
   activeIndex,
+  wordLines,
   containerRef,
 }: {
   onClose: () => void;
@@ -187,10 +189,20 @@ function LyricsPanel({
   synced: boolean;
   loading: boolean;
   activeIndex: number;
+  /** Word-timed lines, when the source had real per-word timings. */
+  wordLines: {
+    t: number;
+    end: number;
+    words: { text: string; t0: number; t1: number }[];
+    text: string;
+  }[] | null;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const current = usePlayerStore((s) => s.current);
   const seek = usePlayerStore((s) => s.seek);
+  // The karaoke fill follows the playhead; the panel is mounted only while
+  // open, so this subscription costs nothing when it is closed.
+  const currentTime = usePlayerStore((s) => s.currentTime);
 
   //
   // Jump back to the line that is playing now. The panel already follows the
@@ -350,7 +362,46 @@ function LyricsPanel({
                         : "h-0 opacity-0",
                     )}
                   />
-                  {line.text}
+                  {wordLines && i < wordLines.length ? (
+                    /* Real per-word timings: karaoke fill. Only REAL timings
+                       reach here — the parser never invents word stamps, so a
+                       wrong highlight cannot be manufactured by a guess. */
+                    <span className="whitespace-pre-wrap">
+                      {wordLines[i].words.map((word, w) => {
+                        const fill = wordFill(word, currentTime);
+                        const sung = fill >= 1;
+                        return (
+                          <span
+                            key={`${word.t0}-${w}`}
+                            style={
+                              sung
+                                ? undefined
+                                : fill > 0
+                                  ? {
+                                      backgroundImage: `linear-gradient(90deg, rgb(var(--tint)) 0 ${Math.round(
+                                        fill * 100,
+                                      )}%, currentColor ${Math.round(
+                                        fill * 100,
+                                      )}% 100%)`,
+                                      WebkitBackgroundClip: "text",
+                                      backgroundClip: "text",
+                                      color: "transparent",
+                                    }
+                                  : undefined
+                            }
+                            className={cn(
+                              sung && "text-[rgb(var(--tint))]",
+                              fill <= 0 && "opacity-45",
+                            )}
+                          >
+                            {word.text}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  ) : (
+                    line.text
+                  )}
                 </button>
               ),
             )}
@@ -1472,6 +1523,7 @@ export function FullscreenPlayer() {
               synced={lyrics.synced}
               loading={lyrics.loading}
               activeIndex={lyrics.activeIndex}
+              wordLines={lyrics.wordLines}
               containerRef={lyrics.containerRef}
             />
           )}
@@ -1505,7 +1557,13 @@ function DownloadCurrentButton() {
   }, []);
 
   if (!current) return null;
-  const availability = downloadAvailability(current.id, current.jamendoId);
+  // SoundCloud provenance joins Jamendo's: a `sc:` track is eligible in
+  // principle and the server re-verifies the artist's download grant.
+  const availability = downloadAvailability(
+    current.id,
+    current.jamendoId,
+    current.soundcloudId ?? current.id,
+  );
   if (!availability.allowed) return null;
 
   const records = getDownloadManager().list();
@@ -1534,13 +1592,17 @@ function DownloadCurrentButton() {
       disabled={downloading || downloaded}
       onClick={() => {
         if (downloading || downloaded) return;
-        const target = downloadTargetId(current.id, current.jamendoId);
+        const target = downloadTargetId(
+          current.id,
+          current.jamendoId,
+          current.soundcloudId ?? current.id,
+        );
         if (!target) return;
         void (async () => {
           const result = await requestAuthorizedDownload(
             authorizeDownload,
             target,
-            // Authorized against the Jamendo release, stored under the
+            // Authorized against the licensed release, stored under the
             // playable's id so offline playback finds it.
             current.jamendoId ? { storageKey: current.id } : undefined,
           );

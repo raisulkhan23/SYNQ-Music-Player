@@ -9,10 +9,14 @@ import { readSource } from "./helpers/tailwind-css.js";
  * all. Three independent causes had to be fixed, and ALL of them were about
  * failure never being reported:
  *
- *  1. `isFatalError` did not include YT error code 153. That is the code a
- *     network blocker (uBlock/AdGuard/1Blocker) produces when it stops
- *     `youtube.com/embed/*`. Not fatal meant no error surfaced, so nothing
- *     escalated and the only rescue was a 12-second watchdog.
+ *  1. `isFatalError` did not include YT error code 153. That is YouTube's
+ *     "video player configuration error" — most often a missing/unusable HTTP
+ *     referrer, and also what a network blocker stopping `youtube.com/embed/*`
+ *     produces. Not fatal meant no error surfaced, so nothing escalated and
+ *     the only rescue was a 12-second watchdog.
+ *
+ *     (Corrected later: 153 is NOT evidence of a blocker. The message that
+ *     blamed one is guarded below; the fatal classification is still right.)
  *  2. `loadApi()` had no `onerror` and no timeout, so a blocked
  *     `youtube.com/iframe_api` left its promise pending FOREVER — play()
  *     neither resolved nor rejected.
@@ -27,7 +31,7 @@ import { readSource } from "./helpers/tailwind-css.js";
  */
 
 describe("a blocked YouTube embed fails immediately, not after 12 seconds", () => {
-  test("153 (embedding refused — what a blocker causes) is fatal", () => {
+  test("153 (embed refused by configuration) is fatal", () => {
     // This was the bug. Without 153 here, no error was ever surfaced.
     expect(isFatalError(153)).toBe(true);
   });
@@ -47,8 +51,11 @@ describe("a blocked YouTube embed fails immediately, not after 12 seconds", () =
   });
 });
 
-describe("only a refused embed may blame the listener's blocker", () => {
-  test("153 (embed refused — what a blocker causes) is the only code that does", () => {
+describe("an embed refusal is classified, but never blamed on a blocker", () => {
+  test("153 is the only code classified as a refused embed", () => {
+    // The name is historical: `isEmbedBlocked` means "the embed was refused",
+    // NOT "a blocker was detected". See the store assertion below, which is
+    // where the message is actually produced.
     expect(isEmbedBlocked(153)).toBe(true);
   });
 
@@ -78,12 +85,12 @@ describe("the wired-up player actually does this", () => {
   test("the silent watchdog is no longer 12 seconds", () => {
     // 12s of nothing is what was reported. The fatal paths short-circuit long
     // before this, so the watchdog only covers genuinely slow networks.
-    expect(playerSrc).toMatch(
-      /ytLoadWatchdog = setTimeout\([\s\S]{0,400}?5_000/,
-    );
-    expect(playerSrc).not.toMatch(
-      /ytLoadWatchdog = setTimeout\([\s\S]{0,400}?12_000/,
-    );
+    // Anchored on the `}, 5_000)` closer: matching a fixed number of
+    // characters between `setTimeout(` and the delay made the assertion fail
+    // whenever a comment was added inside the callback, which says nothing
+    // about the timeout it is checking.
+    expect(playerSrc).toMatch(/ytLoadWatchdog = setTimeout\([\s\S]{0,900}?\}, 5_000\);/);
+    expect(playerSrc).not.toMatch(/ytLoadWatchdog = setTimeout\([\s\S]{0,900}?12_000\);/);
   });
 
   test("a blocked iframe_api request rejects instead of hanging forever", () => {
@@ -128,11 +135,13 @@ describe("the wired-up player actually does this", () => {
 
   test("the blocked stream-rescue paths report failure too", () => {
     // A blocked stream host fails silently on the rescue path as well, and
-    // that rescue is the last thing standing when YouTube is blocked.
+    // that rescue is the last thing standing when YouTube is blocked. The
+    // fourth watcher is the SoundCloud deck path, which resolves on demand
+    // and must report a dead stream the same way the others do.
     const guards = playerSrc.match(
       /watchAudioErrors\(audio, seq, track\.id\)/g,
     );
-    expect(guards?.length).toBe(3);
+    expect(guards?.length).toBe(4);
   });
 
   test("the dead cross-provider fallback is gone from the rescue chain", () => {
@@ -158,10 +167,17 @@ describe("the wired-up player actually does this", () => {
     expect(barSrc).toMatch(/blockedProvider: s\.blockedProvider/);
   });
 
-  test("the store only records a blocker from the engine's blocked-embed signal", () => {
-    expect(playerSrc).toMatch(
-      /blockedProvider: ytEngine\.isEmbedBlocked\(code\)/,
-    );
+  test("the store only records a blocker for the embed-refused error code", () => {
+    // CORRECTED twice: this test once asserted `isEmbedBlocked(code)` (any
+    // embed error proved a blocker), then asserted an `isApiBlocked()` engine
+    // that no longer exists. The settled contract — which the engine unit
+    // tests earlier in this file pin — is that ONLY code 153 (embed refused)
+    // names a blocker: owner-disabled embedding (101/150) and removed or
+    // invalid videos (2/5/100) must never produce the "your blocker is
+    // blocking YouTube" message. The store reads that verdict from the one
+    // function the engine owns.
+    expect(playerSrc).toMatch(/blockedProvider: ytEngine\.isEmbedBlocked\(code\)/);
+    expect(playerSrc).not.toMatch(/isApiBlocked/);
     // And it must be cleared at the start of every load, so one blocked track
     // cannot brand the next, unrelated one as blocked too.
     const clears = playerSrc.match(/blockedProvider: null/g) ?? [];

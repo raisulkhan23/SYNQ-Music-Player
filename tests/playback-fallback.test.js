@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { giveUpNotice, matchScore } from "../src/lib/playbackFallback.ts";
+import {
+  failureFromEmbedCode,
+  giveUpNotice,
+  matchScore,
+} from "../src/lib/playbackFallback.ts";
 
 /**
  * Playback honesty: what counts as "the same song", and what the listener is
@@ -80,5 +84,38 @@ describe("the listener is told what happened", () => {
     expect(
       giveUpNotice({ blockedProvider: "Jamendo", hasAlternatives: true }),
     ).toContain("Jamendo");
+  });
+});
+
+describe("each failure is reported as what it actually is", () => {
+  test("an IFrame code maps to the fact it represents", () => {
+    // 153 is YouTube's player-configuration error (no usable referrer). It is
+    // NOT "the listener has a blocker" — that false diagnosis is what this
+    // mapping exists to stop.
+    expect(failureFromEmbedCode(153)).toBe("embed-refused");
+    expect(failureFromEmbedCode(101)).toBe("owner-disabled");
+    expect(failureFromEmbedCode(150)).toBe("owner-disabled");
+    expect(failureFromEmbedCode(100)).toBe("unavailable");
+    expect(failureFromEmbedCode(2)).toBe("player-error");
+    expect(failureFromEmbedCode(5)).toBe("player-error");
+  });
+
+  test("only an observed block may accuse a blocker", () => {
+    for (const failure of [
+      "embed-refused",
+      "owner-disabled",
+      "unavailable",
+      "player-error",
+      "timeout",
+    ]) {
+      expect(giveUpNotice({ failure })).not.toMatch(/blocker/i);
+    }
+    expect(giveUpNotice({ failure: "api-blocked" })).toMatch(/blocked/i);
+  });
+
+  test("a refused embed says so instead of blaming the listener", () => {
+    expect(giveUpNotice({ failure: "embed-refused" })).toMatch(/refused/i);
+    expect(giveUpNotice({ failure: "owner-disabled" })).toMatch(/owner/i);
+    expect(giveUpNotice({ failure: "unavailable" })).toMatch(/no longer available/i);
   });
 });

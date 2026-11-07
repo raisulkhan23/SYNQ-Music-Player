@@ -251,18 +251,27 @@ describe("the catalogue is read from releases, not from a query plan", () => {
   });
 
   test("release grids are followed page by page, with a stated end", () => {
-    // The provider ends the list with a message rather than an empty grid; that
-    // is what separates "complete" from "we stopped early".
-    expect(server).toMatch(/parseReleaseGrid/);
-    expect(server).toMatch(/nextCursor/);
-    expect(server).toMatch(/isEndMessage/);
+    // The paging loop lives in a pure module so it can be driven against fake
+    // pages (see `artist-pagination.test.js`); the action must USE it rather
+    // than keeping another, shorter loop of its own.
+    expect(server).toMatch(/readReleaseGrid/);
     expect(server).toMatch(/truncated/);
+    expect(server).toMatch(/CATALOG_CACHE_VERSION/);
+    const pagination = readSource("src/lib/artistPagination.ts");
+    expect(pagination).toMatch(/isEndMessage/);
+    expect(pagination).toMatch(/complete: true/);
+    expect(pagination).toMatch(/complete: false/);
   });
 
   test("tracklists follow continuation tokens and stop when they run out", () => {
+    // The reader is shared by the artist page and the album page, and its
+    // paging rules are exercised directly in `artist-pagination.test.js`.
     expect(hook).toMatch(/readTracklist/);
-    expect(hook).toMatch(/nextCursor/);
-    expect(hook).toMatch(/page < 4/);
+    expect(server).toMatch(/readReleaseGrid/);
+    const pagination = readSource("src/lib/artistPagination.ts");
+    expect(pagination).toMatch(/nextCursor/);
+    expect(pagination).toMatch(/MAX_TRACKLIST_PAGES/);
+    expect(pagination).toMatch(/seenCursors/);
   });
 
   test("tracklist reads are bounded, not one request per release at once", () => {
@@ -356,5 +365,37 @@ describe("the catalogue is fetched in pages, not in one arbitrary limit", () => 
   test("an empty artist has no plan at all", () => {
     expect(catalogQueries("   ")).toEqual([]);
     expect(catalogPage("", 0)).toEqual({ queries: [], hasMore: false });
+  });
+});
+
+describe("the artist page exposes the whole catalogue and no Follow control", () => {
+  const artist = readSource("src/pages/Artist.tsx");
+  const store = readSource("src/store/player.ts");
+
+  test("Follow is gone, with no leftover state or handler", () => {
+    // The button was an account action with no effect on the catalogue; it is
+    // removed rather than replaced with another subscription control.
+    expect(artist).not.toMatch(/\bFollow\b|\bFollowing\b/);
+    expect(artist).not.toMatch(/followedArtists|toggleFollowArtist/);
+    expect(store).not.toMatch(/followedArtists/);
+    expect(store).not.toMatch(/toggleFollowArtist/);
+  });
+
+  test("no silent 200-song ceiling or 50-song Play sample", () => {
+    // Both were literal slices: the page said "all songs" while hiding the
+    // rest, and Play quietly queued only the first fifty.
+    expect(artist).not.toMatch(/slice\(0,\s*200\)/);
+    expect(artist).not.toMatch(/catalogItems\.slice\(0,\s*50\)/);
+    expect(artist).toMatch(/songLimit/);
+    expect(artist).toMatch(/more songs/);
+  });
+
+  test("Play queues every loaded track, not a sample", () => {
+    expect(artist).toMatch(/catalogItems\.length > 0 \? catalogItems : searchView\.popular/);
+  });
+
+  test("a truncated discography is labelled as incomplete", () => {
+    expect(artist).toMatch(/discography may be incomplete/);
+    expect(artist).toMatch(/catalog\.truncated/);
   });
 });

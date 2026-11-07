@@ -3,12 +3,11 @@ import { action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { TTL, cacheKey, dedupeRequest, takeRateSlot } from "./providerCache";
 import { browseMusic, searchMusicArtists } from "./youtube";
+import { readReleaseGrid, MAX_RELEASE_PAGES as PAGING_MAX_RELEASE_PAGES } from "../lib/artistPagination";
 import {
-  isEndMessage,
   parseAlbumMeta,
   parseArtistHeader,
   parseArtistSearch,
-  parseReleaseGrid,
   parseReleaseTracks,
   type BrowseRelease,
   type BrowseTrack,
@@ -85,8 +84,18 @@ export interface ReleasesResult {
  */
 export const ARTIST_CACHE_VERSION = 2;
 
-/** Hard cap on release-grid pages followed in one call. */
-export const MAX_RELEASE_PAGES = 3;
+/** Hard cap on release-grid pages followed in one call (kept in sync with the
+ * pure paging rules in `src/lib/artistPagination.ts`, which owns the loop). */
+export const MAX_RELEASE_PAGES = PAGING_MAX_RELEASE_PAGES;
+
+/**
+ * Version of the releases/tracklists pipeline, mixed into its cache keys.
+ *
+ * Like ARTIST_CACHE_VERSION: the cached value is parser output, so a parser or
+ * paging fix must not be shadowed by entries written before it. Bump when the
+ * release-grid or tracklist parsing changes shape.
+ */
+export const CATALOG_CACHE_VERSION = 1;
 
 /** Cap on tracklist pages followed in one call. */
 export const MAX_TRACK_PAGES = 4;
@@ -200,7 +209,10 @@ export const artistReleases = action({
       throw new ConvexError("That artist id is not a YouTube Music artist id");
     }
 
-    const key = cacheKey("youtube", "artistCatalog", { artistId: id });
+    const key = cacheKey("youtube", "artistCatalog", {
+      artistId: id,
+      v: CATALOG_CACHE_VERSION,
+    });
     const cached = (await ctx.runQuery(api.providerCache.cacheGet, { key })) as {
       value: ReleasesResult;
     } | null;
@@ -240,51 +252,22 @@ export const artistReleases = action({
       };
       walk(artist);
 
-      const releases: BrowseRelease[] = [];
-      const seen = new Set<string>();
-      let truncated = gridIds.size > 0;
-      let pages = 0;
-
-      for (const gridId of gridIds) {
-        let page = await browsePage({ browseId: gridId });
-        pages += 1;
-        for (;;) {
-          const parsed = parseReleaseGrid(page);
-          for (const release of parsed.releases) {
-            if (seen.has(release.id)) continue;
-            seen.add(release.id);
-            releases.push(release);
-          }
-          const cursor = parsed.nextCursor;
-          if (!cursor || pages >= MAX_RELEASE_PAGES) {
-            // Either the provider has nothing left (its continuation answers
-            // with an end-of-list message) or we stopped at the cap.
-            if (!cursor) truncated = false;
-            break;
-          }
-          page = await browsePage({ continuation: cursor });
-          pages += 1;
-          if (isEndMessage(page)) {
-            truncated = false;
-            break;
-          }
-          const nextPage = parseReleaseGrid(page);
-          if (nextPage.releases.length === 0) {
-            truncated = false;
-            break;
-          }
-        }
-      }
+      // The page-by-page rules (caps, end messages, dedupe, repeating-cursor
+      // safety) live in the pure module so tests can drive them against fake
+      // pages — this action only binds the rate-limited reader.
+      const paged = await readReleaseGrid(async (body) => browsePage(body), [
+        ...gridIds,
+      ]);
 
       return {
-        releases,
+        releases: paged.releases,
         /** Provider said there is nothing further. */
-        complete: !truncated,
+        complete: paged.complete,
         /** We stopped at the page cap with more still offered. */
-        truncated,
-        pages,
+        truncated: paged.truncated,
+        pages: paged.pages,
         /** True when the artist page exposed no release grid at all. */
-        empty: releases.length === 0,
+        empty: paged.empty,
       };
     });
 
@@ -323,8 +306,14 @@ export const releaseTracks = action({
     }
 
     const key = continuation
-      ? cacheKey("youtube", "releaseTracks", { cursor: continuation })
-      : cacheKey("youtube", "releaseTracks", { releaseId: id });
+      ? cacheKey("youtube", "releaseTracks", {
+          cursor: continuation,
+          v: CATALOG_CACHE_VERSION,
+        })
+      : cacheKey("youtube", "releaseTracks", {
+          releaseId: id,
+          v: CATALOG_CACHE_VERSION,
+        });
     const cached = await ctx.runQuery(api.providerCache.cacheGet, { key });
     if (cached) {
       return cached.value as {

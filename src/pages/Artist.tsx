@@ -17,8 +17,6 @@ import {
   Share2,
   Shuffle,
   Sparkles,
-  UserPlus,
-  UserCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -77,10 +75,6 @@ export default function Artist() {
   const playTrack = usePlayerStore((s) => s.playTrack);
   const playListOrdered = usePlayerStore((s) => s.playListOrdered);
   const startRadio = usePlayerStore((s) => s.startRadio);
-  const followed = usePlayerStore((s) =>
-    artistName ? !!s.followedArtists[artistName] : false,
-  );
-  const toggleFollowArtist = usePlayerStore((s) => s.toggleFollowArtist);
 
   const catalog = useArtistCatalog(artistName);
 
@@ -100,6 +94,7 @@ export default function Artist() {
   const [filter, setFilter] = useState("");
   const [expandedFor, setExpandedFor] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<ReleaseType | "all">("all");
+  const [songLimit, setSongLimit] = useState(100);
 
   useEffect(() => {
     if (!query) return;
@@ -338,9 +333,22 @@ export default function Artist() {
   const artwork = catalog.identity?.thumbnail ?? catalogItems[0]?.thumbnail ?? "";
   const canPlay = searchView.popular.length > 0 || catalogItems.length > 0;
   const showAllSongs = expandedFor === query;
+  /**
+   * How many songs the expanded "All songs" list renders before the listener
+   * presses "Show more songs".
+   *
+   * This is NOT the old silent ceiling: the old hard cap hid songs the page
+   * never mentioned, while Play queued a different (50-row) sample, so "all
+   * songs" was a lie twice over. The limit here only paces RENDERING — the
+   * full loaded list is one "Show more" press away, the button states how
+   * many rows are waiting, and Play always queues everything loaded. As
+   * tracklists keep arriving the list grows past the limit again, and the
+   * button reappears.
+   */
   const songsForList = showAllSongs
-    ? visibleCatalog.slice(0, 200)
+    ? visibleCatalog.slice(0, songLimit)
     : visibleCatalog.slice(0, 10);
+  const songsBeyondLimit = Math.max(0, visibleCatalog.length - songLimit);
   const upstreamEmpty =
     catalog.identity === null && !searchFailed && (popularSource?.length ?? 0) === 0;
 
@@ -389,9 +397,8 @@ export default function Artist() {
                   type="button"
                   onClick={() =>
                     playAll(
-                      catalogItems.length > 0
-                        ? catalogItems.slice(0, 50)
-                        : searchView.popular,
+                      // Everything the catalogues have loaded — never a sample.
+                      catalogItems.length > 0 ? catalogItems : searchView.popular,
                     )
                   }
                   className="inline-flex items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-bold text-black transition-transform hover:scale-[1.02]"
@@ -427,19 +434,6 @@ export default function Artist() {
                 </button>
               </>
             ) : null}
-            <button
-              type="button"
-              onClick={() => toggleFollowArtist(artistName)}
-              aria-pressed={followed}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {followed ? (
-                <UserCheck className="size-4" />
-              ) : (
-                <UserPlus className="size-4" />
-              )}
-              {followed ? "Following" : "Follow"}
-            </button>
             <button
               type="button"
               onClick={() => void shareArtist()}
@@ -675,6 +669,18 @@ export default function Artist() {
             ))}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
+            {showAllSongs && songsBeyondLimit > 0 ? (
+              <button
+                type="button"
+                onClick={() => setSongLimit((limit) => limit + 100)}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Show more songs
+                <span className="text-[10px] text-muted-foreground/70">
+                  ({songsBeyondLimit} more songs loaded)
+                </span>
+              </button>
+            ) : null}
             {visibleCatalog.length > 10 || showAllSongs ? (
               <button
                 type="button"

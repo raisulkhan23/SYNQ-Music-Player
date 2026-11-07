@@ -32,6 +32,17 @@ import type { ImportFailure } from "./importModel";
 /** The prefix that marks a track as coming from an authorized source. */
 export const AUTHORIZED_ID_PREFIX = "jamendo:";
 
+/**
+ * The prefix marking a SoundCloud track whose download SYNQ may hand out.
+ *
+ * SoundCloud grants downloads the same way Jamendo does — explicitly, per
+ * track: the artist flips `downloadable` on, and the API's
+ * `/tracks/{id}/download` endpoint then serves the ORIGINAL uploaded file.
+ * That flag, re-verified server-side on every request, is the authority; a
+ * track that merely streams is as out of bounds here as a YouTube upload is.
+ */
+export const SOUNDCLOUD_ID_PREFIX = "sc:";
+
 /** Media type of the file Jamendo serves for an authorized download. */
 export const AUTHORIZED_CONTENT_TYPE = "audio/mpeg";
 
@@ -77,6 +88,19 @@ export function authorizedProviderId(trackId: string | null | undefined): string
   return /^\d+$/.test(providerId) ? providerId : null;
 }
 
+/**
+ * Pull the numeric SoundCloud track id out of a SYNQ track id, when the id is
+ * namespaced to SoundCloud. Both authorized sources share the same rule: an
+ * un-namespaced id (a bare YouTube video id) can never download.
+ */
+export function soundcloudProviderId(trackId: string | null | undefined): string | null {
+  if (!trackId) return null;
+  const id = trackId.trim();
+  if (!id.startsWith(SOUNDCLOUD_ID_PREFIX)) return null;
+  const providerId = id.slice(SOUNDCLOUD_ID_PREFIX.length).trim();
+  return /^\d{6,}$/.test(providerId) ? providerId : null;
+}
+
 /** Build the SYNQ track id for an authorized-source track. */
 export function authorizedTrackId(providerId: string | number): string {
   return `${AUTHORIZED_ID_PREFIX}${String(providerId).trim()}`;
@@ -92,33 +116,77 @@ export function authorizedTrackId(providerId: string | number): string {
  * present it wins — a discovery-resolved upload would otherwise never be
  * eligible even though its original release is licensed for download.
  *
+ * SoundCloud provenance (`soundcloudId`) makes a track eligible the same way,
+ * subject to the server re-verifying the artist's `downloadable` grant.
+ *
  * This is a UX filter, NOT a security control. The server independently
- * re-verifies `audiodownload_allowed`; a client that forges its way past this
- * function still gets a refusal.
+ * re-verifies every grant; a client that forges its way past this function
+ * still gets a refusal.
  */
 export function isTrackDownloadable(
   trackId: string | null | undefined,
   jamendoId?: string | null,
+  soundcloudId?: string | null,
 ): boolean {
+  // Jamendo provenance may be the bare numeric release id (the form
+  // `JamendoTrack.jamendoId` carries through discovery) or a prefixed one.
+  if (anyJamendoId(jamendoId ?? undefined)) return true;
+  if (authorizedProviderId(trackId) !== null) return true;
+  // SoundCloud provenance: `soundcloudId` may be the bare numeric id (as
+  // `toPlayableSoundcloud` carries it) or an already-prefixed `sc:<n>`.
   return (
-    authorizedProviderId(jamendoId ?? undefined) !== null ||
-    authorizedProviderId(trackId) !== null
+    anySoundcloudId(soundcloudId ?? undefined) ||
+    anySoundcloudId(trackId ?? undefined)
   );
+}
+
+/** True when the value names a Jamendo release, bare or prefixed. */
+function anyJamendoId(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return authorizedProviderId(value) !== null || /^\d+$/.test(value.trim());
+}
+
+/** True when the value names a SoundCloud track, bare or prefixed. */
+function anySoundcloudId(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return soundcloudProviderId(value) !== null || /^\d{6,}$/.test(value.trim());
 }
 
 /**
  * The id the download API should be asked about. Prefers the Jamendo release
  * id when the playable carries one, since that is the release the artist
- * licensed for download.
+ * licensed for download; a SoundCloud id is only used when no Jamendo grant
+ * exists.
  */
 export function downloadTargetId(
   trackId: string | null | undefined,
   jamendoId?: string | null,
+  soundcloudId?: string | null,
 ): string | null {
-  if (jamendoId && authorizedProviderId(jamendoId) !== null) {
-    return authorizedTrackId(jamendoId);
-  }
-  return authorizedProviderId(trackId) !== null ? trackId! : null;
+  // Jamendo provenance wins: the release the artist licensed is what the
+  // download is authorized against, whatever plays it.
+  const bareJamendo = anyJamendoId(jamendoId ?? undefined)
+    ? authorizedProviderId(jamendoId) ??
+      String(jamendoId).trim().replace(/^jamendo:/, "")
+    : null;
+  if (bareJamendo) return authorizedTrackId(bareJamendo);
+  if (authorizedProviderId(trackId) !== null) return trackId!;
+  // SoundCloud: prefer explicit provenance, then the queue id itself. Both
+  // bare numeric and prefixed forms normalize to the prefixed target.
+  const scFromProvenance = bareSoundcloudId(soundcloudId ?? undefined);
+  if (scFromProvenance) return `${SOUNDCLOUD_ID_PREFIX}${scFromProvenance}`;
+  const scFromTrackId = soundcloudProviderId(trackId ?? undefined);
+  if (scFromTrackId) return `${SOUNDCLOUD_ID_PREFIX}${scFromTrackId}`;
+  return null;
+}
+
+/** Normalize a bare-or-prefixed SoundCloud id to its numeric form, or null. */
+function bareSoundcloudId(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const prefixed = soundcloudProviderId(value);
+  if (prefixed) return prefixed;
+  const trimmed = value.trim();
+  return /^\d{6,}$/.test(trimmed) ? trimmed : null;
 }
 
 /**
@@ -196,14 +264,29 @@ export interface DownloadAvailability {
 
 /**
  * Availability for a track. Only tracks from an authorized source are ever
- * eligible; every other track gets the honest refusal above.
+ * eligible; every other track gets the honest refusal above. SoundCloud
+ * tracks are eligible in principle (the server re-verifies the artist's
+ * `downloadable` grant); YouTube-only tracks are not eligible at all.
  */
 export function downloadAvailability(
   trackId: string | null | undefined,
   jamendoId?: string | null,
+  soundcloudId?: string | null,
 ): DownloadAvailability {
-  if (isTrackDownloadable(trackId, jamendoId)) {
-    return { allowed: true, decision: { ok: true, providerId: jamendoId ?? authorizedProviderId(trackId)! } };
+  if (isTrackDownloadable(trackId, jamendoId, soundcloudId)) {
+    const target = downloadTargetId(trackId, jamendoId, soundcloudId);
+    return {
+      allowed: true,
+      decision: {
+        ok: true,
+        providerId:
+          target ??
+          jamendoId ??
+          authorizedProviderId(trackId) ??
+          soundcloudProviderId(soundcloudId ?? trackId) ??
+          "",
+      },
+    };
   }
   return { allowed: false, decision: refuse("not-authorized") };
 }

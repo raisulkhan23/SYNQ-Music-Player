@@ -224,9 +224,13 @@ let deckGainB;
 beforeAll(() => {
   expect(audio.ensureGraph()).toBe(true);
   const ctx = contexts.at(-1);
-  expect(ctx.createdGains.length).toBe(4);
-  deckGainA = ctx.createdGains[2];
-  deckGainB = ctx.createdGains[3];
+  // Creation order: fxIn, gainOut, then the post-effect stage's dry gain and
+  // normalization gain (this fake has no Convolver/WaveShaper/Compressor, so
+  // those guarded taps fail and create nothing — the real graph has them),
+  // then one gain per deck in [a, b] order.
+  expect(ctx.createdGains.length).toBe(6);
+  deckGainA = ctx.createdGains[4];
+  deckGainB = ctx.createdGains[5];
   expect(deckGainA.kind).toBe("gain");
   expect(deckGainB.kind).toBe("gain");
 });
@@ -414,12 +418,19 @@ describe("an executed gapless hand-off", () => {
       expect(out.because).toBe("nothing preloaded");
     });
 
-    test("an unresolved or non-http source is refused", () => {
-      for (const src of [null, "", "blob:https://example.test/abc", "stream"]) {
+    test("an unresolved source is refused; a downloaded copy (blob:) is ready", () => {
+      // `blob:` is the OPFS object URL of a downloaded track — as playable as
+      // any network URL. Refusing it meant the offline library could never
+      // gapless-hand-off, which is the exact situation downloads exist for.
+      // The "stream" rescue marker is still not a src.
+      for (const src of [null, "", "stream"]) {
         const out = canHandOffGapless({ ...ready, currentSrc: src });
         expect(out.ready).toBe(false);
         expect(out.because).toBe("no resolved src");
       }
+      expect(
+        canHandOffGapless({ ...ready, currentSrc: "blob:https://example.test/abc" }),
+      ).toEqual({ ready: true });
     });
 
     test("a buffer below HAVE_CURRENT_DATA is refused", () => {

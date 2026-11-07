@@ -338,9 +338,13 @@ describe("cross-account playlist sharing is server-authorized, not client-decora
     const ctx = makeCtx();
     await sharePlaylist._handler(ctx, { playlistId: PLAY._id, recipientId: OWNER_B });
     ctx.auth = { getUserIdentity: async () => ({ subject: OWNER_B }) };
-    expect(
-      () => revokeShare._handler(ctx, { playlistId: PLAY._id, recipientId: OWNER_A }),
-    ).toThrow(/your own playlist/);
+    // The handler is async, so it REJECTS; it can never throw synchronously.
+    // `expect(fn).toThrow()` therefore asserted nothing and the refusal was
+    // only visible as an unhandled rejection. `rejects` tests the contract the
+    // server actually enforces.
+    await expect(
+      revokeShare._handler(ctx, { playlistId: PLAY._id, recipientId: OWNER_A }),
+    ).rejects.toThrow(/your own playlist/);
   });
 
   test("share search does not surface the viewer themselves", async () => {

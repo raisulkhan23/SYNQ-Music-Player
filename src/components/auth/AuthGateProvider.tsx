@@ -116,9 +116,6 @@ function runIntent(intent: AuthIntent): void {
     case "likeAlbum":
       store.toggleLikedAlbum(intent.albumId);
       return;
-    case "followArtist":
-      store.toggleFollowArtist(intent.artistId);
-      return;
     default:
       // An intent kind this build does not understand (an older tab, a
       // half-written value). Dropping it is correct: doing nothing is always
