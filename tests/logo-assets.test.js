@@ -35,53 +35,71 @@ function readPng(rel) {
   return { ...ihdr, types, sawEnd, raw, buf };
 }
 
-const publicSvg = readFileSync("public/logo.svg", "utf8");
-const assetsSvg = readFileSync("src/assets/logo.svg", "utf8");
-const manifest = JSON.parse(
-  readFileSync("public/manifest.webmanifest", "utf8"),
-);
+const publicLogo = readFileSync("public/logo.png");
+const assetsLogo = readFileSync("src/assets/logo.png");
+const manifest = JSON.parse(readFileSync("public/manifest.webmanifest", "utf8"));
 const indexHtml = readSource("index.html");
 
 describe("the logo is a real, valid image everywhere it is referenced", () => {
-  test("the SVG is well-formed and self-contained", () => {
-    expect(publicSvg.startsWith("<svg")).toBe(true);
-    expect(publicSvg.trimEnd().endsWith("</svg>")).toBe(true);
-    expect(publicSvg).toContain('xmlns="http://www.w3.org/2000/svg"');
-    // No external refs: an icon that 404s offline is worse than no icon.
-    expect(publicSvg).not.toMatch(/href="https?:/);
-    expect(publicSvg).not.toContain("<image");
-  });
-
-  test("the mark keeps a square viewBox so it never distorts", () => {
-    // The wordmark sizes it with `h-7 w-auto`, so the intrinsic ratio is what
-    // decides the rendered width.
-    expect(publicSvg).toContain('viewBox="0 0 512 512"');
-    const [w, h] = publicSvg
-      .match(/width="(\d+)" height="(\d+)"/)
-      .slice(1)
-      .map(Number);
-    expect(w).toBe(h);
-  });
-
-  test("both copies of the SVG are identical", () => {
+  test("both copies of the mark are byte-identical", () => {
     // `LogoDropdown` imports the asset copy while everything else uses the
     // public one. If they drift, the logo changes between screens.
-    expect(assetsSvg).toBe(publicSvg);
+    expect(assetsLogo.equals(publicLogo)).toBe(true);
+  });
+
+  test("the mark is square so it never distorts", () => {
+    // The wordmark sizes it with `h-7 w-auto`, so the intrinsic ratio is what
+    // decides the rendered width.
+    const img = readPng("public/logo.png");
+    expect(img.width).toBe(img.height);
+    expect(img.width).toBeGreaterThanOrEqual(256);
+  });
+
+  test("the mark is a real PNG with a painted centre and clean corners", () => {
+    const img = readPng("public/logo.png");
+    expect(img.types[0]).toBe("IHDR");
+    expect(img.types[img.types.length - 1]).toBe("IEND");
+    expect(img.sawEnd).toBe(true);
+    // RGBA, 8-bit: the tile's rounded corners are transparent so the mark sits
+    // on any background without a dark square behind it.
+    expect(img.depth).toBe(8);
+    expect(img.color).toBe(6);
+    expect(img.raw.length).toBe(img.width * (img.width * 4 + 1));
+    let min = 255;
+    let max = 0;
+    for (let y = 0; y < img.height; y++) {
+      for (let i = 0; i < img.width * 4; i += 4) {
+        const a = img.raw[y * (img.width * 4 + 1) + 1 + i + 3];
+        if (a < min) min = a;
+        if (a > max) max = a;
+      }
+    }
+    expect(min).toBe(0);
+    expect(max).toBe(255);
   });
 
   test("the favicon and the in-app logo point at the same file", () => {
-    expect(indexHtml).toMatch(/href="\/logo\.svg\?v=\d+"/);
+    expect(indexHtml).toMatch(/href="\/logo\.png\?v=\d+"/);
     const logo = readSource("src/components/brand/Logo.tsx");
     // LOGO_SRC resolves through publicAsset; on the hosted site that is still
-    // the same root-absolute /logo.svg?v=<n> string (covered by runtime tests
+    // the same root-absolute /logo.png?v=<n> string (covered by runtime tests
     // in tests/public-asset-resolution.test.js), so the invariant here is the
     // versioned script reference, not the assignment's exact spelling.
-    expect(logo).toMatch(
-      /export const LOGO_SRC = publicAsset\("logo\.svg\?v=\d+"\)/,
-    );
+    expect(logo).toMatch(/export const LOGO_SRC = publicAsset\("logo\.png\?v=\d+"\)/);
     // Every <img> of the mark must reference it, never an older asset.
-    expect(logo).not.toMatch(/src="\/logo\.png"/);
-    expect(logo).not.toMatch(/src="\/logo\.svg"/);
+    expect(logo).not.toMatch(/src="\/logo\.(png|svg)"/);
+  });
+
+  test("no brand surface still points at the retired SVG", () => {
+    // The mark is a raster now; a leftover .svg reference would 404.
+    for (const file of [
+      "index.html",
+      "src/components/brand/Logo.tsx",
+      "src/components/LogoDropdown.tsx",
+      "src/lib/youtubePlayer.ts",
+    ]) {
+      expect(readSource(file)).not.toContain("logo.svg");
+    }
   });
 
   test("the logo URL is versioned so a new mark can never be served stale", () => {
@@ -90,15 +108,13 @@ describe("the logo is a real, valid image everywhere it is referenced", () => {
     // preview — keep showing the PREVIOUS logo indefinitely. That is exactly
     // how a correctly-replaced file can look like it was never changed.
     const logo = readSource("src/components/brand/Logo.tsx");
-    const version = logo.match(/LOGO_SRC = publicAsset\("logo\.svg\?v=(\d+)"\)/);
+    const version = logo.match(/LOGO_SRC = publicAsset\("logo\.png\?v=(\d+)"\)/);
     expect(version).not.toBeNull();
 
     // Every consumer must use that same version, or they will disagree.
     const player = readSource("src/lib/youtubePlayer.ts");
-    expect(player).toContain(
-      `logo.src = publicAsset("logo.svg?v=${version[1]}")`,
-    );
-    expect(indexHtml).toContain(`/logo.svg?v=${version[1]}`);
+    expect(player).toContain(`logo.src = publicAsset("logo.png?v=${version[1]}")`);
+    expect(indexHtml).toContain(`/logo.png?v=${version[1]}`);
     // The iOS home-screen icon is versioned for the same reason. It is the
     // full-bleed 180px render (iOS applies its own rounded mask, so a
     // transparent corner shows as black) rather than the rounded tile.
@@ -107,44 +123,12 @@ describe("the logo is a real, valid image everywhere it is referenced", () => {
 });
 
 describe("the raster icons are valid PNGs, not placeholders", () => {
-  test("logo.png is a real 512x512 RGBA image", () => {
-    const img = readPng("public/logo.png");
-    expect(img.width).toBe(512);
-    expect(img.height).toBe(512);
-    expect(img.depth).toBe(8);
-    expect(img.color).toBe(6); // RGBA
-    expect(img.types[0]).toBe("IHDR");
-    expect(img.types[img.types.length - 1]).toBe("IEND");
-    expect(img.sawEnd).toBe(true);
-    // Scanlines are width*4 bytes plus a filter byte each.
-    expect(img.raw.length).toBe(512 * (512 * 4 + 1));
-  });
-
   test("product-icon.png is the 180x180 iOS size", () => {
     // apple-touch-icon is ignored by iOS unless it is a real PNG.
     const img = readPng("public/product-icon.png");
     expect(img.width).toBe(180);
     expect(img.height).toBe(180);
     expect(img.raw.length).toBe(180 * (180 * 4 + 1));
-  });
-
-  test("neither icon is an empty or blank file", () => {
-    for (const file of ["public/logo.png", "public/product-icon.png"]) {
-      const img = readPng(file);
-      // Every row's filter byte is 0, and the payload is not uniform black.
-      let min = 255;
-      let max = 0;
-      for (let y = 0; y < img.height; y++) {
-        expect(img.raw[y * (img.width * 4 + 1)]).toBe(0);
-        for (let i = 0; i < img.width * 4; i += 4) {
-          const v = img.raw[y * (img.width * 4 + 1) + 1 + i + 3];
-          if (v < min) min = v;
-          if (v > max) max = v;
-        }
-      }
-      expect(min).toBe(0); // transparent corners
-      expect(max).toBe(255); // painted centre
-    }
   });
 
   test("the manifest icons match the files that are actually shipped", () => {
