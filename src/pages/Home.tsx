@@ -1346,7 +1346,15 @@ export default function Home() {
               ) : undefined
             }
             subtitle={
-              section.personalised ? undefined : "Popular picks while we learn"
+              section.personalised
+                ? undefined
+                : section.id === "discover"
+                  ? // Exploration material really is generic popularity.
+                    "Popular picks while we learn"
+                  : // The row was built from the listener's own plays — there
+                    // are just too few of them to call the taste established,
+                    // and the cards say which play they came from.
+                    "From the few tracks we've heard so far"
             }
           >
             {section.items.slice(0, 14).map((item) => (

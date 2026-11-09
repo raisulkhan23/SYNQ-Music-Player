@@ -394,3 +394,23 @@ describe("every play has exactly one writer", () => {
     expect(store).not.toMatch(/if \(historyRecorder\) \{/);
   });
 });
+
+describe("exploration material is spent on exploration", () => {
+  test("for_you may not rank the broad discovery seed", () => {
+    // The broad seed asks for a genre the listener has never played. Ranking it
+    // into "Recommended for you" mislabels it, and because this row is served
+    // first it also spends the material Discover needs — which is how a thin
+    // provider produced a generic for_you row and no discovery row at all.
+    const start = convexReco.indexOf('case "for_you"');
+    const body = convexReco.slice(start, start + 900);
+    expect(body).toContain('s.source !== "broad_discovery"');
+    expect(body).toContain("familiar.length > 0 ? familiar : seeds");
+  });
+
+  test("the discovery row still receives the broad seed", () => {
+    const start = convexReco.indexOf('case "discover"');
+    expect(convexReco.slice(start, start + 600)).toContain(
+      's.source === "broad_discovery"',
+    );
+  });
+});

@@ -232,8 +232,17 @@ function feedbackToPlay(row: {
  */
 function seedsForSection(section: SectionId, seeds: CandidateSeed[]) {
   switch (section) {
-    case "for_you":
-      return seeds;
+    case "for_you": {
+      // Exploration is not taste evidence. The broad seed asks the provider
+      // for a genre it has never seen a single play from, so ranking it into
+      // "Recommended for you" both mislabels it and — because this row is
+      // served first — spends the material Discover needs, which is how the
+      // page ended up with one row full of generic songs and no discovery row
+      // at all. Cold start is the exception: there "popular songs" is the
+      // only seed there is, and an honest generic row beats a blank page.
+      const familiar = seeds.filter((s) => s.source !== "broad_discovery");
+      return familiar.length > 0 ? familiar : seeds;
+    }
     case "because_you_listened":
       return seeds.filter(
         (s) => s.source === "history" || s.source === "artists",
