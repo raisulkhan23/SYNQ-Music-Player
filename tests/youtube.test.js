@@ -253,31 +253,67 @@ describe("cleanTrackTitle", () => {
 
 describe("discoverySeedQueries", () => {
   test("draws from every genre group a broad query matches", () => {
-    // "indie pop" matches both the `pop` and `indie` groups.
-    const seeds = discoverySeedQueries("indie pop", 10);
+    // "indie rock" matches both the `indie` and `rock` groups, and both are
+    // honest descriptions of it.
+    const seeds = discoverySeedQueries("indie rock", 10);
     expect(
       seeds.some((seed) =>
         /Phoebe Bridgers|Tame Impala|Arctic Monkeys/.test(seed),
       ),
     ).toBe(true);
-    expect(
-      seeds.some((seed) => /Taylor Swift|Dua Lipa|Olivia Rodrigo/.test(seed)),
-    ).toBe(true);
+    expect(seeds.some((seed) => /Foo Fighters|Queen|Nirvana/.test(seed))).toBe(
+      true,
+    );
   });
 
   test("round-robins genres so the limit does not starve the second group", () => {
-    const capped = discoverySeedQueries("indie pop");
+    const capped = discoverySeedQueries("indie rock");
     expect(capped).toHaveLength(DISCOVERY_SEED_LIMIT);
-    expect(
-      capped.filter((seed) =>
-        /Taylor Swift|Dua Lipa|Olivia Rodrigo/.test(seed),
-      ),
-    ).toHaveLength(2);
     expect(
       capped.filter((seed) =>
         /Phoebe Bridgers|Tame Impala|Arctic Monkeys/.test(seed),
       ),
     ).toHaveLength(2);
+    expect(
+      capped.filter((seed) => /Foo Fighters|Queen|Nirvana/.test(seed)),
+    ).toHaveLength(2);
+  });
+
+  test("a compound genre does not inherit the head word's seeds", () => {
+    // This is what filled a bedroom-pop shelf with one artist: every query
+    // containing "pop" was answered with the pop group's seeds.
+    for (const query of [
+      "bedroom pop essentials",
+      "dream pop essentials",
+      "indie pop",
+      "synth pop",
+      "alt pop",
+      "k-pop",
+    ]) {
+      expect(
+        discoverySeedQueries(query, 20).filter((seed) =>
+          /Taylor Swift|Dua Lipa|Olivia Rodrigo/.test(seed),
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  test("those compounds still get an honest answer", () => {
+    expect(
+      discoverySeedQueries("bedroom pop essentials").some((seed) =>
+        /Clairo|Men I Trust|Mac DeMarco|girl in red/.test(seed),
+      ),
+    ).toBe(true);
+    expect(
+      discoverySeedQueries("dream pop essentials").some((seed) =>
+        /Beach House|Cocteau Twins|Alvvays|DIIV/.test(seed),
+      ),
+    ).toBe(true);
+  });
+
+  test("bare pop still means pop", () => {
+    expect(discoverySeedQueries("pop", 20)).toContain("Taylor Swift songs");
+    expect(discoverySeedQueries("pop songs", 20)).toContain("Dua Lipa songs");
   });
 
   test("returns nothing for a query that matches no genre", () => {
@@ -286,15 +322,12 @@ describe("discoverySeedQueries", () => {
   });
 
   test("never returns duplicate seeds for overlapping groups", () => {
-    // "k-pop" matches the `k-pop` group and also the bare `pop` group.
+    // "k-pop" is its own genre and matches its own group only.
     const seeds = discoverySeedQueries("k-pop", 20);
     expect(new Set(seeds).size).toBe(seeds.length);
     expect(seeds.some((seed) => /BLACKPINK|TWICE|Stray Kids/.test(seed))).toBe(
       true,
     );
-    expect(
-      seeds.some((seed) => /Taylor Swift|Dua Lipa|Olivia Rodrigo/.test(seed)),
-    ).toBe(true);
   });
 
   test("a mood-only query still resolves to seeds", () => {

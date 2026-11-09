@@ -8,6 +8,7 @@ import { MixesRow } from "@/components/home/MixesRow";
 import { api } from "@/convex/_generated/api";
 import { explainReason, type RecoCandidate } from "@/lib/recommend";
 import { allocateSections, recordingKey } from "@/lib/homeShelves";
+import { capPerArtist } from "@/lib/recoBalance";
 import type { BrowseRelease } from "@/lib/musicBrowse";
 import { buildFavoritesItems, buildMixes, type Mix, type RemoteLike } from "@/lib/mixes";
 
@@ -748,7 +749,11 @@ export default function Home() {
     }
     const allocated = allocateSections(
       [
-        { id: "discover", items: usable(remote.discover) },
+        // At most two per artist. The genre searches behind this row come
+        // back artist-heavy often enough that one catalogue could fill it —
+        // the fallback shelf has no profile to balance against, so the cap is
+        // the only thing keeping it from reading as a single-artist row.
+        { id: "discover", items: capPerArtist(usable(remote.discover), 2) },
         { id: "timeOfDay", items: usable(remote.timeOfDay) },
         { id: "seasonal", items: usable(remote.seasonal) },
       ],

@@ -633,11 +633,32 @@ function hasMusicEvidence(item: YtItem): boolean {
 const DISCOVERY_QUERY_RE =
   /\b(songs?|music|hits|mix|playlist|chill|happy|sad|energetic|focus|workout|party|sleep|romantic|nostalgic|pop|rock|jazz|classical|ambient|funk|metal|country|reggaeton|afrobeats|k[\s-]?pop|indie|electronic|lo-fi|r\s*(?:&|and)\s*b|hip-hop)\b/i;
 
-const DISCOVERY_SEEDS: Array<[RegExp, string[]]> = [
+/**
+ * Matches "pop" only when it stands on its own.
+ *
+ * A compound genre is not the genre its head word names. "bedroom pop" and
+ * "dream pop" were matching this group and inheriting its seeds, so a
+ * bedroom-pop shelf was answered with one artist's catalogue — a hardcoded
+ * shelf that looked exactly like a personalisation failure. Modifiers are
+ * excluded here and the genres that need their own answer have their own
+ * group below.
+ */
+const BARE_POP = (query: string) =>
+  /\bpop\b/i.test(query) &&
+  !/\b(?:bedroom|dream|indie|synth|alt|alternative|art|chill|chamber|noise|city|power|sophisti|hyper|electro|dance|baroque|sunshine|k[\s-]?pop|pop[\s-]?punk|folk)\b/i.test(
+    query,
+  );
+
+const DISCOVERY_SEEDS: Array<[RegExp | ((query: string) => boolean), string[]]> = [
   [/\bk[\s-]?pop\b/i, ["BLACKPINK songs", "TWICE songs", "Stray Kids songs"]],
+  [BARE_POP, ["Taylor Swift songs", "Dua Lipa songs", "Olivia Rodrigo songs"]],
   [
-    /\bpop\b/i,
-    ["Taylor Swift songs", "Dua Lipa songs", "Olivia Rodrigo songs"],
+    /\bbedroom pop\b/i,
+    ["Clairo songs", "Men I Trust songs", "Mac DeMarco songs", "girl in red songs"],
+  ],
+  [
+    /\bdream pop\b/i,
+    ["Beach House songs", "Cocteau Twins songs", "Alvvays songs", "DIIV songs"],
   ],
   [
     /\bhip[\s-]?hop\b/i,
@@ -735,7 +756,9 @@ export function discoverySeedQueries(
   query: string,
   limit = DISCOVERY_SEED_LIMIT,
 ): string[] {
-  const groups = DISCOVERY_SEEDS.filter(([pattern]) => pattern.test(query))
+  const groups = DISCOVERY_SEEDS.filter(([pattern]) =>
+    typeof pattern === "function" ? pattern(query) : pattern.test(query),
+  )
     .map(([, categorySeeds]) => categorySeeds)
     .filter((seeds) => seeds.length > 0);
   if (groups.length === 0) return [];
