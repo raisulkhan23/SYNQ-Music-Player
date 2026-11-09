@@ -768,6 +768,21 @@ export default function Home() {
     };
   }, [historyItems, mostPlayedItems, recoSections, remote, remoteRefreshToken, trending]);
 
+  /**
+   * Does the recommendation engine already own the discovery row?
+   *
+   * Home used to render BOTH: the engine's "Discover something new" (built
+   * from the listener) and this older generic one (a rotating genre search),
+   * both under the same title. Two shelves with the same heading, ranked
+   * independently, is exactly how the page ends up offering the same artist
+   * twice under different names. The generic shelf is now the fallback for a
+   * listener the engine cannot personalise — signed out, or before the first
+   * settled play — rather than a second discovery row.
+   */
+  const engineHasDiscovery = Boolean(
+    recoSections?.some((section) => section.id === "discover"),
+  );
+
   const playRemoteItem = (item: YtItem, rest: YtItem[]) => {
     playTrack(
       toPlayableYoutube(
@@ -1450,11 +1465,12 @@ export default function Home() {
           ),
         )} · rotates daily`}
         icon={<Compass className="size-4 text-[rgb(var(--tint))]" />}
-        skeleton={remote.discover === undefined}
+        skeleton={remote.discover === undefined && !engineHasDiscovery}
         hidden={
-          !remoteFailures.discover &&
-          remote.discover !== undefined &&
-          discovery.discover.length === 0
+          engineHasDiscovery ||
+          (!remoteFailures.discover &&
+            remote.discover !== undefined &&
+            discovery.discover.length === 0)
         }
       >
         {remoteFailures.discover ? (
@@ -1569,7 +1585,7 @@ export default function Home() {
               // `relative` anchors the decorative glow below. Without it the
               // absolutely-positioned span resolves against some distant
               // positioned ancestor and the tile renders a stray blob.
-              "group relative flex aspect-square w-32 shrink-0 snap-start flex-col justify-end overflow-hidden rounded-xl border border-white/[0.08] bg-gradient-to-br p-3 transition-all hover:-translate-y-0.5 hover:border-[rgb(var(--tint)_/_0.35)] sm:w-40 lg:w-44",
+              "group relative flex aspect-square w-32 shrink-0 snap-start flex-col justify-end overflow-hidden rounded-xl border border-white/[0.08] bg-gradient-to-br p-3 transition-ui hover:-translate-y-0.5 hover:border-[rgb(var(--tint)_/_0.35)] sm:w-40 lg:w-44",
               tone,
             )}
           >
@@ -1646,7 +1662,7 @@ export default function Home() {
                 className="group/bar flex h-full min-w-0 flex-1 items-end"
               >
                 <div
-                  className="w-full rounded-t-md bg-gradient-to-t from-[rgb(var(--tint)_/_0.3)] to-[rgb(var(--tint))] opacity-65 transition-all duration-300 group-hover/bar:opacity-100"
+                  className="w-full rounded-t-md bg-gradient-to-t from-[rgb(var(--tint)_/_0.3)] to-[rgb(var(--tint))] opacity-65 transition-ui duration-300 group-hover/bar:opacity-100"
                   style={{
                     height: `${Math.max(12, (count / listeningPulse.maxBar) * 100)}%`,
                   }}

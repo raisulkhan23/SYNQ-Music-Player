@@ -321,7 +321,12 @@ describe("candidate generation asks for real, verifiable seeds", () => {
     expect(seeds[0].query).toContain("Loved");
   });
 
-  test("a discovery seed is always kept so the list cannot collapse", () => {
+  test("exploration is always kept so the list cannot collapse", () => {
+    // The row must never be empty of intent — but after a SINGLE play the
+    // intent has to be broad rather than anchored on that one artist. This is
+    // the change that fixed "one Taylor Swift track filled the discovery row
+    // with Taylor Swift": the seed list still explores, it just refuses to
+    // explore outward from an artist the data does not support yet.
     const userSignals = {
       userId: "u",
       plays: [{ trackId: "p", artistName: "A", at: NOW }],
@@ -329,9 +334,25 @@ describe("candidate generation asks for real, verifiable seeds", () => {
       playlists: [],
     };
     const signals = buildSignals(userSignals, NOW);
-    expect(
-      buildSeeds(signals, userSignals).some((s) => s.source === "discovery"),
-    ).toBe(true);
+    const seeds = buildSeeds(signals, userSignals);
+    const explores = seeds.some(
+      (s) => s.source === "discovery" || s.source === "broad_discovery",
+    );
+    expect(explores).toBe(true);
+  });
+
+  test("one play never anchors a discovery search on that artist", () => {
+    const userSignals = {
+      userId: "u",
+      plays: [{ trackId: "p", artistName: "Taylor Swift", at: NOW }],
+      likes: [],
+      playlists: [],
+    };
+    const signals = buildSignals(userSignals, NOW);
+    const seeds = buildSeeds(signals, userSignals);
+    // No "new songs like Taylor Swift" — one click is not a taste.
+    expect(seeds.some((s) => s.source === "discovery")).toBe(false);
+    expect(seeds.some((s) => /new songs like/i.test(s.query))).toBe(false);
   });
 
   test("the fan-out is capped so one request cannot become fifty searches", () => {

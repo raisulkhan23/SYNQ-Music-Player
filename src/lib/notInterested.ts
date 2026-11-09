@@ -66,6 +66,12 @@ export function artistKey(raw: string | null | undefined): string {
       .replace(/\s+(?:topic|vevo)\s*$/g, " ")
       .replace(/^the\s+/, "")
       .replace(/[^a-z0-9]+/g, "")
+      // A trailing "vevo"/"topic" is GLUED to the name in real channel
+      // titles — "TaylorSwiftVEVO" has no space to match above, so removing
+      // it only after punctuation is gone is what makes that channel compare
+      // equal to "Taylor Swift". Without this, one source's spelling of an
+      // artist silently escapes an exclusion (or an anchor filter).
+      .replace(/(?:vevo|topic)$/, "")
   );
 }
 

@@ -19,6 +19,15 @@ const TRUSTED_ORIGINS = [
   "https://frugal-lobster-91.convex.cloud",
   "https://freebuff.com",
   "https://www.freebuff.com",
+  // The Pages deployments. Sign-in sends an ABSOLUTE return URL
+  // (`window.location.origin + path` — see Auth.tsx and AuthPromptDialog), and
+  // the redirect callback below refuses any origin it does not trust. That is
+  // exactly how OAuth appeared to work on freebuff.app and failed on Pages:
+  // the provider round-trip succeeded, then the callback threw on the return
+  // origin and the user landed signed out. Both project domains are listed,
+  // not a wildcard, so an unrelated *.pages.dev site cannot receive a token.
+  "https://synqmusic.pages.dev",
+  "https://synq-music-player.pages.dev",
 ]
   .filter((x): x is string => !!x)
   .map((x) => x.replace(/\/$/, ""));
@@ -28,7 +37,12 @@ function isTrustedOrigin(origin: string): boolean {
   return (
     TRUSTED_ORIGINS.includes(normalized) ||
     /^https:\/\/(?:[a-z0-9-]+\.)*freebuff\.(?:app|com|dev)$/i.test(normalized) ||
-    /^https:\/\/[a-z0-9-]+\.vly\.sh$/i.test(normalized)
+    /^https:\/\/[a-z0-9-]+\.vly\.sh$/i.test(normalized) ||
+    // Per-deployment preview URLs of the two SYNQ Pages projects, e.g.
+    // `https://6a86aaa5.synq-music-player.pages.dev`.
+    /^https:\/\/[a-z0-9-]+\.(?:synqmusic|synq-music-player)\.pages\.dev$/i.test(
+      normalized,
+    )
   );
 }
 

@@ -41,6 +41,14 @@ import {
 import type { YtItem } from "./youtube";
 // Relative, not the `@/` alias: the Convex bundler does not resolve it.
 import { applyExclusions, mergeExtra, poolIds } from "../lib/recoMerge";
+import {
+  allocateWithBudget,
+  blendDiscovery,
+  discoveryAnchors,
+  excludeAnchors,
+  DISCOVERY_ARTIST_CAP,
+  DISCOVERY_LIMIT,
+} from "../lib/recoBalance";
 import { NO_EXCLUSIONS, type Exclusions } from "../lib/notInterested";
 import {
   jamendoDiscoveryQueries,
@@ -78,8 +86,34 @@ const MAX_SIGNAL_ROWS = 200;
 const MAX_LIKES = 100;
 const MAX_PLAYLISTS = 25;
 const MAX_FEEDBACK_ROWS = 100;
-/** Upstream searches per recommendation request. */
-const MAX_SEEDS = 4;
+/**
+ * Upstream searches per recommendation request.
+ *
+ * Six, raised from four. With four seeds and a discovery reservation, a
+ * listener whose profile held three artists could only ever see two of them
+ * on the whole page — the funnel was narrower than the taste it described.
+ */
+const MAX_SEEDS = 6;
+
+/**
+ * How many cards one shelf may show, and how many candidates it is ranked
+ * from. The pool is deliberately larger than the shelf: the Home coordinator
+ * spends from these pools and needs alternates when an artist is already at
+ * its page-wide budget.
+ */
+const PER_SECTION = 14;
+const PER_SECTION_POOL = 26;
+
+/** Below this a shelf is dropped instead of rendered as a stub. */
+const MIN_PER_SECTION = 4;
+
+/**
+ * Evidence before Home may call a row personalised.
+ *
+ * Eight-ish interactions. Below it the cards still render, but the row is
+ * labelled as popular picks rather than claiming a taste the data cannot show.
+ */
+const PERSONALISED_CONFIDENCE = 0.35;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -209,8 +243,14 @@ function seedsForSection(section: SectionId, seeds: CandidateSeed[]) {
     case "from_artists":
       return seeds.filter((s) => s.source === "artists");
     case "discover":
+      // The broad seed belongs here too: it is a discovery source, not a
+      // fallback, and the row blends it with the related results rather than
+      // showing it in place of them.
       return seeds.filter(
-        (s) => s.source === "discovery" || s.source === "jamendo_discovery",
+        (s) =>
+          s.source === "discovery" ||
+          s.source === "jamendo_discovery" ||
+          s.source === "broad_discovery",
       );
     case "sound_alike":
       // Only the vector seed. Without this the row would be populated by the
@@ -248,7 +288,12 @@ function sectionEligibility(
     because_you_listened: realPlays >= MIN_PLAYS,
     based_on_likes: userSignals.likes.length >= MIN_LIKES,
     from_artists: artistsWithPlays >= MIN_ARTISTS,
-    discover: built.personalised && artistsWithPlays >= 1,
+    // Discovery stays visible as soon as there is any profile at all — but
+    // what FILLS it is now protected: the anchors are excluded, one artist
+    // may hold one card, and the row is blended with broad exploration. The
+    // row is not hidden from a thin-evidence listener; it stops pretending to
+    // know them (see the `personalised` flag below).
+    discover: built.personalised,
     // The sound-alike row needs RECENT PLAYS, not plays in general: it is
     // built by asking the vector index "what is near what I just played", so
     // with no recent plays there is nothing to be near. Gating on a total
@@ -684,11 +729,13 @@ function buildSections(
   excludeIds: Set<string>,
   tuning: Tuning,
 ): SectionPayload[] {
-  const sections: SectionPayload[] = [];
-  // Tracks already shown in an earlier row are excluded from later rows, so a
-  // listener scrolling Home does not meet the same song three times.
-  const usedIds = new Set<string>(excludeIds);
-
+  // ── 1. Rank each shelf's own pool ─────────────────────────────────────────
+  // Per-shelf at this stage, because "the best track for this row" is a
+  // different question from "the best tracks for the page". Each row is ranked
+  // generously, and WITHOUT a per-artist cap: the coordinator below needs
+  // alternates to spend when an artist has already used its page-wide budget,
+  // and a cap applied twice would just hide them.
+  const pools = new Map<SectionId, RecoCandidate[]>();
   for (const id of SECTION_IDS) {
     if (!eligible[id]) continue;
 
@@ -700,37 +747,106 @@ function buildSections(
       if (!seed) return false;
       return allowed.has(seed.seed ?? seed.query);
     });
+    if (candidates.length === 0) continue;
 
-    const ranked =
-      candidates.length === 0
-        ? []
-        : rankCandidates(candidates, built, pool.seeds, {
-            now,
-            limit: 12,
-            excludeIds: usedIds,
-            recentPlays,
-            seedByTrackId: pool.seedByTrackId,
-            maxPerArtist: 2,
-            maxPerAlbum: 3,
-            tuning,
-          });
+    const ranked = rankCandidates(candidates, built, pool.seeds, {
+      now,
+      limit: PER_SECTION_POOL,
+      // Only the hard excludes here. Cross-shelf de-duplication belongs to the
+      // coordinator, which is the only thing that can see every row at once.
+      excludeIds,
+      recentPlays,
+      seedByTrackId: pool.seedByTrackId,
+      maxPerArtist: PER_SECTION_POOL,
+      maxPerAlbum: PER_SECTION_POOL,
+      tuning,
+    });
+    if (ranked.length > 0) {
+      pools.set(
+        id,
+        ranked.map((entry) => ({ ...entry.track, reason: entry.reason })),
+      );
+    }
+  }
 
-    for (const entry of ranked) usedIds.add(entry.track.id);
+  // ── 2. Discovery is a blend, and never anchored on its own source ────────
+  // The provider answers "new songs like <artist>" with that artist's own
+  // catalogue often enough that filtering the SEED is not sufficient: the
+  // anchor has to be filtered out of the RESULTS. Whatever survives is then
+  // blended with sound-alike and broad candidates, so no single search can
+  // define the row.
+  const discoverPool = pools.get("discover") ?? [];
+  const anchors = discoveryAnchors(built.artists.values(), 3);
+  const related: RecoCandidate[] = [];
+  const adjacent: RecoCandidate[] = [];
+  const broad: RecoCandidate[] = [];
+  for (const item of discoverPool) {
+    const seed = pool.seedByTrackId.get(item.id);
+    if (seed?.source === "vector_sound_alike") adjacent.push(item);
+    else if (seed?.source === "broad_discovery") broad.push(item);
+    else related.push(item);
+  }
+  const discovery = blendDiscovery(
+    {
+      related: excludeAnchors(related, anchors),
+      adjacent: excludeAnchors(adjacent, anchors),
+      broad,
+    },
+    {
+      limit: DISCOVERY_LIMIT,
+      maxPerArtist: DISCOVERY_ARTIST_CAP,
+      reserved: excludeIds,
+    },
+  );
 
-    // An eligible section with nothing to show is omitted rather than
-    // rendered empty — a blank row is worse than no row.
-    if (ranked.length === 0) continue;
+  // ── 3. One coordinator for the whole page ────────────────────────────────
+  const ordered: Array<{ id: SectionId; pool: RecoCandidate[] }> = [];
+  for (const id of SECTION_IDS) {
+    if (id === "discover") {
+      if (discovery.length > 0) ordered.push({ id, pool: discovery });
+      continue;
+    }
+    const items = pools.get(id);
+    if (items && items.length > 0) ordered.push({ id, pool: items });
+  }
 
+  const allocated = allocateWithBudget(ordered, {
+    perSection: PER_SECTION,
+    minPerSection: MIN_PER_SECTION,
+    // Four tracks by one artist across the ENTIRE page. Enough for a genuine
+    // favourite to show up more than once, never enough to own Home.
+    maxPerArtistTotal: 4,
+    sectionArtistCap: {
+      for_you: 3,
+      because_you_listened: 2,
+      based_on_likes: 2,
+      from_artists: 2,
+      sound_alike: 2,
+      discover: DISCOVERY_ARTIST_CAP,
+    },
+    // The headline row may honestly show three; a three-card discovery row
+    // would just look broken.
+    sectionMin: { for_you: 3 },
+    reserved: excludeIds,
+  });
+
+  const sections: SectionPayload[] = [];
+  for (const section of allocated) {
+    if (section.items.length === 0) continue;
+    const id = section.id as SectionId;
     const meta = SECTION_META[id];
     sections.push({
       id,
       title: meta.title,
       subtitle: meta.subtitle,
-      personalised: id === "for_you" ? built.personalised : true,
-      // Carry each track's reason so the Home card can explain itself without a
-      // second round trip. `reasonFor` already resolved it from the term that
-      // actually scored highest, so this never invents a connection.
-      items: ranked.map((entry) => ({ ...entry.track, reason: entry.reason })),
+      // A row may only call itself personalised when the profile has the
+      // evidence behind it. The cards still render either way; only the claim
+      // is withheld, which is what the Home subtitle switches on.
+      personalised:
+        id === "for_you" || id === "discover"
+          ? built.confidence >= PERSONALISED_CONFIDENCE
+          : true,
+      items: section.items,
     });
   }
 
@@ -795,6 +911,9 @@ export const forYou = action({
     const seeds = buildSeeds(built, userSignals, {
       maxSeeds: MAX_SEEDS,
       tuning,
+      // Rotates the broad exploration search once a day, so the floor of the
+      // discovery row is not the same handful of songs on every visit.
+      broadOffset: Math.floor(now / 86_400_000),
     });
     const recentPlays: Array<{ trackId: string; at: number }> = [];
     try {

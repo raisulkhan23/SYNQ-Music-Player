@@ -192,7 +192,7 @@ describe("the wiring keeps Jamendo out of playback and inside discovery", () => 
   test("the Discover row is the only one allowed to claim these", () => {
     // The sound-alike row is fed only by the vector index; filling it with
     // catalogue lookups would make the title lie about what happened.
-    expect(recoSrc).toMatch(/case "discover":[\s\S]{0,200}?jamendo_discovery/);
+    expect(recoSrc).toMatch(/case "discover":[\s\S]{0,600}?jamendo_discovery/);
     expect(recoSrc).toMatch(
       /case "sound_alike":[\s\S]{0,300}?s\.source === "vector_sound_alike"\)\s*;?/,
     );

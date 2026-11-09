@@ -5,6 +5,7 @@ const store = readSource("src/store/player.ts");
 const shell = readSource("src/components/layout/AppShell.tsx");
 const home = readSource("src/pages/Home.tsx");
 const convexReco = readSource("src/convex/recommend.ts");
+const balance = readSource("src/lib/recoBalance.ts");
 const convexHistory = readSource("src/convex/history.ts");
 const schema = readSource("src/convex/schema.ts");
 const playable = readSource("src/lib/playable.ts");
@@ -200,11 +201,18 @@ describe("the signals a cold, low-data or active listener produces", () => {
   });
 
   test("a section with nothing to show is dropped, not rendered empty", () => {
-    expect(convexReco).toMatch(/if \(ranked\.length === 0\) continue;/);
+    // The coordinator decides, not the per-shelf loop: a row that could not
+    // reach its own floor is returned empty and skipped here.
+    expect(convexReco).toMatch(/if \(section\.items\.length === 0\) continue;/);
+    expect(convexReco).toContain("allocateWithBudget");
   });
 
   test("a track shown in one row does not reappear in the next", () => {
-    expect(convexReco).toMatch(/for \(const entry of ranked\) usedIds\.add/);
+    // De-duplication moved into the one coordinator that sees every shelf at
+    // once, so it is also the only place that can enforce an artist budget.
+    expect(convexReco).toContain("allocateWithBudget");
+    expect(balance).toMatch(/shownIds\.has\(item\.id\)/);
+    expect(balance).toMatch(/shownTracks\.has\(identity\)/);
   });
 
   test("a card only claims the reason its own source supports", () => {

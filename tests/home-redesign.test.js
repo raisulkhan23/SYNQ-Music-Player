@@ -205,14 +205,20 @@ describe("sections only appear when they can be honest", () => {
     // one exception — it renders a retry, because silence and failure are not
     // the same thing to the listener.
     expect(home).toMatch(
-      /hidden=\{\s*!remoteFailures\.discover &&\s*remote\.discover !== undefined &&\s*discovery\.discover\.length === 0\s*\}/,
+      /hidden=\{\s*engineHasDiscovery \|\|\s*\(!remoteFailures\.discover &&\s*remote\.discover !== undefined &&\s*discovery\.discover\.length === 0\)\s*\}/,
     );
     expect(home).toMatch(/remoteFailures\.discover \? \(/);
+    // The generic shelf is a fallback, never a second "Discover something new"
+    // beside the engine's own row.
+    expect(home).toMatch(/const engineHasDiscovery = Boolean\(/);
   });
 
   test("the engine still decides which rows exist", () => {
     // The redesign must not start rendering rows the engine refused to build.
-    expect(convexHome()).toContain("if (ranked.length === 0) continue;");
+    // The decision moved from the per-shelf loop to the page coordinator, so
+    // the assertion follows it there.
+    expect(convexHome()).toContain("allocateWithBudget");
+    expect(convexHome()).toMatch(/if \(section\.items\.length === 0\) continue;/);
   });
 
   test("recently played needs real history before it claims to have any", () => {

@@ -154,7 +154,17 @@ export type CandidateSource =
    * from a different catalogue with a different licensing story, and the UI
    * credits the independent release.
    */
-  | "jamendo_discovery";
+  | "jamendo_discovery"
+  /**
+   * A deliberately broad search, used as the exploration floor of a discovery
+   * row when there is not yet enough evidence to search outward from a
+   * specific artist.
+   *
+   * Kept as its own source so the row can tell "we explored from your taste"
+   * apart from "we showed you something wide because we do not know your taste
+   * yet" — the two are blended, never silently substituted for one another.
+   */
+  | "broad_discovery";
 
 /** The full explainable breakdown. Every field is a real computed number. */
 export interface ScoreBreakdown {
@@ -503,6 +513,28 @@ export interface ArtistProfile {
   lastAt: number;
   /** Recency-weighted mean completion ratio over non-skipped plays. */
   completion: number;
+  /**
+   * Independent positive interactions behind this artist: one per play, two
+   * per like, plus playlist appearances.
+   *
+   * This is the EVIDENCE COUNT, kept separate from `affinity` on purpose.
+   * Affinity is normalised against the strongest artist, so the top artist is
+   * 1.0 whether it has one play or two hundred — a relative measurement that
+   * says "most played", not "well established". Mixing the two is what let a
+   * single play act like a whole taste profile.
+   */
+  interactions: number;
+  /**
+   * 0..1 — how much the affinity above is actually supported by evidence.
+   *
+   * Rises toward 1 as interactions accumulate and stays near 0 for an artist
+   * the listener tried once. Used by the seed builder (so one recent
+   * exploration cannot anchor the discovery rows) and by the Home payload's
+   * confidence flag. Deliberately NOT folded into the score weights: it gates
+   * which questions the engine is allowed to ask, rather than silently
+   * rescaling every shelf.
+   */
+  evidence: number;
 }
 
 export interface Signals {
@@ -520,6 +552,84 @@ export interface Signals {
   personalised: boolean;
   /** Number of distinct artists heard — a cold-start proxy. */
   artistCount: number;
+  /**
+   * 0..1 — how much evidence the whole profile rests on.
+   *
+   * One play is ~0.1, a dozen interactions is 1.0. Home uses this to decide
+   * whether a shelf may describe itself as personalised: with too little
+   * evidence the cards still render, but the row says "popular picks while we
+   * learn" instead of claiming a taste it cannot demonstrate.
+   */
+  confidence: number;
+}
+
+/**
+ * Interactions at which an artist counts as established.
+ *
+ * `evidence = n / (n + 6)`: one play is 0.14, three plays 0.33, six 0.5, and
+ * it approaches 1 for a genuine favourite. The shape matters more than the
+ * constant — early interactions raise confidence steeply and later ones add
+ * progressively less, which is how evidence should behave.
+ */
+export const EVIDENCE_SATURATION = 6;
+
+/**
+ * Total interactions at which the listener's whole profile is trusted.
+ *
+ * Twelve is roughly "an afternoon of listening": enough to rank confidently,
+ * few enough that a new account stops being treated as a blank slate quickly.
+ */
+export const FULL_CONFIDENCE_INTERACTIONS = 12;
+
+/**
+ * Evidence an artist needs before the engine will search OUTWARD from them.
+ *
+ * One play is 0.14, two is 0.25, three is 0.33 — so this is the "three
+ * meaningful interactions" line. Below it, "new songs like <artist>" is not a
+ * discovery question, it is a guess built on a single click.
+ */
+export const DISCOVERY_ANCHOR_MIN_EVIDENCE = 0.3;
+
+/**
+ * Profile confidence at which breadth alone is enough to anchor discovery.
+ *
+ * Six-plus interactions spread across several artists. See the two-bar rule
+ * in `buildSeeds`: depth OR (breadth + a top-two artist).
+ */
+export const BROAD_PROFILE_CONFIDENCE = 0.5;
+
+/**
+ * Broad discovery searches — the exploration floor of a discovery row.
+ *
+ * These are SEARCH PHRASES, not claims about the listener's taste. Each one
+ * returns real provider results from many different artists, which is exactly
+ * what the row needs when there is not enough evidence to search outward from
+ * a specific artist. Rotated by day so the floor is not the same handful of
+ * songs on every visit.
+ */
+export const BROAD_DISCOVERY_QUERIES: readonly string[] = [
+  "indie folk essentials",
+  "neo soul essentials",
+  "dream pop essentials",
+  "alt r&b essentials",
+  "singer songwriter essentials",
+  "shoegaze essentials",
+  "bedroom pop essentials",
+  "jazz fusion essentials",
+  "bossa nova essentials",
+  "synthwave essentials",
+];
+
+/** `count` queries starting at `offset`, wrapping. Deterministic for tests. */
+export function broadDiscoveryQueries(offset = 0, count = 1): string[] {
+  const n = BROAD_DISCOVERY_QUERIES.length;
+  if (n === 0 || count <= 0) return [];
+  const start = ((Math.floor(offset) % n) + n) % n;
+  const out: string[] = [];
+  for (let i = 0; i < Math.min(count, n); i += 1) {
+    out.push(BROAD_DISCOVERY_QUERIES[(start + i) % n] as string);
+  }
+  return out;
 }
 
 function decayFor(at: number, now: number): number {
@@ -591,11 +701,17 @@ export function buildSignals(signals: UserSignals, now: number): Signals {
       affinity: 0,
       lastAt: 0,
       completion: 0,
+      interactions: 0,
+      evidence: 0,
     };
     const addedPlays = delta.plays ?? 0;
     existing.plays += addedPlays;
     existing.likes += delta.likes ?? 0;
     existing.skips += delta.skips ?? 0;
+    // A like is deliberate, so it counts double. Skips are not evidence
+    // FOR the artist and do not add to the count; they subtract from affinity
+    // instead, which keeps "tried once and skipped" from reading as support.
+    existing.interactions += addedPlays + (delta.likes ?? 0) * 2;
     existing.lastAt = Math.max(existing.lastAt, at);
     // A like is worth more than a play, and a skip subtracts less than a play
     // adds — that asymmetry is what stops a single skip from killing a song.
@@ -652,6 +768,7 @@ export function buildSignals(signals: UserSignals, now: number): Signals {
   // lands in 0..1 and the weights mean what they say. A cold listener gets a
   // flat 0 rather than a division by zero.
   let peak = 0;
+  let totalInteractions = 0;
   for (const profile of artists.values()) {
     peak = Math.max(peak, profile.affinity);
   }
@@ -659,6 +776,15 @@ export function buildSignals(signals: UserSignals, now: number): Signals {
     for (const profile of artists.values()) {
       profile.affinity = Math.max(0, profile.affinity) / peak;
     }
+  }
+  // Evidence is computed AFTER normalisation and from the raw interaction
+  // count, so it never inherits the relative scaling above.
+  for (const profile of artists.values()) {
+    profile.evidence =
+      profile.interactions > 0
+        ? profile.interactions / (profile.interactions + EVIDENCE_SATURATION)
+        : 0;
+    totalInteractions += profile.interactions;
   }
 
   return {
@@ -671,6 +797,7 @@ export function buildSignals(signals: UserSignals, now: number): Signals {
     historyMass,
     personalised: artists.size > 0,
     artistCount: artists.size,
+    confidence: clamp01(totalInteractions / FULL_CONFIDENCE_INTERACTIONS),
   };
 }
 
@@ -704,6 +831,12 @@ export function buildSeeds(
     currentTrack?: RecoCandidate | null;
     /** Exploration preference. Omit for the balanced default. */
     tuning?: Tuning;
+    /**
+     * Rotates the broad discovery search by day, so two visits on different
+     * days do not ask the provider the same question. Injected rather than
+     * read from a clock so the seed list stays deterministic under test.
+     */
+    broadOffset?: number;
   } = {},
 ): CandidateSeed[] {
   const maxSeeds = options.maxSeeds ?? 6;
@@ -740,18 +873,36 @@ export function buildSeeds(
     (a, b) => b.affinity - a.affinity || b.lastAt - a.lastAt,
   );
 
+  /**
+   * At most one familiar seed per artist.
+   *
+   * Without this the same artist could be pushed twice — once by the likes
+   * loop and once by the plays loop — and with a four-seed budget that left
+   * room for exactly two artists on the whole page. Seeding is the widest
+   * point in the funnel: a duplicate here costs a whole source downstream.
+   */
+  const seededArtists = new Set<string>();
+  const pushFamiliar = (
+    profile: ArtistProfile,
+    source: CandidateSource,
+    weight: number,
+    reason: RecoReason,
+  ) => {
+    if (seeds.length >= familiarBudget) return;
+    if (seededArtists.has(profile.key)) return;
+    seededArtists.add(profile.key);
+    seeds.push({
+      query: `${profile.display} songs`,
+      source,
+      weight,
+      seed: `${source}:${profile.key}`,
+      reason,
+    });
+  };
+
   // Liked artists lead: a like is the most deliberate signal available.
   for (const profile of ranked) {
-    if (seeds.length >= familiarBudget) break;
-    if (profile.likes > 0) {
-      seeds.push({
-        query: `${profile.display} songs`,
-        source: "likes",
-        weight: 1,
-        seed: `liked:${profile.key}`,
-        reason: "based_on_likes",
-      });
-    }
+    if (profile.likes > 0) pushFamiliar(profile, "likes", 1, "based_on_likes");
   }
 
   // The track playing right now is the strongest context signal we have.
@@ -764,7 +915,14 @@ export function buildSeeds(
       seed: `current:${options.currentTrack.id}`,
       reason: "similar_song",
     });
-    if (artist) {
+    const currentProfile = artist ? signals.artists.get(artist) : undefined;
+    if (currentProfile) {
+      pushFamiliar(currentProfile, "artists", 0.9, "favorite_artist");
+    } else if (artist && seeds.length < familiarBudget) {
+      // Playing, but the artist has no profile yet (the play has not settled).
+      // Still worth one seed — and it must not be mistaken for an established
+      // artist, so it is recorded as seeded without earning any evidence.
+      seededArtists.add(artist);
       seeds.push({
         query: `${options.currentTrack.artist} songs`,
         source: "artists",
@@ -775,17 +933,10 @@ export function buildSeeds(
     }
   }
 
-  // Frequently played artists.
+  // Frequently played artists, strongest first.
   for (const profile of ranked) {
-    if (seeds.length >= familiarBudget) break;
     if (profile.plays > 0) {
-      seeds.push({
-        query: `${profile.display} songs`,
-        source: "artists",
-        weight: 0.85,
-        seed: `artist:${profile.key}`,
-        reason: "because_you_listened",
-      });
+      pushFamiliar(profile, "artists", 0.85, "because_you_listened");
     }
   }
 
@@ -793,26 +944,50 @@ export function buildSeeds(
   for (const playlist of userSignals.playlists) {
     if (seeds.length >= familiarBudget) break;
     const artist = playlist.tracks[0]?.artistName;
-    if (artist) {
-      seeds.push({
-        query: `${artist} songs`,
-        source: "playlist",
-        weight: 0.7,
-        seed: `playlist:${playlist.name}`,
-        reason: "playlist_related",
-      });
-    }
+    const key = artistKey(artist);
+    if (!key || seededArtists.has(key)) continue;
+    seededArtists.add(key);
+    seeds.push({
+      query: `${artist} songs`,
+      source: "playlist",
+      weight: 0.7,
+      seed: `playlist:${playlist.name}`,
+      reason: "playlist_related",
+    });
   }
 
-  // Always keep discovery in the mix, so the listener keeps meeting new music
-  // instead of collapsing into an ever-narrower loop. How MANY discovery seeds
-  // get spent is the listener's stated preference — but never zero, because a
-  // pure-familiarity setting that never proposes anything new is exactly the
-  // feedback loop this engine exists to avoid.
+  // ── Discovery ─────────────────────────────────────────────────────────────
+  //
+  // A discovery seed may only be built from an artist the listener has
+  // EVIDENCE for. One play is not evidence, it is a click. Anchoring
+  // "new songs like <artist>" on a single play is exactly how one Taylor Swift
+  // track filled the whole discovery row with Taylor Swift, so an artist has
+  // to clear DISCOVERY_ANCHOR_MIN_EVIDENCE before the engine searches outward
+  // from them at all.
+  //
+  // The row never runs out of intent either way: the broad seed below always
+  // contributes a real, wide search, which is what a thin-evidence listener
+  // should see instead of a taste the data cannot support.
+  //
+  // An artist can qualify two ways, because "how well do we know this artist"
+  // and "how well do we know this listener" are different questions:
+  //
+  //   - DEPTH: a real run of interactions with that artist (three-plus).
+  //   - BREADTH: the profile as a whole is confident and this artist is one of
+  //     its two strongest. A listener with eight artists at one play each has
+  //     shown a clear direction even though no single artist is established,
+  //     and refusing to explore from them would leave the row generic forever.
+  //
+  // A single play from a single artist clears neither bar, which is the case
+  // that used to flood the row.
   let discoveryAdded = 0;
-  for (const profile of ranked) {
+  for (const [index, profile] of ranked.entries()) {
     if (seeds.length >= maxSeeds) break;
     if (discoveryAdded >= wanted) break;
+    const deepEnough = profile.evidence >= DISCOVERY_ANCHOR_MIN_EVIDENCE;
+    const broadEnough =
+      signals.confidence >= BROAD_PROFILE_CONFIDENCE && index < 2;
+    if (!deepEnough && !broadEnough) continue;
     seeds.push({
       query: `new songs like ${profile.display}`,
       source: "discovery",
@@ -821,6 +996,20 @@ export function buildSeeds(
       reason: "discovery",
     });
     discoveryAdded += 1;
+  }
+
+  // The exploration floor: one broad search, whatever else happened above.
+  if (seeds.length < maxSeeds) {
+    const [query] = broadDiscoveryQueries(options.broadOffset ?? 0, 1);
+    if (query) {
+      seeds.push({
+        query,
+        source: "broad_discovery",
+        weight: 0.45,
+        seed: `broad:${query}`,
+        reason: "discovery",
+      });
+    }
   }
 
   return seeds;
