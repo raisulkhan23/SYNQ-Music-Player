@@ -1,333 +1,299 @@
-## Overview
+<div align="center">
 
-This project uses the following tech stack:
-- Vite
-- Typescript
-- React Router v7 (all imports from `react-router` instead of `react-router-dom`)
-- React 19 (for frontend components)
-- Tailwind v4 (for styling)
-- Shadcn UI (for UI components library)
-- Lucide Icons (for icons)
-- Convex (for backend & database)
-- Convex Auth (for authentication)
-- Framer Motion (for animations)
-- Three js (for 3d models)
+<br/>
+<br/>
 
-All relevant files live in the 'src' directory.
+<img src="assets/brand/logo.png" alt="SYNQ app icon" width="180" />
 
-Use bun for the package manager.
+# SYNQ
 
-## Setup
+### Your music, uninterrupted.
 
-This project is set up already and running on a cloud environment, as well as a convex development in the sandbox.
+<br/>
 
-## Environment Variables
+[![Version](https://img.shields.io/badge/version-1.0.0-b7f04a?style=for-the-badge&labelColor=0d1117)](package.json)
+[![Platforms](https://img.shields.io/badge/platform-web%20%C2%B7%20windows%20%C2%B7%20android-b7f04a?style=for-the-badge&labelColor=0d1117)](#download)
+[![Status](https://img.shields.io/badge/status-beta-8b93a7?style=for-the-badge&labelColor=0d1117)](#known-limitations)
+[![License](https://img.shields.io/badge/license-not%20yet%20granted-8b93a7?style=for-the-badge&labelColor=0d1117)](#license)
 
-The project is set up with project specific CONVEX_DEPLOYMENT and VITE_CONVEX_URL environment variables on the client side.
+<br/>
 
-The convex server has a separate set of environment variables that are accessible by the convex backend.
+[**Download**](#download) · [**Features**](#features) · [**Screenshots**](#screenshots) · [**Install**](#install) · [**Tech stack**](#tech-stack) · [**Development**](#development) · [**Support**](#support)
 
-Currently, these variables include auth-specific keys: JWKS, JWT_PRIVATE_KEY, and SITE_URL.
+</div>
 
+> [!IMPORTANT]
+> SYNQ is an independent, community-driven music player. It is **not** affiliated with, endorsed by, or connected to YouTube, Google, Spotify, Apple, SoundCloud, Deezer, TIDAL or Bandcamp. It hosts no music: playback resolves through third-party services, and you are responsible for how you use it.
 
-# Using Authentication (Important!)
+---
 
-You must follow these conventions when using authentication.
+<div align="center">
 
-## Auth is already set up.
+<img src="assets/brand/banner.png" alt="SYNQ banner" width="100%" />
 
-All convex authentication functions are already set up. The auth currently uses email OTP and anonymous users, but can support more.
+<h1><a id="features"></a>Features</h1>
 
-The email OTP configuration is defined in `src/convex/auth/emailOtp.ts`. DO NOT MODIFY THIS FILE.
+<table>
+  <tr>
+    <td width="50%" valign="top">
 
-Also, DO NOT MODIFY THESE AUTH FILES: `src/convex/auth.config.ts` and `src/convex/auth.ts`.
+#### Playback
 
-## Using Convex Auth on the backend
+- **Two audio decks, not one.** A real crossfade needs both songs audible at once, so the player owns two `<audio>` elements plus their Web Audio graphs.
+- **Crossfade, 0–10 s.** Off by default — a crossfade is an opinionated listening choice. Every transition decision (crossfade, gapless, hard cut) comes from one pure module, `src/lib/transition.ts`.
+- **Gapless playback.** The next track is preloaded and buffered before the boundary, so albums and DJ mixes run without silence.
+- **Repeat-one and A-B loop are honoured**, never interrupted by a fade.
+- **Sleep timer, volume normalization, pitch, reverb and distortion**, driven by the same playback state.
+- **10-band graphic EQ** (32 Hz – 16 kHz, ±12 dB) plus bass/treble shelves and balance — each on its own filter nodes, so a preset can never silently reset your manual curve.
+- **Genuine background playback.** One module owns every OS-facing "now playing" surface: the Media Session API on the web, and a native media session plus a `mediaPlayback` foreground service on Android.
 
-On the `src/convex/users.ts` file, you can use the `getCurrentUser` function to get the current user's data.
+#### Discovery
 
-## Using Convex Auth on the frontend
+- **Search that explains itself.** A pure relevance engine (`src/lib/searchRelevance.ts`) compares a query against each result's own title, artist and album, so an approximate match cannot outrank an exact one.
+- **Real artist catalogues.** Artist pages read YouTube Music's `browse` endpoint: the full release grid (albums, singles, EPs, live, compilations), grouped by type, each release opening its own page and complete tracklist.
+- **Home shelves** built from history, likes and remote pools, with duplicate suppression across reissues and deluxe editions.
+- **Mixes, Discover and "not interested"**, plus **smart playlists** — saved rule sets recomputed on every open.
+- **SoundCloud as a first-class source.** Search returns uploads, remixes and indie releases YouTube does not surface. Playback requires a progressive stream; HLS-only tracks are reported as unavailable rather than faked.
 
-The `/auth` page is already set up to use auth. Navigate to `/auth` for all log in / sign up sequences.
+    </td>
+    <td width="50%" valign="top">
 
-You MUST use this hook to get user data. Never do this yourself without the hook:
-```typescript
-import { useAuth } from "@/hooks/use-auth";
+#### Library
 
-const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
-```
+- **Likes, playlists, history, recent and listening stats**, synced to your account through Convex.
+- **Cross-account playlist sharing.** View-only grants: recipients can open, play and shelf a shared playlist but can never edit, delete or re-share it. Recipient search returns names and avatars only, never emails.
+- **Import** from YouTube, YouTube Music, Spotify, Apple Music, SoundCloud, Deezer, TIDAL and Bandcamp, with a per-service capability table and a repair pass for entries a provider no longer resolves.
+- **Offline downloads** for Creative Commons releases the artist actually published for download. The backend re-checks permission on every ranged request, and the bytes land in OPFS with a licence record.
+- **Recap** — periodic listening summaries shaped from existing play events, with no extra data collection.
 
-## Protected Routes
+#### Experience
 
-The starter `/dashboard` route is protected with `RequireAuth`, which sends
-signed-out users to `/auth?returnTo=<current route>`. Extend that page for the
-product's authenticated experience, and reuse `RequireAuth` when adding another
-protected route.
+- **Lyrics** with a live visualiser driven by the analyser node.
+- **Themes and scenes.** 28 accent scenes, Dark / Light / AMOLED, live wallpapers, adjustable glass transparency, and an animations level.
+- **Dynamic-island player** on phones, a full-screen player with video, and a queue panel that survives navigation.
+- **Web / PWA, Windows desktop and Android**, each with its own shell rather than a wrapped web page.
 
-## Auth Page
+</td>
+  </tr>
+</table>
 
-The auth page is defined in `src/pages/Auth.tsx`. Send sign-in and sign-up actions
-to `/auth`.
+</div>
 
-## Authorization
+---
 
-You can perform authorization checks on the frontend and backend.
+<div align="center">
 
-On the frontend, you can use the `useAuth` hook to get the current user's data and authentication state.
+<h1><a id="screenshots"></a>Screenshots</h1>
 
-You should also be protecting queries, mutations, and actions at the base level, checking for authorization securely.
+SYNQ is best judged running, not photographed — open the web app and listen:
 
-## Adding a redirect after auth
+**[synqmusic.freebuff.app](https://synqmusic.freebuff.app)**
 
-The `/auth` route in `src/main.tsx` redirects to `/dashboard` by default. If the
-product's main authenticated route is different, update `redirectAfterAuth` to
-that route. A validated same-origin `returnTo` query parameter takes priority so
-users can resume the protected page they originally requested. Never leave an
-authenticated product redirecting back to the public landing page.
+Interface screenshots are captured from the running app at each release; none are checked into the repository yet.
 
-## Complete authenticated products
+</div>
 
-When the requested product implies accounts, a workspace, a dashboard, or other
-signed-in functionality, the task is not complete with only a landing page and
-auth form. Build the main authenticated experience, protect its route, and verify
-that signing in reaches it.
+---
 
-# Frontend Conventions
+<div align="center">
 
-You will be using the Vite frontend with React 19, Tailwind v4, and Shadcn UI.
+<h1><a id="download"></a>Download</h1>
 
-Generally, pages should be in the `src/pages` folder, and components should be in the `src/components` folder.
+<a href="https://synqmusic.freebuff.app" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Open%20the%20web%20app-b7f04a?style=for-the-badge&labelColor=0d1117&logo=googlechrome&logoColor=0d1117" alt="Open the web app" height="40"/></a>
 
-Shadcn primitives are located in the `src/components/ui` folder and should be used by default.
+</div>
 
-## Page routing
+**No GitHub Releases have been published yet**, so there are no installer or APK downloads to link. The table below is the honest status of each platform.
 
-Your page component should go under the `src/pages` folder.
+| Platform | Status | How to get it |
+| --- | --- | --- |
+| **Web / PWA** | **Available now** | [synqmusic.freebuff.app](https://synqmusic.freebuff.app) — installable from the browser |
+| **Windows 10 / 11** | Builds locally, no public installer yet | `npm run desktop:installer` → `desktop-dist/SYNQ-Setup-1.0.0.exe` |
+| **Android 8.0+** | Builds locally, no public APK yet | `npm run android:apk` → `android/app/build/outputs/apk/` |
+| **iOS** | Not built | — |
+| **Linux / macOS** | Not built | The Electron shell targets Windows only |
 
-When adding a page, update the react router configuration in `src/main.tsx` to include the new route you just added.
+> [!NOTE]
+> Once releases are published, this section gets the same download badges as the web app, pointing at the Release assets. Nothing here pretends a build exists before it does.
 
-## Shad CN conventions
+---
 
-Follow these conventions when using Shad CN components, which you should use by default.
-- Remember to use "cursor-pointer" to make the element clickable
-- For title text, use the "tracking-tight font-bold" class to make the text more readable
-- Always make apps MOBILE RESPONSIVE. This is important
-- AVOID NESTED CARDS. Try and not to nest cards, borders, components, etc. Nested cards add clutter and make the app look messy.
-- AVOID SHADOWS. Avoid adding any shadows to components. stick with a thin border without the shadow.
-- Avoid skeletons; instead, use the loader2 component to show a spinning loading state when loading data.
+<div align="center">
 
+<h1><a id="install"></a>Install</h1>
 
-## Landing Pages
+</div>
 
-You must always create good-looking designer-level styles to your application. 
-- Make it well animated and fit a certain "theme", ie neo brutalist, retro, neumorphism, glass morphism, etc
+### Web / PWA
 
-Use known images and emojis from online.
+1. Open **[synqmusic.freebuff.app](https://synqmusic.freebuff.app)** in Chrome, Edge or Safari.
+2. Optionally install it: **Chrome/Edge** → install icon in the address bar; **Safari (macOS)** → File → Add to Dock; **Android** → ⋮ → *Add to Home screen*.
+3. Sign in with an email one-time code, or continue as a guest to browse.
 
-If the user is logged in already, show the get started button to say "Dashboard" or "Profile" instead to take them there.
+**Requirements:** a modern browser with Web Audio and Media Session support. Playback needs network access; downloaded Creative Commons tracks play offline.
 
-## Responsiveness and formatting
+### Windows
 
-Make sure pages are wrapped in a container to prevent the width stretching out on wide screens. Always make sure they are centered aligned and not off-center.
+1. Build the installer from source (see [Development](#development)):
+   ```bash
+   npm run build:icon          # generates build/icon.ico from public/logo.png
+   npm run desktop:installer   # NSIS installer in desktop-dist/
+   ```
+2. Run `desktop-dist/SYNQ-Setup-1.0.0.exe`. Windows SmartScreen will warn about an unsigned build — **More info → Run anyway** is expected for a self-signed installer.
+3. The desktop shell serves `dist/` from `app://synq/`, so router paths and deep links keep working. It needs `dist/` to exist: run `npm run build` first.
 
-Always make sure that your designs are mobile responsive. Verify the formatting to ensure it has correct max and min widths as well as mobile responsiveness.
+### Android
 
-- Always create sidebars for protected dashboard pages and navigate between pages
-- Always create navbars for landing pages
-- On these bars, the created logo should be clickable and redirect to the index page
+1. Install **JDK 21** and the **Android SDK**, then point the project at the SDK in `android/local.properties` (`sdk.dir=...`).
+2. Build:
+   ```bash
+   npm run android:apk        # debug APK
+   npm run android:release    # signed release (needs android/keystore.properties)
+   ```
+3. Install the APK over USB (`adb install`) or by copying it to the device. Enable **Install unknown apps** for the app you open it with.
+4. Release builds need your own keystore — start from `android/keystore.properties.example`. It is not in the repository, on purpose.
 
-## Animating with Framer Motion
+### Troubleshooting
 
-You must add animations to components using Framer Motion. It is already installed and configured in the project.
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Blank page after `npm run desktop:start` | No `dist/` build | `npm run build` first |
+| "Nothing but the shell" / no library | No Convex deployment | Run `npx convex dev` and set `VITE_CONVEX_URL` |
+| Track spins then reports a failure | Provider refused the stream | Pick another result — the UI names the layer that failed |
+| Android build: `SDK location not found` | Missing `local.properties` | Add `sdk.dir` pointing at your SDK |
+| `gradlew` permission denied on macOS/Linux | Archive lost the exec bit | `chmod +x android/gradlew` |
+| SmartScreen / Play Protect warning | Unsigned local build | Expected — sign your own release |
 
-To use it, import the `motion` component from `framer-motion` and use it to wrap the component you want to animate.
+---
 
+<div align="center">
 
-### Other Items to animate
-- Fade in and Fade Out
-- Slide in and Slide Out animations
-- Rendering animations
-- Button clicks and UI elements
+<h1><a id="tech-stack"></a>Tech stack</h1>
 
-Animate for all components, including on landing page and app pages.
+</div>
 
-## Three JS Graphics
+| Layer | Choice |
+| --- | --- |
+| UI | React 19, React Router 7, Tailwind CSS v4, shadcn/ui on Radix primitives, Lucide icons, Motion |
+| Build | Vite 7, TypeScript 5.9, ESLint 9, Prettier |
+| State | Zustand stores (`src/store`) plus pure decision modules in `src/lib` |
+| Backend | Convex — database, queries/mutations/actions, HTTP routes, scheduled jobs |
+| Auth | Convex Auth — email code, guest, optional Google/GitHub OAuth |
+| Audio | Web Audio API over two `<audio>` decks, biquad EQ chain, OPFS for offline files |
+| Desktop | Electron 33 + electron-builder (NSIS) |
+| Android | Capacitor 8 |
+| Tests | `bun test` (Vitest-compatible suites) — 1,890 tests across 108 files |
 
-Your app comes with three js by default. You can use it to create 3D graphics for landing pages, games, etc.
+---
 
+<div align="center">
 
-## Colors
+<h1><a id="development"></a>Development</h1>
 
-You can override colors in: `src/index.css`
+</div>
 
-This uses the oklch color format for tailwind v4.
-
-Always use these color variable names.
-
-Make sure all ui components are set up to be mobile responsive and compatible with both light and dark mode.
-
-Set theme using `dark` or `light` variables at the parent className.
-
-## Styling and Theming
-
-When changing the theme, always change the underlying theme of the shad cn components app-wide under `src/components/ui` and the colors in the index.css file.
-
-Avoid hardcoding in colors unless necessary for a use case, and properly implement themes through the underlying shad cn ui components.
-
-When styling, ensure buttons and clickable items have pointer-click on them (don't by default).
-
-Always follow a set theme style and ensure it is tuned to the user's liking.
-
-## Toasts
-
-You should always use toasts to display results to the user, such as confirmations, results, errors, etc.
-
-Use the shad cn Sonner component as the toaster. For example:
-
-```
-import { toast } from "sonner"
-
-import { Button } from "@/components/ui/button"
-export function SonnerDemo() {
-  return (
-    <Button
-      variant="outline"
-      onClick={() =>
-        toast("Event has been created", {
-          description: "Sunday, December 03, 2023 at 9:00 AM",
-          action: {
-            label: "Undo",
-            onClick: () => console.log("Undo"),
-          },
-        })
-      }
-    >
-      Show Toast
-    </Button>
-  )
-}
-```
-
-Remember to import { toast } from "sonner". Usage: `toast("Event has been created.")`
-
-## Dialogs
-
-Always ensure your larger dialogs have a scroll in its content to ensure that its content fits the screen size. Make sure that the content is not cut off from the screen.
-
-Ideally, instead of using a new page, use a Dialog instead. 
-
-# Using the Convex backend
-
-You will be implementing the convex backend. Follow your knowledge of convex and the documentation to implement the backend.
-
-## The Convex Schema
-
-You must correctly follow the convex schema implementation.
-
-The schema is defined in `src/convex/schema.ts`.
-
-Do not include the `_id` and `_creationTime` fields in your queries (it is included by default for each table).
-Do not index `_creationTime` as it is indexed for you. Never have duplicate indexes.
-
-
-## Convex Actions: Using CRUD operations
-
-When running anything that involves external connections, you must use a convex action with "use node" at the top of the file.
-
-You cannot have queries or mutations in the same file as a "use node" action file. Thus, you must use pre-built queries and mutations in other files.
-
-You can also use the pre-installed internal crud functions for the database:
-
-```ts
-// in convex/users.ts
-import { crud } from "convex-helpers/server/crud";
-import schema from "./schema.ts";
-
-export const { create, read, update, destroy } = crud(schema, "users");
-
-// in some file, in an action:
-const user = await ctx.runQuery(internal.users.read, { id: userId });
-
-await ctx.runMutation(internal.users.update, {
-  id: userId,
-  patch: {
-    status: "inactive",
-  },
-});
-```
-
-
-## Common Convex Mistakes To Avoid
-
-When using convex, make sure:
-- Document IDs are referenced as `_id` field, not `id`.
-- Document ID types are referenced as `Id<"TableName">`, not `string`.
-- Document object types are referenced as `Doc<"TableName">`.
-- Keep schemaValidation to false in the schema file.
-- You must correctly type your code so that it passes the type checker.
-- You must handle null / undefined cases of your convex queries for both frontend and backend, or else it will throw an error that your data could be null or undefined.
-- Always use the `@/folder` path, with `@/convex/folder/file.ts` syntax for importing convex files.
-- This includes importing generated files like `@/convex/_generated/server`, `@/convex/_generated/api`
-- Remember to import functions like useQuery, useMutation, useAction, etc. from `convex/react`
-- NEVER have return type validators.
-
-# Desktop (Windows)
-
-SYNQ ships as an Electron app. Electron was chosen over Tauri deliberately: the
-repo already carried both scaffolds, and Electron bundles its own Chromium so the
-audio deck, crossfade and queue behave identically on every Windows machine
-instead of depending on the installed WebView2 runtime. The cost is installer
-size (~110 MB).
-
-## Build an installer
+**Requirements:** Node.js 20+ and npm. Bun is optional but is the fastest way to run the test suite.
 
 ```bash
-npm run desktop:installer      # -> desktop-dist/SYNQ-Setup-<version>.exe
-npm run desktop:unpacked       # -> desktop-dist/win-unpacked/ (no installer, faster)
+git clone https://github.com/raisulkhan23/synqmusic.git
+cd synqmusic
+npm install
 ```
 
-The script regenerates `build/icon.ico` from the PNGs the web app already ships
-(`scripts/make-icon.mjs`), builds the renderer with Vite, then wraps `dist/` with
-electron-builder. Nothing else is packaged: `node_modules` is excluded because
-the renderer is bundled and the main process has no runtime dependencies.
+### 1. Point the app at a Convex deployment
 
-## Run it
+The backend is Convex: database, auth, catalogue actions and HTTP routes all live there. Nothing but the shell runs without it.
 
 ```bash
-npm run build && npm run desktop:start
+npx convex dev
 ```
 
-`electron/main.cjs` serves `dist/` from `app://synq/` — a privileged, secure
-scheme, not `file://` — so `BrowserRouter` keeps real paths and a shared link
-like `/artist/Hozier` opens the right page. External links go to the system
-browser; the renderer runs with `contextIsolation`, `sandbox`, and no Node
-integration.
+That creates (or links) a deployment, writes `VITE_CONVEX_URL` into `.env.local`, generates `src/convex/_generated`, and pushes the schema and functions.
 
-## Verifying a build
+### 2. Configure the backend
 
-Windows GUI builds have no console, so the shell has an env-guarded smoke check:
+Copy `.env.example` to `.env.local` for frontend values, then set server-only values on the deployment:
 
 ```bash
-SYNQ_SMOKE_OUT=smoke.json ./desktop-dist/win-unpacked/SYNQ.exe
-SYNQ_SMOKE_ROUTE=artist/Hozier SYNQ_SMOKE_OUT=artist.json ./desktop-dist/win-unpacked/SYNQ.exe
+npx @convex-dev/auth          # writes JWT_PRIVATE_KEY and JWKS
+npx convex env set JAMENDO_CLIENT_ID your-key
+npx convex env list           # confirm what the deployment can see
 ```
 
-Each writes what actually rendered (title, visible text, URL) and exits. The
-last verified build rendered the Home page at `app://synq/` and the artist page
-at `app://synq/artist/Hozier`.
+Every variable is documented in `.env.example`. The app degrades honestly when one is missing — no Jamendo key means no downloads, no lyrics provider key means LRCLIB only — and only `VITE_CONVEX_URL` is required to boot.
 
-## Updates — configured, not yet verified
+### 3. Run it
 
-`electron/main.cjs` checks `SYNQ_UPDATE_FEED` (a JSON document with
-`{ "version", "url", "notes" }`) at startup and every six hours, and offers the
-download. It never installs anything silently. Remaining external requirements:
+```bash
+npm run dev          # http://localhost:5173
+npm run build        # tsc -b && vite build
+npm run preview      # serve the production build
+npm run lint
+```
 
-- **Hosting** for the installer + feed (no feed URL exists in this repo).
-- **A code-signing certificate.** This build is unsigned, so Windows SmartScreen
-  will warn on first run and the installer cannot be verified as trusted.
-- **Icon/version metadata inside `SYNQ.exe`.** electron-builder writes those with
-  `rcedit` from its `winCodeSign` cache, whose archive contains macOS symlinks;
-  extracting it needs the Windows "create symbolic link" privilege (Developer
-  Mode or an elevated shell). This environment has neither, so
-  `signAndEditExecutable: false` is set. The installer and shortcuts are still
-  branded. On a machine with that privilege, delete that line.
+### 4. Test it
+
+```bash
+npm run build:icon   # one suite checks the generated installer icon
+bun test             # 1,890 passing
+```
+
+### Project layout
+
+```
+src/
+  pages/        route-level screens (Home, Search, Artist, Album, Playlists, …)
+  components/   UI by domain: player, search, library, settings, landing, admin
+  store/        Zustand stores — the player store is the only owner of audio state
+  lib/          pure decision logic (transitions, relevance, imports, downloads)
+  convex/       schema, queries, mutations, actions, HTTP routes, crons
+electron/       desktop main process, tray, deep links, download relay
+android/        Capacitor Android project
+tests/          one file per behaviour, named for the behaviour
+scripts/        asset generation and verification harnesses
+assets/         README artwork (logo, banner)
+```
+
+The split is deliberate: everything that can be decided without a browser lives in `src/lib` and is unit tested, and the React layer subscribes to those decisions instead of re-implementing them.
+
+> Internal conventions for working on auth, Convex and protected routes are kept in [`docs/INTERNAL-NOTES.md`](docs/INTERNAL-NOTES.md).
+
+---
+
+<div align="center">
+
+<h1><a id="known-limitations"></a>Known limitations</h1>
+
+</div>
+
+- **The catalogue is not licensed.** Playback resolves streams from third-party services. That is how SYNQ works and also why it cannot be redistributed as a commercial product as-is.
+- **Playback depends on third parties.** YouTube bot-checks from datacenter IPs and provider outages can make individual tracks unplayable. The UI reports which layer failed rather than pretending the track is loading.
+- **SoundCloud playback is currently blocked for most tracks.** Search works, but SoundCloud now serves HLS and the resolver only accepts progressive MP3, so HLS-only tracks are refused with an explicit message. Supporting them needs an HLS player in the client.
+- **Transitions are crossfade, gapless and cut.** There is no beat-matched or tempo-stretched AutoMix.
+- **Account features need Convex.** With no deployment you get the shell and guest browsing, not a library.
+- **Platform coverage is uneven.** Desktop is Windows-only and was developed on Windows; Android needs a local SDK; iOS has not been built.
+- **No CI is configured.** The build, type check and test suite are run locally.
+
+---
+
+<div align="center">
+
+<h1><a id="support"></a>Support</h1>
+
+</div>
+
+- **Bug reports and feature requests:** [open an issue](https://github.com/raisulkhan23/synqmusic/issues).
+- **Security or credential concerns:** please report privately rather than in a public issue.
+- **Contributions:** read [`docs/INTERNAL-NOTES.md`](docs/INTERNAL-NOTES.md) for the auth and Convex conventions before changing those areas, and run `bun test` before opening a pull request.
+
+---
+
+<div align="center">
+
+<h1><a id="license"></a>License</h1>
+
+</div>
+
+**No license has been granted for this code.** It is published so the work can be read and studied; that is not the same as permission to reuse, redistribute or ship it. If you want to use part of it, ask first.
+
+Third-party libraries keep their own licenses, and every provider integration is governed by that provider's terms. Nothing here grants rights to anyone's catalogue.
