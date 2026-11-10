@@ -3,10 +3,12 @@ import { readSource } from "./helpers/tailwind-css.js";
 
 const main = readSource("src/main.tsx");
 
-// Every page a route renders. Landing is deliberately absent: "/" is the app
-// itself and the marketing page is unrouted (kept only for copy tests).
+// Every page a route renders. Landing is here because "/" renders it for web
+// visitors: the packaged shells redirect to /home, but the browser gets the
+// marketing page, so it must be a static import like every other route.
 const PAGES = [
   "Auth",
+  "Landing",
   "TrackLink",
   "Home",
   "Search",
@@ -73,8 +75,8 @@ describe("no route can hang waiting for a chunk that never arrives", () => {
     }
   });
 
-  test("all twenty-three pages are accounted for", () => {
-    expect(PAGES.length).toBe(23);
+  test("all twenty-four pages are accounted for", () => {
+    expect(PAGES.length).toBe(24);
   });
 
   test("no page is loaded through a dynamic import, so there is no chunk to wait for", () => {

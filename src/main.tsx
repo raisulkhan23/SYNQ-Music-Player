@@ -24,6 +24,8 @@ import {
 import { usePlayerStore } from "@/store/player";
 import { applyAnimationLevel, readAnimationLevel } from "@/lib/motion";
 import { installImageFallback } from "@/lib/imageFallback";
+import { isNativeShell } from "@/lib/nativeShell";
+import { isFileProtocol } from "@/lib/publicAsset";
 import "./index.css";
 
 // SYNQ defaults to dark; restore the user's theme mode before first paint.
@@ -117,6 +119,10 @@ import NotFound from "./pages/NotFound.tsx";
 import Support from "./pages/Support.tsx";
 import Privacy from "./pages/Privacy.tsx";
 import Terms from "./pages/Terms.tsx";
+// The website's front door. It is NOT dead code: "/" renders it for anyone
+// arriving in a browser — see `RootRoute` below, which sends the packaged
+// shells and an installed PWA straight to /home instead.
+import Landing from "./pages/Landing.tsx";
 
 // Simple loading fallback for route transitions
 function RouteLoading() {
@@ -125,6 +131,31 @@ function RouteLoading() {
       <div className="animate-pulse text-muted-foreground">Loading...</div>
     </div>
   );
+}
+
+/**
+ * What "/" means.
+ *
+ * Two audiences arrive at the same URL with opposite expectations. Someone
+ * typing synqmusic.pages.dev has never seen the product and needs the marketing
+ * page: what it is, what it costs, and a way in. Someone who installed SYNQ as
+ * an Android/iOS/Electron app — or added it to their home screen — already made
+ * that decision; showing them a sales page on every launch is noise, so they go
+ * straight to the music.
+ *
+ * The check runs at render, not at module load, because the Capacitor bridge is
+ * injected by the native shell around the same time the bundle starts, and a
+ * module-level answer could be read before it exists. `/home` is the same page
+ * either way, so nothing is duplicated — only the address of the front door
+ * differs.
+ */
+function RootRoute() {
+  const launchedAsApp =
+    isNativeShell() ||
+    isFileProtocol() ||
+    new URLSearchParams(window.location.search).get("source") === "pwa";
+  if (launchedAsApp) return <Navigate to="/home" replace />;
+  return <Landing />;
 }
 
 /** Page-level Suspense boundary: lazy page chunks suspend HERE instead of
@@ -407,6 +438,19 @@ createRoot(document.getElementById("root")!).render(
           <MotionPrefs>
             <Suspense fallback={<RouteLoading />}>
               <Routes>
+                {/* The website's front door. `RootRoute` renders the landing
+                    page in a browser and redirects the packaged shells and an
+                    installed PWA to /home, so the marketing page is back
+                    without putting it in front of someone who already has the
+                    app. */}
+                <Route
+                  path="/"
+                  element={
+                    <PageBoundary>
+                      <RootRoute />
+                    </PageBoundary>
+                  }
+                />
                 <Route
                   path="/auth"
                   element={<AuthPage redirectAfterAuth="/home" />}
@@ -444,22 +488,6 @@ createRoot(document.getElementById("root")!).render(
                   gate is a courtesy, not a security control.
                 */}
                 <Route element={<AppShell />}>
-                  {/* "/" is the product itself. SYNQ is an app, not a
-                      marketing site: the packaged Android build and the
-                      installed PWA launch at "/", and what should greet
-                      someone is the music experience, not a landing page (the
-                      deferred-auth model already lets a signed-out visitor
-                      browse /home). The marketing page stays in
-                      src/pages/Landing.tsx for tests that assert its copy,
-                      but nothing routes to it. */}
-                  <Route
-                    path="/"
-                    element={
-                      <PageBoundary>
-                        <Home />
-                      </PageBoundary>
-                    }
-                  />
                   <Route
                     path="/home"
                     element={
