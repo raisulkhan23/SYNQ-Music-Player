@@ -549,16 +549,10 @@ export default function Landing() {
             </Link>
             <InstallAppButton />
             <a
-              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/SYNQ-Setup-1.0.0.exe"
+              href="#downloads"
               className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
             >
-              Windows installer
-            </a>
-            <a
-              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/synq-android.apk"
-              className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
-            >
-              Android APK
+              Download app
             </a>
             <a
               href="#experience"
@@ -843,16 +837,10 @@ export default function Landing() {
               </Link>
               <InstallAppButton />
             <a
-              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/SYNQ-Setup-1.0.0.exe"
+              href="#downloads"
               className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
             >
-              Windows installer
-            </a>
-            <a
-              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/synq-android.apk"
-              className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
-            >
-              Android APK
+              Download app
             </a>
               <a
                 href="#features"
@@ -863,6 +851,90 @@ export default function Landing() {
             </div>
           </div>
         </motion.div>
+      </section>
+
+      <section
+        id="downloads"
+        className="relative z-10 mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-28"
+      >
+        <motion.div {...fadeUp} className="mx-auto max-w-2xl text-center">
+          <span className="text-[10px] font-bold tracking-[0.24em] text-brand uppercase">
+            Get the app
+          </span>
+          <h2 className="mt-4 font-display text-3xl font-bold tracking-tight sm:text-5xl">
+            Install SYNQ
+            <br />
+            your way.
+          </h2>
+          <p className="mt-4 text-base leading-7 text-muted-foreground">
+            The web app installs like a native app. Prefer a real installer?
+            Grab Windows or Android below — both are built from the same code.
+          </p>
+        </motion.div>
+        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <a
+            href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/SYNQ-Setup-1.0.0.exe"
+            className="group flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6 transition-ui hover:-translate-y-1 hover:border-brand/30 hover:bg-white/[0.05]"
+          >
+            <span className="flex size-12 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20">
+              <Download className="size-6" />
+            </span>
+            <div>
+              <h3 className="font-display text-lg font-semibold">Windows</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                NSIS installer, x64. ~110 MB. Unsigned — SmartScreen may warn
+                on first run.
+              </p>
+            </div>
+            <span className="mt-auto flex items-center gap-1 text-sm font-semibold text-brand">
+              Download .exe <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+            </span>
+          </a>
+          <a
+            href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/synq-android.apk"
+            className="group flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6 transition-ui hover:-translate-y-1 hover:border-brand/30 hover:bg-white/[0.05]"
+          >
+            <span className="flex size-12 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20">
+              <Download className="size-6" />
+            </span>
+            <div>
+              <h3 className="font-display text-lg font-semibold">Android</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                APK, ~5 MB. Debug-signed today; sideload via “Install unknown
+                apps.” A signed build lands with the next release.
+              </p>
+            </div>
+            <span className="mt-auto flex items-center gap-1 text-sm font-semibold text-brand">
+              Download .apk <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+            </span>
+          </a>
+          <div className="flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
+            <span className="flex size-12 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20">
+              <Download className="size-6" />
+            </span>
+            <div>
+              <h3 className="font-display text-lg font-semibold">Web (PWA)</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Install straight from the browser. Works on desktop and mobile,
+                updates itself.
+              </p>
+            </div>
+            <div className="mt-auto">
+              <InstallAppButton />
+            </div>
+          </div>
+        </div>
+        <p className="mt-8 text-center text-xs text-muted-foreground">
+          All builds come from the same source on GitHub. See the{" "}
+          <a
+            href="https://github.com/raisulkhan23/synqmusic/releases/latest"
+            className="text-brand underline-offset-4 hover:underline"
+          >
+            latest release
+          </a>
+          {" "}
+          for checksums and notes.
+        </p>
       </section>
 
       <SiteFooter />
