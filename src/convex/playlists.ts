@@ -690,3 +690,137 @@ export const applyImportedRepairs = mutation({
     return repairs.length;
   },
 });
+
+/**
+ * Look up artwork (and a length, when the source has one) for imported rows
+ * that are still missing a cover, using Apple's public catalogue search.
+ *
+ * This is the reliable half of the repair: YouTube's InnerTube endpoint is
+ * throttled from this deployment's IP and fails most of the time, so it is a
+ * poor source for something the screen has to show. Apple's catalogue search
+ * is a normal, unauthenticated, CORS-friendly endpoint that returns real
+ * album art for the same song, and it does not share YouTube's throttling.
+ *
+ * Artwork only — a playable id still comes from `resolveImportedTracks`.
+ * That split is deliberate: a row with a cover and no way to play is better
+ * than a row with neither, and a row with a playable id and no cover is the
+ * case the other pass already covers.
+ */
+export const resolveImportedArtwork = action({
+  args: {
+    tracks: v.array(
+      v.object({
+        id: v.string(),
+        title: v.string(),
+        artist: v.string(),
+      }),
+    ),
+  },
+  handler: async (
+    _ctx: ActionCtx,
+    { tracks },
+  ): Promise<{
+    resolved: Array<{ id: string; artwork: string; duration: number }>;
+    answered: string[];
+  }> => {
+    const bounded = tracks
+      .filter((track) => track.title.trim())
+      .slice(0, REPAIR_BATCH_SIZE);
+    const resolved: Array<{ id: string; artwork: string; duration: number }> =
+      [];
+    const answered: string[] = [];
+
+    for (const track of bounded) {
+      let artwork = "";
+      let duration = 0;
+      try {
+        const url = `https://itunes.apple.com/search?term=${encodeURIComponent(
+          `${track.title} ${track.artist}`.trim(),
+        )}&entity=song&limit=5`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = (await response.json()) as {
+            results?: Array<{
+              artworkUrl100?: string;
+              trackTimeMillis?: number;
+            }>;
+          };
+          const first = (data.results ?? []).find(
+            (result) =>
+              typeof result.artworkUrl100 === "string" &&
+              result.artworkUrl100.trim().length > 0,
+          );
+          if (first?.artworkUrl100) {
+            artwork = first.artworkUrl100.replace(
+              /\/\d+x\d+bb\./,
+              "/600x600bb.",
+            );
+            if (
+              typeof first.trackTimeMillis === "number" &&
+              first.trackTimeMillis > 0
+            ) {
+              duration = Math.round(first.trackTimeMillis / 1000);
+            }
+          }
+        }
+      } catch {
+        // A failed lookup is not evidence about the song; leave it retryable.
+      }
+      if (artwork) {
+        answered.push(track.id);
+        resolved.push({ id: track.id, artwork, duration });
+      }
+    }
+    return { resolved, answered };
+  },
+});
+
+/**
+ * Write artwork (and, when found, a length) back onto a playlist's snapshots.
+ *
+ * Additive only — never overwrites a cover or a duration that already holds a
+ * real value, so it is safe to run repeatedly.
+ */
+export const applyImportedArtwork = mutation({
+  args: {
+    playlistId: v.id("playlists"),
+    artworks: v.array(
+      v.object({
+        id: v.string(),
+        artwork: v.string(),
+        duration: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, { playlistId, artworks }) => {
+    const userId = await requireUser(ctx);
+    const playlist = await ctx.db.get(playlistId);
+    if (playlist === null || playlist.userId !== userId) {
+      throw new ConvexError("Playlist not found");
+    }
+    const snapshots = playlist.trackSnapshots ?? [];
+    if (snapshots.length === 0 || artworks.length === 0) return 0;
+    const byId = new Map(artworks.map((a) => [a.id, a]));
+    let changed = false;
+    const merged = snapshots.map((snapshot) => {
+      const found = byId.get(snapshot.id);
+      if (!found) return snapshot;
+      const coverUrl = snapshot.coverUrl?.trim()
+        ? snapshot.coverUrl
+        : found.artwork;
+      const duration =
+        snapshot.duration > 0 ? snapshot.duration : found.duration;
+      if (coverUrl === snapshot.coverUrl && duration === snapshot.duration) {
+        return snapshot;
+      }
+      changed = true;
+      return { ...snapshot, coverUrl, duration };
+    });
+    if (!changed) return 0;
+    await ctx.db.patch(playlistId, {
+      trackSnapshots: merged,
+      updatedAt: Date.now(),
+    });
+    return artworks.length;
+  },
+});

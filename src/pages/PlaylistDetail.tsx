@@ -26,6 +26,7 @@ import { formatTime } from "@/lib/format";
 import {
   chunkRepairBatches,
   needsRepair,
+  REPAIR_BATCH_SIZE,
   REPAIR_EMPTY_STREAK_LIMIT,
   REPAIR_MAX_PASSES,
   type ImportedRow,
@@ -58,7 +59,9 @@ export default function PlaylistDetail() {
   const addTrack = useMutation(api.playlists.addTrack);
   const searchYt = useAction(api.youtube.searchYoutube);
   const resolveImported = useAction(api.playlists.resolveImportedTracks);
+  const resolveArtwork = useAction(api.playlists.resolveImportedArtwork);
   const applyRepairs = useMutation(api.playlists.applyImportedRepairs);
+  const applyArtwork = useMutation(api.playlists.applyImportedArtwork);
   const playTrack = usePlayerStore((s) => s.playTrack);
   const playListOrdered = usePlayerStore((s) => s.playListOrdered);
   const startPlaylistRadio = usePlayerStore((s) => s.startPlaylistRadio);
@@ -220,6 +223,62 @@ export default function PlaylistDetail() {
       cancelled = true;
     };
   }, [playlist, resolveImported, applyRepairs]);
+
+  // Artwork is the part listeners actually see, and YouTube's search endpoint
+  // is throttled from this deployment's IP, so it fails most of the time and
+  // leaves the playlist looking broken. Apple's catalogue search is a normal
+  // unauthenticated endpoint that returns real album art for the same song,
+  // so it runs as its own pass and fills in the covers the YouTube pass could
+  // not. It never touches a cover or a length that already holds a value.
+  const artworkInFlight = useRef(false);
+  useEffect(() => {
+    if (!playlist || artworkInFlight.current) return;
+    const missing = storedRowsRef.current.filter(
+      (row) => !row.coverUrl?.trim() && row.title.trim(),
+    );
+    if (missing.length === 0) return;
+    let cancelled = false;
+    artworkInFlight.current = true;
+    const run = async () => {
+      try {
+        // Paced, one batch at a time, mirroring the YouTube pass.
+        const batches: typeof missing[] = [];
+        for (let i = 0; i < missing.length; i += REPAIR_BATCH_SIZE) {
+          batches.push(missing.slice(i, i + REPAIR_BATCH_SIZE));
+        }
+        for (const batch of batches) {
+          if (cancelled) return;
+          let result: { resolved: { id: string; artwork: string; duration: number }[]; answered: string[] } | null = null;
+          try {
+            result = await resolveArtwork({
+              tracks: batch.map((row) => ({
+                id: row.id,
+                title: row.title,
+                artist: row.artist,
+              })),
+            });
+          } catch {
+            result = null;
+          }
+          if (cancelled || !result || result.resolved.length === 0) continue;
+          try {
+            await applyArtwork({
+              playlistId: playlist._id,
+              artworks: result.resolved,
+            });
+          } catch {
+            return;
+          }
+        }
+      } finally {
+        artworkInFlight.current = false;
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [playlist, resolveArtwork, applyArtwork]);
 
   if (playlist === undefined) {
     return (
