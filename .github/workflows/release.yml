@@ -1,0 +1,107 @@
+name: Release installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to release (e.g. v1.0.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run desktop:installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: desktop-dist/*.exe
+          if-no-files-found: error
+
+  android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: bun install
+      # Optional signed release build. If the keystore secrets are present we
+      # decode the keystore, write android/keystore.properties, and build a
+      # signed release APK; otherwise we fall back to the (installable but
+      # debug-signed) debug APK. Add these secrets under Settings -> Secrets:
+      #   SYNQ_KEYSTORE_BASE64  (base64 of android/synq-release.jks)
+      #   SYNQ_KEYSTORE_PASSWORD
+      #   SYNQ_KEY_ALIAS
+      #   SYNQ_KEY_PASSWORD
+      - name: Prepare release signing (optional)
+        env:
+          SYNQ_KEYSTORE_BASE64: ${{ secrets.SYNQ_KEYSTORE_BASE64 }}
+          SYNQ_KEYSTORE_PASSWORD: ${{ secrets.SYNQ_KEYSTORE_PASSWORD }}
+          SYNQ_KEY_ALIAS: ${{ secrets.SYNQ_KEY_ALIAS }}
+          SYNQ_KEY_PASSWORD: ${{ secrets.SYNQ_KEY_PASSWORD }}
+        run: |
+          if [ -n "$SYNQ_KEYSTORE_BASE64" ]; then
+            mkdir -p android/keystores
+            echo "$SYNQ_KEYSTORE_BASE64" | base64 --decode > android/keystores/synq-release.jks
+            cat > android/keystore.properties <<EOF
+          storeFile=keystores/synq-release.jks
+          storePassword=$SYNQ_KEYSTORE_PASSWORD
+          keyAlias=${SYNQ_KEY_ALIAS:-synq}
+          keyPassword=$SYNQ_KEY_PASSWORD
+          EOF
+            echo "signed=true" >> $GITHUB_ENV
+          else
+            echo "No keystore secret found; building an unsigned debug APK."
+            echo "signed=false" >> $GITHUB_ENV
+          fi
+      - name: Build APK
+        run: |
+          if [ "$signed" = "true" ]; then
+            bun run android:release
+          else
+            bun run android:apk
+          fi
+      - name: Stage APK under a stable name
+        run: |
+          mkdir -p dist-apk
+          APK=$(find android/app/build/outputs/apk -name '*.apk' | head -n1)
+          cp "$APK" dist-apk/synq-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: dist-apk/synq-android.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create release and attach installers
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: SYNQ ${{ github.event.inputs.tag || github.ref_name }} — Windows & Android installers
+          files: artifacts/**
+          generate_release_notes: true
+          fail_on_unmatched_files: true

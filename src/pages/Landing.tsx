@@ -555,7 +555,7 @@ export default function Landing() {
               Windows installer
             </a>
             <a
-              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/app-debug.apk"
+              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/synq-android.apk"
               className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
             >
               Android APK
@@ -849,7 +849,7 @@ export default function Landing() {
               Windows installer
             </a>
             <a
-              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/app-debug.apk"
+              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/synq-android.apk"
               className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
             >
               Android APK
