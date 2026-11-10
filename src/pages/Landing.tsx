@@ -549,6 +549,18 @@ export default function Landing() {
             </Link>
             <InstallAppButton />
             <a
+              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/SYNQ-Setup-1.0.0.exe"
+              className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+            >
+              Windows installer
+            </a>
+            <a
+              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/app-debug.apk"
+              className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+            >
+              Android APK
+            </a>
+            <a
               href="#experience"
               className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
             >
@@ -830,6 +842,18 @@ export default function Landing() {
                 <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
               </Link>
               <InstallAppButton />
+            <a
+              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/SYNQ-Setup-1.0.0.exe"
+              className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+            >
+              Windows installer
+            </a>
+            <a
+              href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/app-debug.apk"
+              className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+            >
+              Android APK
+            </a>
               <a
                 href="#features"
                 className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
