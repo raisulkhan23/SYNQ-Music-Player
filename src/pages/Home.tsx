@@ -754,8 +754,8 @@ export default function Home() {
         // the fallback shelf has no profile to balance against, so the cap is
         // the only thing keeping it from reading as a single-artist row.
         { id: "discover", items: capPerArtist(usable(remote.discover), 2) },
-        { id: "timeOfDay", items: usable(remote.timeOfDay) },
-        { id: "seasonal", items: usable(remote.seasonal) },
+        { id: "timeOfDay", items: capPerArtist(usable(remote.timeOfDay), 2) },
+        { id: "seasonal", items: capPerArtist(usable(remote.seasonal), 2) },
       ],
       {
         perSection: HOME_SECTION_SIZE,

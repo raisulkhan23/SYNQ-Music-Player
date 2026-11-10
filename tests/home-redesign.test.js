@@ -382,3 +382,16 @@ describe("playback from a card behaves like every other play in the app", () => 
 function convexHome() {
   return readSource("src/convex/recommend.ts");
 }
+
+describe("no generic Home shelf can be filled by one artist", () => {
+  // These rows come from genre searches, which the provider often answers
+  // with a single artist's catalogue. They have no profile to balance against,
+  // so the cap is the only thing between them and a one-artist row.
+  for (const id of ["discover", "timeOfDay", "seasonal"]) {
+    test(`${id} is capped at two cards per artist`, () => {
+      expect(home).toContain(
+        `{ id: "${id}", items: capPerArtist(usable(remote.${id}), 2) }`,
+      );
+    });
+  }
+});

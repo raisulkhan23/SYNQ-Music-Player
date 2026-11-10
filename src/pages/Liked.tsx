@@ -2,7 +2,7 @@ import { useNavigate } from "react-router";
 import { RemoteTrackRow } from "@/components/tracks/RemoteTrackRow";
 import { api } from "@/convex/_generated/api";
 import { formatTime } from "@/lib/format";
-import { toPlayableYoutube } from "@/lib/playable";
+import { toPlayableSoundcloud, toPlayableYoutube } from "@/lib/playable";
 import type { Playable } from "@/lib/playable";
 import { cleanArtistName, type YtItem } from "@/lib/youtube";
 import { toast } from "sonner";
@@ -43,6 +43,23 @@ export default function Liked() {
       const list = buildLikedQueue(first, firstIsRemote);
       return options?.shuffle ? shuffleList(list) : list;
     };
+
+    // A SoundCloud like is the upload itself, not a search for it: replay it
+    // from SoundCloud instead of resolving a YouTube match that may be a
+    // different recording (a remix, a sped-up edit, a cover).
+    if (row.source === "soundcloud") {
+      const playable = toPlayableSoundcloud({
+        id: row.trackId.replace(/^sc:/, ""),
+        title: row.title,
+        artist: cleanArtistName(row.artistName, row.title),
+        durationMs: Math.round(row.duration * 1000),
+        artwork: row.coverUrl,
+        permalinkUrl: "",
+        explicit: false,
+      });
+      start(playable, queueFor(playable, row.trackId));
+      return;
+    }
 
     // Liked remote rows already carry the resolved YouTube id. Use it
     // directly instead of making the user wait for a second search request.
@@ -110,6 +127,20 @@ export default function Liked() {
       if (firstIsRemote === row.trackId) {
         out.push(firstPlayable);
         firstInserted = true;
+        continue;
+      }
+      if (row.source === "soundcloud") {
+        out.push(
+          toPlayableSoundcloud({
+            id: row.trackId.replace(/^sc:/, ""),
+            title: row.title,
+            artist: cleanArtistName(row.artistName, row.title),
+            durationMs: Math.round(row.duration * 1000),
+            artwork: row.coverUrl,
+            permalinkUrl: "",
+            explicit: false,
+          }),
+        );
         continue;
       }
       const item: YtItem = {

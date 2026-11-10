@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Cloud,
   ExternalLink,
+  Heart,
   Loader2,
   RefreshCw,
   TriangleAlert,
@@ -150,6 +151,11 @@ function SoundCloudRow({
   track: ScTrack;
   onPlay: (track: ScTrack) => void;
 }) {
+  const liked = usePlayerStore((s) => s.liked);
+  const toggleLike = usePlayerStore((s) => s.toggleLike);
+  const playable = toPlayableSoundcloud(track);
+  const isLiked = liked[playable.id] !== undefined;
+
   return (
     <div className="group flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/[0.05]">
       <button
@@ -182,6 +188,35 @@ function SoundCloudRow({
         <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
           {formatDuration(track.durationMs / 1000)}
         </span>
+      </button>
+      <button
+        type="button"
+        aria-label={
+          isLiked ? "Remove from liked songs" : "Add to liked songs"
+        }
+        aria-pressed={isLiked}
+        title={isLiked ? "Remove from liked songs" : "Add to liked songs"}
+        onClick={() =>
+          // The snapshot is what lets Liked Songs render and replay this
+          // upload: SoundCloud tracks are not in any catalog, so a bare id
+          // would come back as an empty row.
+          toggleLike(playable.id, {
+            title: track.title,
+            artistName: track.artist,
+            coverUrl: track.artwork ?? "",
+            duration: playable.duration,
+            source: "soundcloud",
+          })
+        }
+        className="shrink-0 rounded-full p-1.5 transition-colors hover:scale-110"
+      >
+        <Heart
+          className={
+            isLiked
+              ? "size-3.5 fill-current text-[rgb(var(--tint))]"
+              : "size-3.5 text-muted-foreground hover:text-foreground"
+          }
+        />
       </button>
       {track.permalinkUrl ? (
         <a
