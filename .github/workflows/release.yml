@@ -49,6 +49,11 @@ jobs:
       # `android/local.properties` is machine-specific and not committed, so a
       # clean runner has no SDK at all and Gradle dies with "SDK location not
       # found". Install the exact platform this project compiles against.
+      # Provisions Gradle itself, so the build does not depend on the wrapper's
+      # 200 MB distribution download finishing inside the runner's time budget.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
@@ -94,9 +99,9 @@ jobs:
         run: |
           cd android
           if [ "$signed" = "true" ]; then
-            ./gradlew assembleRelease --no-daemon --stacktrace
+            gradle assembleRelease --no-daemon --stacktrace
           else
-            ./gradlew assembleDebug --no-daemon --stacktrace
+            gradle assembleDebug --no-daemon --stacktrace
           fi
       - name: Stage APK under a stable name
         run: |
