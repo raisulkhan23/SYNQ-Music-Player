@@ -873,7 +873,9 @@ export default function Landing() {
         </motion.div>
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <a
-            href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/SYNQ-Setup-1.0.0.exe"
+            href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/synq-windows-setup.exe"
+            target="_blank"
+            rel="noopener noreferrer"
             className="group flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6 transition-ui hover:-translate-y-1 hover:border-brand/30 hover:bg-white/[0.05]"
           >
             <span className="flex size-12 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20">
@@ -892,6 +894,8 @@ export default function Landing() {
           </a>
           <a
             href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/synq-android.apk"
+            target="_blank"
+            rel="noopener noreferrer"
             className="group flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6 transition-ui hover:-translate-y-1 hover:border-brand/30 hover:bg-white/[0.05]"
           >
             <span className="flex size-12 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20">
