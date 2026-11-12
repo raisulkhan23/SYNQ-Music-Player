@@ -47,6 +47,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      # `android/local.properties` is machine-specific and not committed, so a
+      # clean runner has no SDK at all and Gradle dies with "SDK location not
+      # found". Install the exact platform this project compiles against.
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
       - run: bun install
       # Optional signed release build. If the keystore secrets are present we
       # decode the keystore, write android/keystore.properties, and build a
