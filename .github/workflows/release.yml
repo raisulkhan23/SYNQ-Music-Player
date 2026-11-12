@@ -24,10 +24,17 @@ jobs:
           node-version: 20
       - run: npm ci
       - run: npm run desktop:installer
+      # electron-builder names the file after the package version, which would
+      # break the download links on the landing page at every version bump.
+      # Publish one stable filename instead.
+      - name: Stage installer under a stable name
+        run: |
+          mkdir -p dist-win
+          cp desktop-dist/*.exe dist-win/synq-windows-setup.exe
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: desktop-dist/*.exe
+          path: dist-win/synq-windows-setup.exe
           if-no-files-found: error
 
   android:
@@ -70,6 +77,10 @@ jobs:
             echo "No keystore secret found; building an unsigned debug APK."
             echo "signed=false" >> $GITHUB_ENV
           fi
+      # The wrapper is committed from Windows, where git does not record the
+      # executable bit, so `./gradlew` is "Permission denied" on Linux runners.
+      - name: Make the Gradle wrapper executable
+        run: chmod +x android/gradlew
       - name: Build APK
         run: |
           if [ "$signed" = "true" ]; then
@@ -91,6 +102,9 @@ jobs:
   release:
     name: Publish GitHub release
     needs: [windows, android]
+    # A failing Android build must not hide a perfectly good Windows
+    # installer, which is what left every download link 404ing before.
+    if: ${{ !cancelled() && needs.windows.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -104,4 +118,4 @@ jobs:
           name: SYNQ ${{ github.event.inputs.tag || github.ref_name }} — Windows & Android installers
           files: artifacts/**
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
