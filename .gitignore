@@ -48,3 +48,6 @@ all-installers/
 
 # Local verification screenshots
 /screenshots/
+
+# Recovered build artifacts kept for reference
+.recovery/
