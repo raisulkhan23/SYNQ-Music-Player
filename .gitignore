@@ -51,3 +51,7 @@ all-installers/
 
 # Recovered build artifacts kept for reference
 .recovery/
+
+# Public site download assets (deliberate exceptions to *.apk)
+!public/installers/
+!public/installers/*.apk
