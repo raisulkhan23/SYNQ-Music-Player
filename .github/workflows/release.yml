@@ -91,9 +91,15 @@ jobs:
       # executable bit, so `./gradlew` is "Permission denied" on Linux runners.
       - name: Make the Gradle wrapper executable
         run: chmod +x android/gradlew
-      # `android:sync`, not `npm run build` + `cap sync`: the APK needs the
-      # ANDROID build mode, which pins VITE_CONVEX_URL to the production
-      # deployment (.env.android). A plain `npm run build` on a runner has no
+      # Same backend as Pages. The VITE_CONVEX_URL process env override below
+      # survives .env.local; without it the runner's auth bundle could differ
+      # from the web app. .env.android has to override it just like it overrides a
+      # developer's .env.local locally.
+      - name: Pin the production backend for the packaged app
+        run: echo "VITE_CONVEX_URL=https://graceful-jaguar-949.convex.cloud" >> "$GITHUB_ENV"
+      # `android:sync`, not `bun run build` + `cap sync`: the APK needs the
+      # ANDROID build mode so the backend URL and landed-settings surfaces match
+      # production. A plain `npm run build` on a runner has no
       # `.env.local` at all, so the packaged app shipped with NO Convex URL —
       # it launched straight into its "running without the backend" state,
       # which is why a CI-built APK could not sign anybody in.
