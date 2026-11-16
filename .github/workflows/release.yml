@@ -91,10 +91,14 @@ jobs:
       # executable bit, so `./gradlew` is "Permission denied" on Linux runners.
       - name: Make the Gradle wrapper executable
         run: chmod +x android/gradlew
-      - name: Build web assets
-        run: npm run build
-      - name: Sync Capacitor
-        run: npx cap sync android
+      # `android:sync`, not `npm run build` + `cap sync`: the APK needs the
+      # ANDROID build mode, which pins VITE_CONVEX_URL to the production
+      # deployment (.env.android). A plain `npm run build` on a runner has no
+      # `.env.local` at all, so the packaged app shipped with NO Convex URL —
+      # it launched straight into its "running without the backend" state,
+      # which is why a CI-built APK could not sign anybody in.
+      - name: Build web assets and sync Capacitor
+        run: npm run android:sync
       - name: Build APK
         run: |
           cd android

@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive launcher icon. The two layers are generated from the web app's own
+  brand tile by scripts/generate-android-icons.py, so the home-screen icon and
+  the logo inside the app are the same artwork.
+
+  The background is the brand GRADIENT (drawable/ic_launcher_background.xml),
+  not a flat colour: a solid fill here is what made the launcher icon look like
+  a different, older mark. The foreground is the glyph alone on transparency,
+  sized to the inner safe zone so a circular or squircle mask never crops it.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background"/>
+    <background android:drawable="@drawable/ic_launcher_background"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground"/>
 </adaptive-icon>

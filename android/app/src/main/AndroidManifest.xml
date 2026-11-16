@@ -22,6 +22,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- OAuth return leg.
+
+                 Sign-in happens in the user's own browser (see
+                 MainActivity.installOAuthNavigation for why it must not happen
+                 in an embedded WebView). The provider finishes by redirecting
+                 to `com.synq.music://callback?code=…`, and this filter is what
+                 brings the user back into the running app instead of leaving
+                 them on a dead page in the browser.
+
+                 `singleTask` on the activity means the callback is delivered
+                 through onNewIntent to the existing instance, so the WebView —
+                 and the OAuth verifier it is holding — survives the round
+                 trip. The scheme+host is also the security boundary: nothing
+                 but a redirect to exactly this URL can re-enter the app. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.synq.music" android:host="callback" />
+            </intent-filter>
+
         </activity>
 
         <provider

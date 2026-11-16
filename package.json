@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview",
-    "android:sync": "bun run build && cap sync android",
+    "android:sync": "tsc -b && vite build --mode android && node -e \"require('fs').rmSync('dist/installers',{recursive:true,force:true})\" && cap sync android",
     "android:apk": "bun run android:sync && cd android && ./gradlew assembleDebug",
     "android:release": "bun run android:sync && cd android && ./gradlew assembleRelease",
     "android:open": "cap open android",

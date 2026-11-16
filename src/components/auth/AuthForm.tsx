@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/input-otp";
 import { useAuth } from "@/hooks/use-auth";
 import { isDesktopRuntime, startDesktopOAuth } from "@/lib/desktop-auth";
+import { isNativeOAuthRuntime, startNativeOAuth } from "@/lib/native-auth";
 import { ArrowRight, Loader2, Mail } from "lucide-react";
 import { useState } from "react";
 
@@ -129,8 +130,36 @@ export function AuthForm({
         return;
       }
 
-      // Web (and Android WebView): send OAuth back to the origin the user is
-      // actually using.
+      // Android: the consent screen belongs in the user's own browser. An
+      // embedded WebView is refused by Google outright, and the callback also
+      // has to re-enter the app through its own scheme — see
+      // `src/lib/native-auth.ts`. The page is NOT replaced here, so the session
+      // is picked up in place rather than after a reload.
+      if (isNativeOAuthRuntime()) {
+        const result = await startNativeOAuth(provider, (callbackUrl) =>
+          signIn(provider, { redirectTo: callbackUrl }),
+        );
+
+        if (result?.code) {
+          await signIn(undefined as unknown as string, { code: result.code });
+          onSuccess?.();
+          return;
+        }
+
+        if (result?.error === "access_denied") {
+          setError("Sign-in was cancelled.");
+        } else if (result?.error) {
+          setError("Sign-in could not be completed. Please try again.");
+        } else {
+          setError(
+            "That sign-in didn't finish. Finish it in your browser, or try again.",
+          );
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      // Web: send OAuth back to the origin the user is actually using.
       await signIn(provider, { redirectTo });
     } catch (err) {
       console.error(`${provider} sign-in error:`, err);
