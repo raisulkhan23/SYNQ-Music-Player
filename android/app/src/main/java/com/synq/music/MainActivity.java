@@ -40,6 +40,10 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Must be registered before super.onCreate so the bridge announces the
+        // plugin in its startup plugin list. The web layer checks that native
+        // availability, not a user agent, before offering downloads.
+        registerPlugin(SynqDownloadsPlugin.class);
         super.onCreate(savedInstanceState);
         registerRouteLossReceiver();
         installOAuthNavigation(getBridge());

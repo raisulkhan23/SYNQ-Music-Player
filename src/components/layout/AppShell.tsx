@@ -1,4 +1,3 @@
-import { installDownloadAdapter } from "@/lib/installDownloadAdapter";
 import {
   useEffect,
   useRef,
@@ -62,7 +61,7 @@ const MOBILE_NAV = [
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
 
-const DEFAULT_TINT = "203 244 143";
+const DEFAULT_TINT = "227 182 98";
 const DEFAULT_WALLPAPER_BLUR_AMOUNT = 24;
 const MAX_WALLPAPER_BLUR_AMOUNT = 48;
 const FOCUS_LAYOUT_IDS = ["off", "study", "work", "sleep"] as const;
@@ -111,15 +110,6 @@ function useAnimatedCssTint(
 ) {
   const currentRef = useRef(target);
   const frameRef = useRef<number | null>(null);
-
-  // The download adapter is installed here, at app level, because the track
-  // menu can start a download from any page — including ones where the
-  // Download hub is not mounted. Registering it on the hub's mount was one
-  // navigation too late and every menu-started download failed against a
-  // manager that had no adapter yet.
-  useEffect(() => {
-    installDownloadAdapter();
-  }, []);
 
   // Single-profile sync: hydrate server preferences on sign-in and push local
   // changes back, debounced. Transient state (currentTime, queue, fullscreen) is
@@ -673,6 +663,7 @@ export function AppShell() {
 
   // Fixed accent themes override the album-art-following tint.
   const FIXED_TINTS: Record<string, string> = {
+    brass: "227 182 98",
     lime: "203 244 143",
     violet: "167 139 250",
     blue: "96 165 250",
@@ -802,14 +793,13 @@ export function AppShell() {
             className="ambient-grid pointer-events-none absolute inset-0 -z-20 opacity-70"
             aria-hidden="true"
           />
-          <div
-            className="aurora-orb aurora-orb-one pointer-events-none absolute -top-48 -left-32 -z-10 size-[34rem] rounded-full"
-            aria-hidden="true"
-          />
-          <div
-            className="aurora-orb aurora-orb-two pointer-events-none absolute -right-48 bottom-[-16rem] -z-10 size-[42rem] rounded-full"
-            aria-hidden="true"
-          />
+          {/* Two 18–22s drifting blobs used to sit here: a tint-coloured one and
+              a hardcoded blue one. They were the ambient backdrop of every
+              signed-in page — the exact "gradient orbs behind a dark UI"
+              signature — and they carried no information, cost two large
+              blurred compositor layers on every scroll, and put a second
+              accent (blue) next to the listener's own. Removed rather than
+              re-tinted: the artwork is the colour on this screen. */}
         </>
       )}
       {pointerFx && !focusMode && (

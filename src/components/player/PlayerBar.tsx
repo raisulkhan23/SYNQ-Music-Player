@@ -300,6 +300,11 @@ function ReadingSessionNav() {
 export function PlayerBar({ compact = false }: { compact?: boolean }) {
   const navigate = useNavigate();
   const current = usePlayerStore((s) => s.current);
+  const localCover = usePlayerStore((s) => s.localCover);
+  const currentCover =
+    localCover && current && localCover.trackId === current.id
+      ? localCover.url
+      : current?.coverUrl;
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isBuffering = usePlayerStore((s) => s.isBuffering);
   const currentTime = usePlayerStore((s) => s.currentTime);
@@ -340,12 +345,12 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
       `${current.title} ${current.artistName}`,
     );
     setAccent(seededAccent);
-    if (current.coverUrl) {
+    if (currentCover) {
       // Artwork extraction is a secondary enhancement. Keep it off the
       // critical path and avoid starting another decode for every quick
       // track change; the deterministic accent is already immediate.
       const timer = window.setTimeout(() => {
-        void dominantColor(current.coverUrl).then((c) => {
+        void dominantColor(currentCover).then((c) => {
           if (!cancelled && c) setAccent(c);
         });
       }, 180);
@@ -617,7 +622,7 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
             title: current.title,
             artistName: current.artistName,
             albumName: current.albumName ?? "SYNQ",
-            coverUrl: current.coverUrl ?? null,
+            coverUrl: currentCover ?? null,
           }
         : null,
     );
@@ -668,7 +673,7 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
            the gap below it at every breakpoint. Asymmetric margins made the top
            edge sit flush against the content above on tablets, and the 8px
            mobile gap was swallowed by the player's outer glow. */
-          "mobile-player liquid-glass dynamic-island isolate z-40 mx-auto my-3 flex h-[68px] w-full min-w-0 max-w-[28rem] shrink-0 items-center gap-2 self-center overflow-hidden rounded-[1.6rem] border border-white/[0.1] px-2.5 transition-all duration-300 sm:h-auto sm:w-auto sm:max-w-none sm:rounded-none sm:border-x-0 sm:border-b-0 sm:px-4 sm:gap-3 lg:w-[min(92vw,760px)] lg:rounded-[2rem] lg:border lg:border-white/10 lg:px-3 lg:py-2 lg:shadow-[0_18px_60px_rgba(0,0,0,0.38)] lg:hover:scale-[1.01]",
+          "mobile-player liquid-glass dynamic-island isolate z-40 mx-auto my-3 flex h-[68px] w-full min-w-0 max-w-[28rem] shrink-0 items-center gap-2 self-center overflow-hidden rounded-[1.6rem] border border-white/[0.1] px-2.5 transition-ui duration-200 sm:h-auto sm:w-auto sm:max-w-none sm:rounded-none sm:border-x-0 sm:border-b-0 sm:px-4 sm:gap-3 lg:w-[min(92vw,760px)] lg:rounded-[2rem] lg:border lg:border-white/10 lg:px-3 lg:py-2 lg:shadow-[0_18px_60px_rgba(0,0,0,0.38)] lg:hover:scale-[1.01]",
           compact
             ? "sm:min-h-[60px] lg:min-h-[52px] lg:py-1"
             : "sm:min-h-[76px] lg:min-h-[68px] lg:py-2",
@@ -693,7 +698,7 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
             className="mobile-player-art touch-manipulation relative size-10 shrink-0 overflow-hidden rounded-[0.9rem] shadow-lg ring-1 ring-white/15 transition-transform active:scale-95 sm:size-11 lg:size-10 lg:rounded-md"
           >
             <img
-              src={current.coverUrl}
+              src={currentCover}
               alt=""
               className="size-full object-cover"
             />
@@ -758,7 +763,7 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
               setTimeout(() => setLikePulse(false), 400);
             }}
             className={cn(
-              "hidden shrink-0 rounded-full p-1.5 transition-all hover:scale-110 lg:block",
+              "hidden shrink-0 rounded-full p-1.5 transition-ui hover:scale-110 lg:block",
               isLiked
                 ? "text-[rgb(var(--tint))]"
                 : "text-muted-foreground hover:text-foreground",
@@ -766,7 +771,7 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
           >
             <Heart
               className={cn(
-                "size-4 transition-transform duration-300",
+                "size-4 transition-transform duration-200",
                 isLiked && "fill-current scale-110",
                 likePulse && "animate-ping-once",
               )}

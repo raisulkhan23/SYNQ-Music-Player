@@ -1,6 +1,6 @@
 import { Play } from "lucide-react";
 import { Shelf } from "@/components/core/shelf";
-import { Sparkles } from "lucide-react";
+import { Disc3 } from "lucide-react";
 import { mixCover, type Mix } from "@/lib/mixes";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +30,7 @@ export function MixesRow({
       id="shelf-mixes"
       title="Your Mixes"
       subtitle="Personalised sets that keep evolving as you listen"
-      icon={<Sparkles className="size-4 text-[rgb(var(--tint))]" />}
+      icon={<Disc3 className="size-4 text-[rgb(var(--tint))]" />}
     >
       {mixes.map((mix) => {
         const opener = mix.items[0];
@@ -44,7 +44,7 @@ export function MixesRow({
             key={mix.id}
             type="button"
             onClick={() => onPlay(mix)}
-            className="group relative flex aspect-square w-36 shrink-0 snap-start flex-col justify-end overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3 text-left transition-all hover:-translate-y-0.5 hover:border-[rgb(var(--tint)_/_0.35)] focus-visible:ring-2 focus-visible:ring-[rgb(var(--tint))] focus-visible:outline-none sm:w-40 lg:w-44"
+            className="group relative flex aspect-square w-36 shrink-0 snap-start flex-col justify-end overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3 text-left transition-ui hover:-translate-y-0.5 hover:border-[rgb(var(--tint)_/_0.35)] focus-visible:ring-2 focus-visible:ring-[rgb(var(--tint))] focus-visible:outline-none sm:w-40 lg:w-44"
             aria-label={`Play ${mix.name}`}
           >
             {coverUrl ? (
@@ -52,7 +52,7 @@ export function MixesRow({
                 src={coverUrl}
                 alt=""
                 loading="lazy"
-                className="absolute inset-0 size-full object-cover opacity-45 transition-transform duration-500 group-hover:scale-105"
+                className="absolute inset-0 size-full object-cover opacity-45 transition-transform duration-300 [@media(hover:hover)]:group-hover:scale-[1.03]"
               />
             ) : (
               /* No opener art: the mix gets its own face, not a shared app
@@ -87,7 +87,7 @@ export function MixesRow({
             <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
 
             {/* Press-to-play, revealed on hover/focus so the tile stays clean. */}
-            <span className="absolute right-3 top-3 flex size-9 translate-y-1 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+            <span className="absolute right-3 top-3 flex size-9 translate-y-1 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black opacity-0 transition-ui duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
               <Play className="size-4 translate-x-[1px] fill-current" />
             </span>
 

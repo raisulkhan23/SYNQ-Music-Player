@@ -124,7 +124,7 @@ export default function Playlists() {
       </div>
 
       {playlists !== undefined && playlists.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-white/10 py-20 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-3xl border border-white/[0.07] bg-white/[0.02] py-20 text-center">
           <ListMusic className="size-10 text-muted-foreground/40" />
           <div>
             <p className="font-display text-lg font-semibold">

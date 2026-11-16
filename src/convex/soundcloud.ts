@@ -133,63 +133,196 @@ export interface ScTrackRecord {
   permalinkUrl: string;
   /** The artist's explicit download grant — the authority for a saved copy. */
   downloadable: boolean;
-  /** SoundCloud caps how many downloads an artist may give away. */
-  hasDownloadsLeft: boolean;
+  /** The official API's own download resource; null unless granted. */
+  downloadUrl: string | null;
   policy: string | null;
 }
 
 /**
- * One track's record, for the download pipeline's server-side grant check.
+ * OFFICIAL SoundCloud download API.
  *
- * Exposed (not private like the search internals) because
- * `convex/downloads.ts` must re-verify `downloadable` itself before handing
- * out any file — the same re-verification rule Jamendo's
- * `audiodownload_allowed` follows.
+ * Downloads do not use the public web client id above. That id identifies the
+ * SoundCloud website, not a registered SYNQ application, and is therefore not
+ * an acceptable credential for handing out files. The functions below use
+ * OAuth 2.1 client credentials issued to a registered app whose Client ID and
+ * Client Secret live only in the Convex server environment.
+ *
+ * If the credentials are absent, downloads are reported as not configured. No
+ * attempt is made to substitute the playback scraper.
  */
-export async function fetchSoundcloudTrackRecord(
+const OFFICIAL_API = "https://api.soundcloud.com";
+const OFFICIAL_TOKEN_URL = "https://secure.soundcloud.com/oauth/token";
+let officialToken: string | null = null;
+let officialTokenExpiresAt = 0;
+
+function officialCredentials(): { id: string; secret: string } | null {
+  const id = process.env.SOUNDCLOUD_CLIENT_ID?.trim();
+  const secret = process.env.SOUNDCLOUD_CLIENT_SECRET?.trim();
+  return id && secret ? { id, secret } : null;
+}
+
+/** SoundCloud deprecated numeric-only resource paths; the URN form is the
+ * documented identifier. Colons are percent-encoded as normal path data. */
+function officialTrackPath(numericId: string): string {
+  return `/tracks/${encodeURIComponent(`soundcloud:tracks:${numericId}`)}`;
+}
+
+/**
+ * Accept only the download resource the official API itself returned. The
+ * track object's `download_url` is the authoritative endpoint for the artist's
+ * granted original file; it is not a stream URL and it must not point at an
+ * arbitrary host. Query strings are dropped so a legacy public `client_id` can
+ * never ride along with the request.
+ */
+export function officialDownloadEndpoint(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  try {
+    const url = new URL(/^https:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+    if (url.protocol !== "https:" || url.hostname !== "api.soundcloud.com") {
+      return null;
+    }
+    if (!/^\/tracks\/[^/]+\/download\/?$/.test(url.pathname)) return null;
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+function basicAuth(id: string, secret: string): string {
+  const bytes = new TextEncoder().encode(`${id}:${secret}`);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  // btoa is available in the Convex V8 runtime.
+  return btoa(binary);
+}
+
+async function officialAccessToken(force = false): Promise<string | null> {
+  const credentials = officialCredentials();
+  if (!credentials) return null;
+  if (!force && officialToken && Date.now() < officialTokenExpiresAt) {
+    return officialToken;
+  }
+  try {
+    const response = await fetch(OFFICIAL_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        Accept: "application/json; charset=utf-8",
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${basicAuth(credentials.id, credentials.secret)}`,
+      },
+      body: "grant_type=client_credentials",
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as Record<string, unknown>;
+    const token = str(body.access_token);
+    if (!token) return null;
+    const expires = num(body.expires_in) ?? 3600;
+    officialToken = token;
+    // Renew a minute early rather than racing the exact expiry boundary.
+    officialTokenExpiresAt = Date.now() + Math.max(60, expires - 60) * 1000;
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+async function officialFetch(
+  url: string,
+  token: string,
+  redirect: RequestRedirect = "follow",
+): Promise<{ status: number; response: Response } | null> {
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `OAuth ${token}`, Accept: "application/json" },
+      redirect,
+      signal: AbortSignal.timeout(15_000),
+    });
+    return { status: response.status, response };
+  } catch {
+    return null;
+  }
+}
+
+function officialGet(
+  path: string,
+  token: string,
+  redirect: RequestRedirect = "follow",
+) {
+  return officialFetch(`${OFFICIAL_API}${path}`, token, redirect);
+}
+
+/** True when the deployment has a registered SoundCloud application. */
+export function soundcloudDownloadsConfigured(): boolean {
+  return officialCredentials() !== null;
+}
+
+/**
+ * Read the artist's grant through the official API. Returns null when the
+ * credentials are missing or the API cannot answer; callers must distinguish
+ * not-configured from unauthorized before showing a refusal.
+ */
+export async function fetchOfficialSoundcloudTrackRecord(
   numericId: string,
 ): Promise<ScTrackRecord | null> {
   if (!/^\d{6,}$/.test(numericId)) return null;
-  const raw = await apiGet(`/tracks/${numericId}`);
-  if (!isRecord(raw)) return null;
+  let token = await officialAccessToken();
+  if (!token) return null;
+  let result = await officialGet(officialTrackPath(numericId), token);
+  if (result?.status === 401) {
+    token = await officialAccessToken(true);
+    if (!token) return null;
+    result = await officialGet(officialTrackPath(numericId), token);
+  }
+  if (!result || !result.response.ok) return null;
+  const raw = (await result.response.json()) as Record<string, unknown>;
   const mapped = mapTrack(raw);
-  const downloadsRaw = isRecord(raw.downloads) ? raw.downloads : undefined;
+  if (!mapped) return null;
   return {
-    id: String(num(raw.id) ?? numericId),
-    title: mapped?.title ?? str(raw.title) ?? "",
-    artist: mapped?.artist ?? "",
-    durationMs: mapped?.durationMs ?? 0,
-    artwork: mapped?.artwork ?? "",
-    permalinkUrl: mapped?.permalinkUrl ?? "",
+    id: mapped.id,
+    title: mapped.title,
+    artist: mapped.artist,
+    durationMs: mapped.durationMs,
+    artwork: mapped.artwork,
+    permalinkUrl: mapped.permalinkUrl,
     downloadable: raw.downloadable === true,
-    hasDownloadsLeft: downloadsRaw
-      ? downloadsRaw.current !== undefined
-        ? Number(downloadsRaw.current) > 0
-        : true
-      : false,
+    downloadUrl: str(raw.download_url) ?? null,
     policy: str(raw.policy) ?? null,
   };
 }
 
 /**
- * The signed URL of one track's ORIGINAL uploaded file.
- *
- * `/tracks/{id}/download` is SoundCloud's own grant fulfilment endpoint: it
- * responds with `{ redirectUrl }` pointing at the artist-uploaded file, for
- * tracks whose `downloadable` flag is set. This is the authorized source the
- * download pipeline pulls from — never the stream transcode, which SYNQ only
- * has permission to stream.
+ * Resolve the artist-uploaded file through the official download endpoint.
+ * Handles both documented shapes: a redirect to the granted file and a JSON
+ * `{ redirectUrl }` response.
  */
-export async function fetchSoundcloudDownloadUrl(
-  numericId: string,
+export async function fetchOfficialSoundcloudDownloadUrl(
+  downloadUrl: string | null,
 ): Promise<string | null> {
-  if (!/^\d{6,}$/.test(numericId)) return null;
-  const cid = await ensureClientId();
-  const json = await fetchJson(
-    `${API}/tracks/${numericId}/download?client_id=${cid}`,
-  );
-  const url = isRecord(json) ? str(json.redirectUrl) : undefined;
-  return url && url.startsWith("https://") ? url : null;
+  const endpoint = officialDownloadEndpoint(downloadUrl);
+  if (!endpoint) return null;
+  let token = await officialAccessToken();
+  if (!token) return null;
+  let result = await officialFetch(endpoint, token, "manual");
+  if (result?.status === 401) {
+    token = await officialAccessToken(true);
+    if (!token) return null;
+    result = await officialFetch(endpoint, token, "manual");
+  }
+  if (!result) return null;
+  if (result.status >= 300 && result.status < 400) {
+    const location = result.response.headers.get("location");
+    return location && /^https:\/\//i.test(location) ? location : null;
+  }
+  if (!result.response.ok) return null;
+  try {
+    const body = (await result.response.json()) as Record<string, unknown>;
+    const url = str(body.redirectUrl) ?? str(body.location);
+    return url && /^https:\/\//i.test(url) ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 /** One authenticated API GET, refreshing the client_id once on failure. */

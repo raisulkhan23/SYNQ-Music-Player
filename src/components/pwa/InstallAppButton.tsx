@@ -86,10 +86,10 @@ export function InstallAppButton({
       onClick={() => void handleClick()}
       aria-label="Download SYNQ as an app"
       className={cn(
-        "inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition-transform",
+        "inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition-ui active:scale-[0.98]",
         variant === "solid"
-          ? "bg-brand text-brand-foreground shadow-[0_10px_36px_rgb(203_244_143/0.4)] hover:scale-105"
-          : "border border-white/10 text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground",
+          ? "bg-brand text-brand-foreground hover:brightness-105"
+          : "border border-white/10 text-muted-foreground hover:border-white/20 hover:text-foreground",
         className,
       )}
     >

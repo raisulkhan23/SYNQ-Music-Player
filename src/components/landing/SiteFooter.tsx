@@ -162,7 +162,7 @@ export function SiteFooter() {
                   href={badge.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`block shrink-0 border border-white/75 transition-all duration-200 hover:-translate-y-0.5 hover:border-white focus-visible:-translate-y-0.5 focus-visible:border-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgb(var(--tint))] ${badge.radius}`}
+                  className={`block shrink-0 border border-white/75 transition-ui duration-200 hover:-translate-y-0.5 hover:border-white focus-visible:-translate-y-0.5 focus-visible:border-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgb(var(--tint))] ${badge.radius}`}
                 >
                   <img
                     src={badge.badge}

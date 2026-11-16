@@ -8,22 +8,22 @@
 @property --primary {
   syntax: "<color>";
   inherits: true;
-  initial-value: oklch(0.872 0.21 127);
+  initial-value: oklch(0.8 0.115 82);
 }
 @property --ring {
   syntax: "<color>";
   inherits: true;
-  initial-value: oklch(0.872 0.21 127 / 60%);
+  initial-value: oklch(0.8 0.115 82 / 55%);
 }
 @property --brand {
   syntax: "<color>";
   inherits: true;
-  initial-value: oklch(0.872 0.21 127);
+  initial-value: oklch(0.8 0.115 82);
 }
 @property --sidebar-primary {
   syntax: "<color>";
   inherits: true;
-  initial-value: oklch(0.872 0.21 127);
+  initial-value: oklch(0.8 0.115 82);
 }
 
 /* DO NOT CHANGE */
@@ -72,51 +72,73 @@
     "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
   /* Give shared UI controls a softer, more deliberate response than the
      Tailwind default while explicit duration utilities still win. */
-  --default-transition-duration: 240ms;
-  --default-transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  --default-transition-duration: 200ms;
+  --default-transition-timing-function: var(--ease-out);
 }
 
 /* CHANGE VALUES FOR THEME */
 :root {
   --radius: 0.75rem;
-  --background: oklch(0.135 0.012 262);
-  --foreground: oklch(0.965 0.004 262);
-  --card: oklch(0.175 0.013 262);
-  --card-foreground: oklch(0.965 0.004 262);
-  --popover: oklch(0.19 0.014 262);
-  --popover-foreground: oklch(0.965 0.004 262);
-  --primary: oklch(0.872 0.21 127);
-  --primary-foreground: oklch(0.16 0.02 262);
-  --secondary: oklch(0.24 0.014 262);
-  --secondary-foreground: oklch(0.96 0.004 262);
-  --muted: oklch(0.22 0.012 262);
-  --muted-foreground: oklch(0.68 0.01 262);
-  --accent: oklch(0.25 0.014 262);
-  --accent-foreground: oklch(0.96 0.004 262);
+
+  /* Motion vocabulary — one set of curves and durations the whole app reads,
+     so no component invents its own. Entering/exiting UI uses `--ease-out`
+     (starts fast, so the first frame already moves); on-screen movement uses
+     `--ease-in-out`; sheets and drawers use `--ease-drawer`. Built-in CSS
+     easings are too weak to read as intentional. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-press: 120ms;
+  --duration-ui: 200ms;
+  --duration-panel: 280ms;
+  /* Warm ink, not blue-black. The old `262` hue was a blue-grey that made every
+     surface read as a developer dashboard; ±76 keeps the same darkness but
+     puts the neutrals in the same family as the accent, so nothing looks like
+     two palettes stacked. */
+  --background: oklch(0.148 0.007 76);
+  --foreground: oklch(0.96 0.006 85);
+  --card: oklch(0.19 0.008 76);
+  --card-foreground: oklch(0.96 0.006 85);
+  --popover: oklch(0.205 0.009 76);
+  --popover-foreground: oklch(0.96 0.006 85);
+  /* Brass. Deliberately NOT the acid lime the app shipped with: lime-on-black
+     is the default palette of every 2025 AI product, and it fought the violet
+     brand artwork. Hue 82 is far enough from `--destructive` (22) that the two
+     never read as the same signal. */
+  --primary: oklch(0.8 0.115 82);
+  --primary-foreground: oklch(0.165 0.02 76);
+  --secondary: oklch(0.25 0.009 76);
+  --secondary-foreground: oklch(0.96 0.006 85);
+  --muted: oklch(0.23 0.008 76);
+  --muted-foreground: oklch(0.725 0.012 82);
+  --accent: oklch(0.255 0.009 76);
+  --accent-foreground: oklch(0.96 0.006 85);
   --destructive: oklch(0.7 0.19 22);
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.872 0.21 127 / 60%);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.155 0.012 262);
-  --sidebar-foreground: oklch(0.9 0.005 262);
-  --sidebar-primary: oklch(0.872 0.21 127);
-  --sidebar-primary-foreground: oklch(0.16 0.02 262);
-  --sidebar-accent: oklch(0.24 0.014 262);
-  --sidebar-accent-foreground: oklch(0.96 0.004 262);
+  --ring: oklch(0.8 0.115 82 / 55%);
+  /* A chart ramp, not a rainbow: brass → copper → clay → sage → dusty violet.
+     Five unrelated hues is what makes a stats page look generically "data". */
+  --chart-1: oklch(0.8 0.115 82);
+  --chart-2: oklch(0.72 0.11 62);
+  --chart-3: oklch(0.66 0.08 42);
+  --chart-4: oklch(0.7 0.06 150);
+  --chart-5: oklch(0.62 0.07 300);
+  --sidebar: oklch(0.163 0.007 76);
+  --sidebar-foreground: oklch(0.9 0.006 82);
+  --sidebar-primary: oklch(0.8 0.115 82);
+  --sidebar-primary-foreground: oklch(0.165 0.02 76);
+  --sidebar-accent: oklch(0.25 0.009 76);
+  --sidebar-accent-foreground: oklch(0.96 0.006 85);
   --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.872 0.21 127 / 50%);
+  --sidebar-ring: oklch(0.8 0.115 82 / 50%);
 
-  /* SYNQ brand accent (the "signal lime") */
-  --brand: oklch(0.872 0.21 127);
-  --brand-foreground: oklch(0.16 0.02 262);
+  /* SYNQ brand accent (the "sleeve brass") */
+  --brand: oklch(0.8 0.115 82);
+  --brand-foreground: oklch(0.165 0.02 76);
 
-  /* dynamic album-art tint (overridden by the player); default = brand lime */
-  --tint: 203 244 143;
+  /* dynamic album-art tint (overridden by the player); default = brand brass */
+  --tint: 227 182 98;
 
   /* Glass opacities, driven by the card transparency slider in
      Settings → Appearance (see src/lib/cardTransparency.ts). Higher = more
@@ -129,38 +151,41 @@
 /* AMOLED mode: true-black variant of dark (set alongside .dark) */
 html.amoled.dark {
   --background: oklch(0 0 0);
-  --card: oklch(0.09 0.005 262);
-  --popover: oklch(0.1 0.005 262);
-  --sidebar: oklch(0.06 0.004 262);
-  --secondary: oklch(0.17 0.01 262);
-  --accent: oklch(0.18 0.01 262);
-  --muted: oklch(0.15 0.008 262);
+  --card: oklch(0.095 0.005 76);
+  --popover: oklch(0.105 0.006 76);
+  --sidebar: oklch(0.07 0.004 76);
+  --secondary: oklch(0.18 0.008 76);
+  --accent: oklch(0.19 0.008 76);
+  --muted: oklch(0.16 0.007 76);
   --border: oklch(1 0 0 / 7%);
 }
 
 /* Light mode (opts out of the default dark class tokens) */
 html.light {
-  --background: oklch(0.975 0.004 106);
-  --foreground: oklch(0.18 0.02 262);
+  /* Warm paper rather than the blue-tinted white it used to be. */
+  --background: oklch(0.977 0.006 88);
+  --foreground: oklch(0.22 0.012 72);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 262);
+  --card-foreground: oklch(0.22 0.012 72);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 262);
-  --primary: oklch(0.55 0.2 130);
-  --primary-foreground: oklch(0.98 0.01 106);
-  --secondary: oklch(0.93 0.008 106);
-  --secondary-foreground: oklch(0.25 0.02 262);
-  --muted: oklch(0.94 0.006 106);
-  --muted-foreground: oklch(0.45 0.015 262);
-  --accent: oklch(0.92 0.01 106);
-  --accent-foreground: oklch(0.25 0.02 262);
-  --border: oklch(0.2 0.02 262 / 12%);
-  --input: oklch(0.2 0.02 262 / 15%);
-  --ring: oklch(0.55 0.2 130 / 50%);
-  --sidebar: oklch(0.965 0.005 106);
-  --sidebar-foreground: oklch(0.2 0.02 262);
-  --sidebar-border: oklch(0.2 0.02 262 / 8%);
-  --tint: 76 143 43;
+  --popover-foreground: oklch(0.22 0.012 72);
+  /* Bronze, the light-mode counterpart of the brass accent: same hue, dropped
+     in lightness so it holds contrast on paper. */
+  --primary: oklch(0.55 0.1 72);
+  --primary-foreground: oklch(0.985 0.01 88);
+  --secondary: oklch(0.94 0.007 85);
+  --secondary-foreground: oklch(0.28 0.012 72);
+  --muted: oklch(0.945 0.006 85);
+  --muted-foreground: oklch(0.46 0.012 72);
+  --accent: oklch(0.925 0.01 85);
+  --accent-foreground: oklch(0.25 0.012 72);
+  --border: oklch(0.25 0.02 72 / 12%);
+  --input: oklch(0.25 0.02 72 / 15%);
+  --ring: oklch(0.55 0.1 72 / 50%);
+  --sidebar: oklch(0.965 0.006 85);
+  --sidebar-foreground: oklch(0.22 0.012 72);
+  --sidebar-border: oklch(0.25 0.02 72 / 8%);
+  --tint: 149 103 37;
 }
 
 /* In light mode, panels built with white-on-dark assumptions flip. */
@@ -172,40 +197,40 @@ html.light img {
 }
 
 .dark {
-  --background: oklch(0.135 0.012 262);
-  --foreground: oklch(0.965 0.004 262);
-  --card: oklch(0.175 0.013 262);
-  --card-foreground: oklch(0.965 0.004 262);
-  --popover: oklch(0.19 0.014 262);
-  --popover-foreground: oklch(0.965 0.004 262);
-  --primary: oklch(0.872 0.21 127);
-  --primary-foreground: oklch(0.16 0.02 262);
-  --secondary: oklch(0.24 0.014 262);
-  --secondary-foreground: oklch(0.96 0.004 262);
-  --muted: oklch(0.22 0.012 262);
-  --muted-foreground: oklch(0.68 0.01 262);
-  --accent: oklch(0.25 0.014 262);
-  --accent-foreground: oklch(0.96 0.004 262);
+  --background: oklch(0.148 0.007 76);
+  --foreground: oklch(0.96 0.006 85);
+  --card: oklch(0.19 0.008 76);
+  --card-foreground: oklch(0.96 0.006 85);
+  --popover: oklch(0.205 0.009 76);
+  --popover-foreground: oklch(0.96 0.006 85);
+  --primary: oklch(0.8 0.115 82);
+  --primary-foreground: oklch(0.165 0.02 76);
+  --secondary: oklch(0.25 0.009 76);
+  --secondary-foreground: oklch(0.96 0.006 85);
+  --muted: oklch(0.23 0.008 76);
+  --muted-foreground: oklch(0.725 0.012 82);
+  --accent: oklch(0.255 0.009 76);
+  --accent-foreground: oklch(0.96 0.006 85);
   --destructive: oklch(0.7 0.19 22);
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.872 0.21 127 / 60%);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.155 0.012 262);
-  --sidebar-foreground: oklch(0.9 0.005 262);
-  --sidebar-primary: oklch(0.872 0.21 127);
-  --sidebar-primary-foreground: oklch(0.16 0.02 262);
-  --sidebar-accent: oklch(0.24 0.014 262);
-  --sidebar-accent-foreground: oklch(0.96 0.004 262);
+  --ring: oklch(0.8 0.115 82 / 55%);
+  --chart-1: oklch(0.8 0.115 82);
+  --chart-2: oklch(0.72 0.11 62);
+  --chart-3: oklch(0.66 0.08 42);
+  --chart-4: oklch(0.7 0.06 150);
+  --chart-5: oklch(0.62 0.07 300);
+  --sidebar: oklch(0.163 0.007 76);
+  --sidebar-foreground: oklch(0.9 0.006 82);
+  --sidebar-primary: oklch(0.8 0.115 82);
+  --sidebar-primary-foreground: oklch(0.165 0.02 76);
+  --sidebar-accent: oklch(0.25 0.009 76);
+  --sidebar-accent-foreground: oklch(0.96 0.006 85);
   --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.872 0.21 127 / 50%);
-  --brand: oklch(0.872 0.21 127);
-  --brand-foreground: oklch(0.16 0.02 262);
-  --tint: 203 244 143;
+  --sidebar-ring: oklch(0.8 0.115 82 / 50%);
+  --brand: oklch(0.8 0.115 82);
+  --brand-foreground: oklch(0.165 0.02 76);
+  --tint: 227 182 98;
 }
 
 /* Signature scenes coordinate the full accent system without overriding the
@@ -215,15 +240,15 @@ html.light img {
    system, the sidebar ring, and the `--tint` the rest of the UI already
    reads. */
 html[data-scene="studio"] {
-  --primary: oklch(0.83 0.19 127);
-  --primary-foreground: oklch(0.16 0.02 262);
-  --ring: oklch(0.83 0.19 127 / 58%);
-  --chart-1: oklch(0.8 0.2 127);
-  --sidebar-primary: oklch(0.83 0.19 127);
-  --sidebar-ring: oklch(0.83 0.19 127 / 48%);
-  --brand: oklch(0.83 0.19 127);
-  --brand-foreground: oklch(0.16 0.02 262);
-  --tint: 203 244 143;
+  --primary: oklch(0.8 0.115 82);
+  --primary-foreground: oklch(0.165 0.02 76);
+  --ring: oklch(0.8 0.115 82 / 55%);
+  --chart-1: oklch(0.8 0.115 82);
+  --sidebar-primary: oklch(0.8 0.115 82);
+  --sidebar-ring: oklch(0.8 0.115 82 / 48%);
+  --brand: oklch(0.8 0.115 82);
+  --brand-foreground: oklch(0.165 0.02 76);
+  --tint: 227 182 98;
 }
 
 html[data-scene="aurora"] {
@@ -550,6 +575,8 @@ html[data-scene="ocean"] {
   --tint: 55 185 205;
 }
 
+/* Scene and artwork changes are a rare, system-level state change rather than
+   an interaction, so this is the one place a long cross-fade is justified. */
 html,
 .theme-surface,
 .bg-background,
@@ -558,13 +585,13 @@ html,
 .liquid-glass,
 .glass {
   transition:
-    --primary 700ms cubic-bezier(0.22, 1, 0.36, 1),
-    --ring 700ms cubic-bezier(0.22, 1, 0.36, 1),
-    --brand 700ms cubic-bezier(0.22, 1, 0.36, 1),
-    --sidebar-primary 700ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    --primary 700ms var(--ease-out),
+    --ring 700ms var(--ease-out),
+    --brand 700ms var(--ease-out),
+    --sidebar-primary 700ms var(--ease-out),
+    background-color 700ms var(--ease-out),
     border-color 500ms ease,
-    box-shadow 700ms cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow 700ms var(--ease-out);
 }
 
 .focus-session-bar {
@@ -682,6 +709,26 @@ html.reduce-motion *::after {
   .glass {
     transition-duration: 0.01ms !important;
   }
+}
+
+/* One explicit transition set for interactive surfaces, replacing
+   `transition-all`.
+
+   Why the property list is not just `transform, opacity`: Tailwind v4 compiles
+   `-translate-y-*` / `scale-*` / `rotate-*` to the independent CSS properties
+   (`translate`, `scale`, `rotate`), not to `transform`. Transitioning only
+   `transform` would silently stop those hover lifts from animating at all, so
+   both spellings are listed.
+
+   Nothing layout-affecting (`width`, `height`, `margin`, `padding`, `top`,
+   `left`) belongs here: those force layout, paint and composite on every
+   frame instead of running on the compositor. */
+@utility transition-ui {
+  transition-property:
+    translate, scale, rotate, transform, opacity, background-color,
+    border-color, color, box-shadow, outline-color, filter;
+  transition-duration: var(--default-transition-duration);
+  transition-timing-function: var(--default-transition-timing-function);
 }
 
 @layer base {
@@ -936,12 +983,14 @@ html.reduce-motion *::after {
       inset 0 1px 0 rgb(255 255 255 / 0.08),
       0 12px 30px rgb(0 0 0 / 0.18);
   }
-  .settings-jump-bar:hover {
-    border-color: rgb(var(--tint) / 0.28);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.1),
-      0 16px 38px rgb(0 0 0 / 0.22),
-      0 0 28px rgb(var(--tint) / 0.06);
+  @media (hover: hover) and (pointer: fine) {
+    .settings-jump-bar:hover {
+      border-color: rgb(var(--tint) / 0.28);
+      box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / 0.1),
+        0 16px 38px rgb(0 0 0 / 0.22),
+        0 0 28px rgb(var(--tint) / 0.06);
+    }
   }
   /* Settings page: category tabs down the left, like the Freebuff desktop
      settings. Implemented as grid placement rather than by wrapping the
@@ -1156,43 +1205,6 @@ html.reduce-motion *::after {
   html.no-glass .liquid-glass::after {
     content: none !important;
   }
-  .aurora-orb {
-    background: radial-gradient(
-      circle,
-      rgb(var(--tint) / 0.13),
-      transparent 68%
-    );
-    filter: blur(58px);
-    opacity: 0.55;
-    will-change: transform;
-  }
-  .aurora-orb-one {
-    animation: aurora-drift-one 18s ease-in-out infinite alternate;
-  }
-  .aurora-orb-two {
-    background: radial-gradient(
-      circle,
-      rgb(120 160 255 / 0.1),
-      transparent 68%
-    );
-    animation: aurora-drift-two 22s ease-in-out infinite alternate;
-  }
-  @keyframes aurora-drift-one {
-    from {
-      transform: translate3d(-2%, -2%, 0) scale(0.92);
-    }
-    to {
-      transform: translate3d(14%, 10%, 0) scale(1.08);
-    }
-  }
-  @keyframes aurora-drift-two {
-    from {
-      transform: translate3d(4%, 8%, 0) scale(1.05);
-    }
-    to {
-      transform: translate3d(-12%, -6%, 0) scale(0.9);
-    }
-  }
 
   /* Smaller glass surfaces used for cards, navigation and profile surfaces. */
   .glass-card {
@@ -1228,16 +1240,20 @@ html.reduce-motion *::after {
     opacity: 0.75;
     transition: opacity 220ms ease;
   }
-  .glass-card:hover {
-    transform: translateY(-2px);
-    border-color: rgb(var(--tint) / 0.28);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.1),
-      0 16px 38px rgb(0 0 0 / 0.2),
-      0 0 28px rgb(var(--tint) / 0.06);
-  }
-  .glass-card:hover::before {
-    opacity: 1;
+  /* Hover is gated on a real pointer. A touch tap fires `:hover` and, with no
+     pointer to leave, the lift would stay stuck after the finger lifts. */
+  @media (hover: hover) and (pointer: fine) {
+    .glass-card:hover {
+      transform: translateY(-2px);
+      border-color: rgb(var(--tint) / 0.28);
+      box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / 0.1),
+        0 16px 38px rgb(0 0 0 / 0.2),
+        0 0 28px rgb(var(--tint) / 0.06);
+    }
+    .glass-card:hover::before {
+      opacity: 1;
+    }
   }
 
   /* A quiet atmospheric grid keeps empty areas from feeling flat. */
@@ -1267,12 +1283,14 @@ html.reduce-motion *::after {
       0 18px 60px rgb(0 0 0 / 0.38),
       0 0 32px rgb(var(--tint) / 0.06);
   }
-  .dynamic-island:hover {
-    border-color: rgb(var(--tint) / 0.28);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.14),
-      0 22px 70px rgb(0 0 0 / 0.44),
-      0 0 38px rgb(var(--tint) / 0.1);
+  @media (hover: hover) and (pointer: fine) {
+    .dynamic-island:hover {
+      border-color: rgb(var(--tint) / 0.28);
+      box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / 0.14),
+        0 22px 70px rgb(0 0 0 / 0.44),
+        0 0 38px rgb(var(--tint) / 0.1);
+    }
   }
 
   /* Touch adaptations: keep the same depth and tint language, but replace
@@ -1526,10 +1544,14 @@ html.reduce-motion *::after {
       inset 0 1px 0 rgb(255 255 255 / 0.1),
       0 0 18px rgb(var(--tint) / 0.08);
     opacity: 0;
-    transform: scale(0.76) translateY(3px);
+    /* Entrances start from a visible shape, never from nothing: 0.9 still
+       reads as a pill that grew rather than one that materialised. */
+    transform: scale(0.9) translateY(3px);
+    /* Bottom navigation is tapped dozens of times a day, so this is the
+       fastest tier of the duration scale — present, but never in the way. */
     transition:
-      opacity 220ms ease,
-      transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+      opacity var(--duration-press) ease,
+      transform 160ms var(--ease-out);
   }
   .mobile-nav-item-active::before {
     opacity: 1;
@@ -1694,7 +1716,6 @@ html.reduce-motion *::after {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .aurora-orb,
     .liquid-glass::before,
     .mobile-player,
     .mobile-island-aura,
@@ -1725,7 +1746,6 @@ html.reduce-motion *::after {
      decorations are paused and long transitions are shortened, but short
      feedback and the real busy spinner stay, because removing those makes an
      app feel broken rather than calm. */
-  html[data-motion="reduced"] .aurora-orb,
   html[data-motion="reduced"] .liquid-glass::before,
   html[data-motion="reduced"] .mobile-island-aura,
   html[data-motion="reduced"] .mobile-player-art,
@@ -1908,19 +1928,6 @@ html.reduce-motion *::after {
       transform: rotate(360deg);
     }
   }
-  /* soft breathing glow for accent-lit elements */
-  .glow-pulse {
-    animation: glow-pulse 3.2s ease-in-out infinite;
-  }
-  @keyframes glow-pulse {
-    0%,
-    100% {
-      opacity: 0.55;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
   /* gentle fade+rise entrance for page content */
   .fade-rise {
     animation: fade-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -1978,5 +1985,56 @@ html.reduce-motion *::after {
     to {
       background-position: -200% 0;
     }
+  }
+}
+
+/* ── Additional capability preferences ────────────────────────────────────
+   Reduced motion is only one of three independent signals a material-heavy
+   interface has to answer. These two are the other two.
+
+   `prefers-reduced-transparency` means the frosted panels actually cost the
+   user legibility, so they become solid: opacity up, blur gone.
+   `prefers-contrast: more` means the soft translucent edges are not readable
+   separation, so surfaces go near-solid and gain a defined border. */
+@media (prefers-reduced-transparency: reduce) {
+  .liquid-glass,
+  .glass,
+  .glass-card,
+  .settings-liquid-glass,
+  .settings-jump-glass,
+  .settings-jump-bar,
+  .mobile-bottom-nav {
+    background: var(--card) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  .liquid-glass::before,
+  .liquid-glass::after,
+  .glass-card::before,
+  .settings-liquid-glass::before,
+  .settings-liquid-glass::after,
+  .settings-jump-glass::before,
+  .settings-jump-glass::after {
+    content: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .liquid-glass,
+  .glass,
+  .glass-card,
+  .settings-liquid-glass,
+  .settings-jump-glass,
+  .settings-jump-bar,
+  .mobile-bottom-nav,
+  .mobile-player {
+    background: var(--card) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    border-color: rgb(255 255 255 / 0.4) !important;
+  }
+  .liquid-glass::before,
+  .glass-card::before {
+    content: none !important;
   }
 }

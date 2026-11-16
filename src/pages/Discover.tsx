@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAction, useQuery } from "convex/react";
-import { Compass, Loader2, Search, Sparkles, Wand2 } from "lucide-react";
+import { Compass, Disc3, Loader2, Search, Wand2 } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import { toPlayableYoutube, type Playable } from "@/lib/playable";
@@ -218,7 +218,7 @@ export default function Discover() {
       </form>
 
       {indexed === 0 ? (
-        <section className="mt-6 rounded-2xl border border-dashed border-white/10 px-6 py-10 text-center">
+        <section className="mt-6 rounded-2xl border border-white/[0.07] bg-white/[0.02] px-6 py-10 text-center">
           <Wand2 className="mx-auto size-6 text-[rgb(var(--tint))]" />
           <p className="font-display mt-3 font-semibold">
             Your library isn't indexed yet
@@ -271,7 +271,7 @@ export default function Discover() {
       {results !== null && results.length > 0 ? (
         <section className="mt-6">
           <p className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-            <Sparkles className="size-3.5 text-[rgb(var(--tint))]" />
+            <Disc3 className="size-3.5 text-[rgb(var(--tint))]" />
             {results.length} {results.length === 1 ? "track" : "tracks"}
           </p>
           <ul className="flex flex-col gap-1">

@@ -16,7 +16,6 @@ import {
   Search,
   Share2,
   Shuffle,
-  Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -707,7 +706,7 @@ export default function Artist() {
                 {catalog.loadingTracks ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : (
-                  <Sparkles className="size-3.5" />
+                  <Disc3 className="size-3.5" />
                 )}
                 {catalog.loadingTracks
                   ? "Reading tracklists…"
@@ -760,7 +759,7 @@ export default function Artist() {
       <Shelf
         id="artist-related"
         title="Fans also like"
-        icon={<Sparkles className="size-4 text-[rgb(var(--tint))]" />}
+        icon={<Disc3 className="size-4 text-[rgb(var(--tint))]" />}
         skeleton={related === null}
         hidden={related !== null && related.length === 0}
       >

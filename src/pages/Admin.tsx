@@ -23,7 +23,7 @@ import {
   Radio,
   Shield,
   ShieldCheck,
-  Sparkles,
+  Disc3,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -658,7 +658,7 @@ export default function Admin() {
           {recentSignups !== undefined && recentSignups.length > 0 && (
             <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
               <p className="flex items-center gap-2 text-sm font-semibold">
-                <Sparkles className="size-4 text-[rgb(var(--tint))]" />
+                <Disc3 className="size-4 text-[rgb(var(--tint))]" />
                 Recent signups
               </p>
               <div className="mt-3 flex flex-col gap-2">

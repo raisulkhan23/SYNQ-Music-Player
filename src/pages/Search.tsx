@@ -843,7 +843,7 @@ export default function Search() {
                 ))}
               </div>
             ) : searchError ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-white/10 py-12 text-center">
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] py-12 text-center">
                 <SearchX className="size-8 text-muted-foreground/40" />
                 <p className="max-w-sm text-sm text-muted-foreground">
                   {searchError}
@@ -861,7 +861,7 @@ export default function Search() {
               /* An honest empty state. The old one asserted a single cause
                  ("try a different spelling") for what can be four different
                  problems, and gave the user no next action. */
-              <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-white/10 px-6 py-12 text-center">
+              <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.02] px-6 py-12 text-center">
                 <SearchX className="size-8 text-muted-foreground/40" />
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-foreground">
@@ -1055,7 +1055,7 @@ function BrowseView({ onPick }: { onPick: (q: string) => void }) {
               key={mood}
               type="button"
               onClick={() => onPick(MOOD_QUERIES[mood] ?? mood)}
-              className="rounded-full border border-white/20 bg-white/[0.06] px-4 py-1.5 text-sm font-medium text-foreground/90 outline outline-1 outline-white/10 transition-all hover:border-[rgb(var(--tint)_/_0.65)] hover:bg-[rgb(var(--tint)_/_0.12)] hover:outline-[rgb(var(--tint)_/_0.3)]"
+              className="rounded-full border border-white/20 bg-white/[0.06] px-4 py-1.5 text-sm font-medium text-foreground/90 outline outline-1 outline-white/10 transition-ui hover:border-[rgb(var(--tint)_/_0.65)] hover:bg-[rgb(var(--tint)_/_0.12)] hover:outline-[rgb(var(--tint)_/_0.3)]"
             >
               {mood}
             </button>
@@ -1073,7 +1073,7 @@ function BrowseView({ onPick }: { onPick: (q: string) => void }) {
               key={genre}
               type="button"
               onClick={() => onPick(`${genre} songs`)}
-              className="rounded-full border border-white/20 bg-gradient-to-br from-white/[0.09] to-white/[0.025] px-4 py-1.5 text-sm font-medium text-foreground/90 outline outline-1 outline-white/10 transition-all hover:border-[rgb(var(--tint)_/_0.65)] hover:from-[rgb(var(--tint)_/_0.14)] hover:outline-[rgb(var(--tint)_/_0.3)]"
+              className="rounded-full border border-white/20 bg-gradient-to-br from-white/[0.09] to-white/[0.025] px-4 py-1.5 text-sm font-medium text-foreground/90 outline outline-1 outline-white/10 transition-ui hover:border-[rgb(var(--tint)_/_0.65)] hover:from-[rgb(var(--tint)_/_0.14)] hover:outline-[rgb(var(--tint)_/_0.3)]"
             >
               {genre}
             </button>

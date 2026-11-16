@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router";
 import { AccountMenu } from "@/components/layout/AccountMenu";
+import { nativeDownloadsSupported } from "@/lib/nativeDownloads";
 
 type Filter = "playlists" | "liked" | "recent";
 
@@ -78,7 +79,9 @@ export function Sidebar() {
             { to: "/liked", label: "Liked Songs", icon: Heart },
             { to: "/recent", label: "Recently Played", icon: History },
             { to: "/social", label: "Listening Rooms", icon: Radio },
-            { to: "/downloads", label: "Downloads", icon: ArrowRightToLine },
+            ...(nativeDownloadsSupported()
+              ? [{ to: "/downloads", label: "Downloads", icon: ArrowRightToLine }]
+              : []),
           ].map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to + label}
@@ -140,10 +143,10 @@ export function Sidebar() {
                 key={p._id}
                 to={`/playlist/${p._id}`}
                 title={p.name}
-                className="size-10 shrink-0 overflow-hidden rounded-md ring-1 ring-white/10 transition-transform hover:scale-105"
+                className="size-10 shrink-0 overflow-hidden rounded-md ring-1 ring-white/10 transition-colors hover:ring-white/25"
               >
                 <span
-                  className="size-10 shrink-0 overflow-hidden rounded-md ring-1 ring-white/10 transition-transform hover:scale-105"
+                  className="size-10 shrink-0 overflow-hidden rounded-md ring-1 ring-white/10 transition-colors hover:ring-white/25"
                   style={{
                     background:
                       "linear-gradient(135deg, rgb(var(--tint) / 0.35), rgb(var(--tint) / 0.1))",
@@ -221,7 +224,9 @@ export function Sidebar() {
               { to: "/home", label: "Home", icon: House },
               { to: "/search", label: "Search", icon: Search },
               { to: "/social", label: "Listening Rooms", icon: Radio },
-            { to: "/downloads", label: "Downloads", icon: ArrowRightToLine },
+              ...(nativeDownloadsSupported()
+                ? [{ to: "/downloads", label: "Downloads", icon: ArrowRightToLine }]
+                : []),
             ].map(({ to, label, icon: Icon }) => (
               <NavLink key={to + label} to={to} className={linkCls}>
                 <Icon className="size-[18px]" />

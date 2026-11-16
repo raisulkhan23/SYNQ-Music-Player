@@ -116,7 +116,7 @@ export function PlaylistCard({ playlist }: { playlist: Doc<"playlists"> }) {
           }
         }}
         className={cn(
-          "absolute top-1.5 right-1.5 rounded-full p-1.5 opacity-0 shadow-lg backdrop-blur transition-all",
+          "absolute top-1.5 right-1.5 rounded-full p-1.5 opacity-0 shadow-lg backdrop-blur transition-ui",
           "group-hover:opacity-100 focus-visible:opacity-100",
           "disabled:opacity-60",
           confirming

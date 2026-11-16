@@ -11,8 +11,9 @@ import {
 } from "../lib/downloadAuth";
 import { unwrap, networkFailure, notConfiguredFailure } from "../lib/jamendo";
 import {
-  fetchSoundcloudTrackRecord,
-  fetchSoundcloudDownloadUrl,
+  fetchOfficialSoundcloudTrackRecord,
+  fetchOfficialSoundcloudDownloadUrl,
+  soundcloudDownloadsConfigured,
 } from "./soundcloud";
 
 /**
@@ -65,7 +66,14 @@ async function fetchAuthorizedRelease(
   providerId: string,
   key: string,
 ): Promise<
-  | { ok: true; url: string; title: string; artist: string; licenseUrl: string }
+  | {
+      ok: true;
+      url: string;
+      title: string;
+      artist: string;
+      licenseUrl: string;
+      artwork?: string;
+    }
   | { ok: false; decision: DownloadRefusal }
 > {
   const url = new URL(API);
@@ -136,6 +144,10 @@ async function fetchAuthorizedRelease(
     artist: typeof track.artist_name === "string" ? track.artist_name.trim() : "",
     licenseUrl:
       typeof track.license_ccurl === "string" ? track.license_ccurl.trim() : "",
+    artwork:
+      typeof track.image === "string" && /^https:\/\//i.test(track.image.trim())
+        ? track.image.trim()
+        : undefined,
   };
 }
 
@@ -162,9 +174,18 @@ async function fetchAuthorizedSoundcloudRelease(
     }
   | { ok: false; decision: DownloadRefusal }
 > {
+  if (!soundcloudDownloadsConfigured()) {
+    return {
+      ok: false,
+      decision: refuse(
+        "not-configured",
+        "SoundCloud downloads need a registered SoundCloud app (SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET).",
+      ),
+    };
+  }
   let record;
   try {
-    record = await fetchSoundcloudTrackRecord(providerId);
+    record = await fetchOfficialSoundcloudTrackRecord(providerId);
   } catch {
     return { ok: false, decision: refuse("network") };
   }
@@ -172,15 +193,16 @@ async function fetchAuthorizedSoundcloudRelease(
   if (record.policy === "SNIP") {
     return { ok: false, decision: refuse("not-found") };
   }
-  // THE GRANT. `downloadable` is the artist's explicit per-track permission;
-  // `hasDownloadsLeft` is SoundCloud's own cap on that grant. Both must hold.
-  if (record.downloadable !== true || !record.hasDownloadsLeft) {
+  // THE GRANT. Both facts come from the official track object: the artist's
+  // `downloadable` flag and the API-issued `download_url`. A stream URL is
+  // never substituted for the missing download resource.
+  if (record.downloadable !== true || !record.downloadUrl) {
     return { ok: false, decision: refuse("not-authorized") };
   }
 
   let url: string | null = null;
   try {
-    url = await fetchSoundcloudDownloadUrl(providerId);
+    url = await fetchOfficialSoundcloudDownloadUrl(record.downloadUrl);
   } catch {
     return { ok: false, decision: refuse("network") };
   }
@@ -284,6 +306,7 @@ export const authorizeDownload = action({
       attribution,
       ...(release.title ? { title: release.title } : {}),
       ...(release.artist ? { artist: release.artist } : {}),
+      ...(release.artwork ? { artworkUrl: release.artwork } : {}),
       provider: "jamendo",
     };
   },

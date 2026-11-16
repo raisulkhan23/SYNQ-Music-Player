@@ -46,7 +46,7 @@ import {
   X,
   Repeat2,
   Search,
-  Sparkles,
+  Star,
   Sun,
   UsersRound,
 } from "lucide-react";
@@ -1202,7 +1202,7 @@ export default function Home() {
                 </span>
               ) : null}
             </span>
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black shadow-lg transition-transform group-hover:scale-105">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black transition-ui group-active:scale-95">
               <Play className="size-4 fill-current" />
             </span>
           </button>
@@ -1260,7 +1260,7 @@ export default function Home() {
                 luckyBusy && "animate-pulse",
               )}
             >
-              <Sparkles className="size-4" />
+              <Play className="size-4 fill-current" />
             </span>
             <span className="truncate text-sm font-semibold">
               Feeling lucky
@@ -1334,7 +1334,7 @@ export default function Home() {
         <Shelf
           id="shelf-for-you"
           title="Recommended for you"
-          icon={<Sparkles className="size-4 text-[rgb(var(--tint))]" />}
+          icon={<Star className="size-4 text-[rgb(var(--tint))]" />}
           skeleton
         >
           {null}
@@ -1347,7 +1347,7 @@ export default function Home() {
             title={section.title}
             icon={
               section.id === "for_you" ? (
-                <Sparkles className="size-4 text-[rgb(var(--tint))]" />
+                <Star className="size-4 text-[rgb(var(--tint))]" />
               ) : undefined
             }
             subtitle={
@@ -1588,7 +1588,7 @@ export default function Home() {
         id="shelf-moods"
         title="Set the mood"
         action={{ to: "/search", label: "Browse all" }}
-        icon={<Sparkles className="size-4 text-[rgb(var(--tint))]" />}
+        icon={<Disc3 className="size-4 text-[rgb(var(--tint))]" />}
       >
         {MOOD_LAUNCHES.map(({ label, query, tone }) => (
           <Link
@@ -1602,7 +1602,7 @@ export default function Home() {
               tone,
             )}
           >
-            <span className="pointer-events-none absolute -top-5 -right-4 size-20 rounded-full bg-white/[0.06] blur-xl transition-transform duration-500 group-hover:scale-125" />
+            <span className="pointer-events-none absolute -top-5 -right-4 size-20 rounded-full bg-white/[0.05] blur-xl" />
             <span className="relative text-sm font-semibold text-foreground">
               {label}
             </span>
@@ -1616,7 +1616,7 @@ export default function Home() {
       {/* ── Listening pulse, kept last: it is a readout, not a way in. */}
       <section aria-labelledby="listening-pulse-title">
         <div className="glass-card relative overflow-hidden rounded-2xl p-4 sm:p-5">
-          <div className="pointer-events-none absolute -top-24 -right-16 size-56 rounded-full bg-[rgb(var(--tint)_/_0.1)] blur-3xl" />
+
           <div className="relative flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">

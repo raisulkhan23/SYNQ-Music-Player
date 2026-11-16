@@ -148,7 +148,7 @@ export function MediaCard({
                 }}
                 className={cn(
                   "absolute right-2 bottom-2 z-10 flex size-10 items-center justify-center rounded-full",
-                  "bg-[rgb(var(--tint))] text-black shadow-lg transition-all duration-200",
+                  "bg-[rgb(var(--tint))] text-black shadow-lg transition-ui duration-200",
                   // Hover reveals on pointer devices; on touch the card has no
                   // hover, so the control stays put and out of the way.
                   "translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100",

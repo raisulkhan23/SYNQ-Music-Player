@@ -51,6 +51,9 @@ export function isStreamUrl(url: string | null | undefined): boolean {
   if (!value) return false;
   if (value === "stream") return true;
   if (value.startsWith("blob:")) return true;
+  // Local files in the installed apps are playable engine-owned sources.
+  if (value.startsWith("synq-media:")) return true;
+  if (value.includes("_capacitor_file_")) return true;
   if (STREAM_MARKERS.some((marker) => value.includes(marker))) return true;
   // A non-YouTube direct URL (a catalog track) also plays via the element.
   return /^https?:\/\/.+\.(mp3|m4a|aac|ogg|opus|wav|flac|webm|mp4)(\?|$)/i.test(

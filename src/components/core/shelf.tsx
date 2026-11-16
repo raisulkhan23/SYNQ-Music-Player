@@ -218,7 +218,7 @@ function ShelfArrow({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex size-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-muted-foreground transition-all",
+        "flex size-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-muted-foreground transition-ui",
         "hover:border-[rgb(var(--tint)_/_0.4)] hover:bg-white/[0.08] hover:text-foreground",
         "disabled:pointer-events-none disabled:opacity-0",
       )}

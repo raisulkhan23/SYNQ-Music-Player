@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { Sparkles, Palette, Check, Moon, Cloud, Sun, Monitor, Zap } from "lucide-react";
+import { Disc3, Palette, Check, Moon, Cloud, Sun, Monitor, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   type PresetId,
@@ -70,13 +70,13 @@ export function PresetSelector() {
             Pick an atmosphere, then keep the controls you like.
           </p>
         </div>
-        <Sparkles className="size-4 text-[rgb(var(--tint))]" />
+        <Palette className="size-4 text-[rgb(var(--tint))]" />
       </div>
 
       <div className="mb-3 flex flex-wrap gap-1.5">
         {[
           Palette,
-          Sparkles,
+          Disc3,
           Moon,
           Sun,
           Cloud,
@@ -187,7 +187,7 @@ function PresetCard({ meta, selected, onSelect }: PresetCardProps) {
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "group relative flex flex-col gap-2 rounded-xl border p-3 text-left transition-all",
+        "group relative flex flex-col gap-2 rounded-xl border p-3 text-left transition-ui",
         selected
           ? "border-[rgb(var(--tint))] bg-white/[0.06] text-foreground shadow-[0_0_0_1px_rgba(var(--tint)/0.25)]"
           : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-white/25 hover:text-foreground",

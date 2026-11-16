@@ -34,7 +34,7 @@ export function PlayCircle({
       aria-label={label ?? (playing ? "Pause" : "Play")}
       onClick={onClick}
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black shadow-[0_6px_24px_rgb(var(--tint)/0.45)] transition-all duration-200 hover:scale-105 active:scale-95",
+        "flex shrink-0 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black shadow-[0_6px_20px_-4px_rgb(var(--tint)/0.4)] transition-ui active:scale-95",
         sizes[size],
         className,
       )}

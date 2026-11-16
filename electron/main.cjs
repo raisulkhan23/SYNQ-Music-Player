@@ -26,6 +26,10 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const oauth = require("./oauth-deep-link.cjs");
 const tray = require("./tray.cjs");
+const {
+  NativeDownloadStore,
+  handleMediaRequest,
+} = require("./downloads.cjs");
 
 /** Where the Vite build lands. Packaged builds carry it inside app.asar. */
 const DIST = path.join(__dirname, "..", "dist");
@@ -67,6 +71,18 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
       stream: true,
       codeCache: true,
+    },
+  },
+  {
+    // Offline audio is addressed by track id, never by a filesystem path.
+    // The handler below resolves that id against the completed-download index.
+    scheme: "synq-media",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      corsEnabled: true,
     },
   },
 ]);
@@ -131,6 +147,78 @@ const startupDeepLink = oauth.findDeepLinkArg(process.argv);
 let mainWindow = null;
 /** Set on before-quit so close-to-tray cannot preventDefault an app.quit(). */
 let quitting = false;
+let downloads = null;
+
+/**
+ * Only this app's renderer may use the download bridge. The checks cover the
+ * webContents identity AND the frame's actual app:// origin, so an injected
+ * iframe or a redirected page cannot reach filesystem-writing operations.
+ */
+function isTrustedDownloadSender(event) {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return false;
+  const frameUrl = event.senderFrame?.url ?? "";
+  return frameUrl.startsWith(`${APP_ORIGIN}/`) || frameUrl === APP_ORIGIN;
+}
+
+function trustedDownloadHandler(operation) {
+  return async (event, ...args) => {
+    if (!isTrustedDownloadSender(event) || !downloads) {
+      throw new Error("Download operation refused");
+    }
+    await downloads.init();
+    return operation(...args);
+  };
+}
+
+function registerDownloadIpc() {
+  ipcMain.handle(
+    "desktop:downloads:list",
+    trustedDownloadHandler(() => ({ records: downloads.list() })),
+  );
+  ipcMain.handle(
+    "desktop:downloads:start",
+    trustedDownloadHandler((request) => downloads.start(request)),
+  );
+  ipcMain.handle(
+    "desktop:downloads:cancel",
+    trustedDownloadHandler((id) => {
+      if (typeof id !== "string") throw new Error("Invalid download id");
+      return downloads.cancel(id);
+    }),
+  );
+  ipcMain.handle(
+    "desktop:downloads:retry",
+    trustedDownloadHandler((id) => {
+      if (typeof id !== "string") throw new Error("Invalid download id");
+      return downloads.retry(id);
+    }),
+  );
+  ipcMain.handle(
+    "desktop:downloads:remove",
+    trustedDownloadHandler((id) => {
+      if (typeof id !== "string") throw new Error("Invalid download id");
+      return downloads.remove(id);
+    }),
+  );
+  ipcMain.handle(
+    "desktop:downloads:playback",
+    trustedDownloadHandler((trackId) => {
+      if (typeof trackId !== "string") throw new Error("Invalid track id");
+      return downloads.getPlaybackUrl(trackId);
+    }),
+  );
+  ipcMain.handle(
+    "desktop:downloads:artwork",
+    trustedDownloadHandler((trackId) => {
+      if (typeof trackId !== "string") throw new Error("Invalid track id");
+      return downloads.getArtworkUrl(trackId);
+    }),
+  );
+  ipcMain.handle(
+    "desktop:downloads:storage",
+    trustedDownloadHandler(() => downloads.getStorage()),
+  );
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -375,9 +463,25 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   oauth.onSecondInstance(() => mainWindow);
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     app.setAppUserModelId("com.synq.app");
     protocol.handle("app", serveApp);
+
+    downloads = new NativeDownloadStore({
+      root: path.join(app.getPath("userData"), "downloads"),
+      fetch: (url, init) => net.fetch(url, init),
+      appVersion: app.getVersion(),
+      onChanged: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("downloads:changed");
+        }
+      },
+    });
+    await downloads.init();
+    protocol.handle("synq-media", (request) =>
+      handleMediaRequest(downloads, request),
+    );
+    registerDownloadIpc();
     installMenu();
 
     // The OS-level synq:// handler. In a packaged install this registers the

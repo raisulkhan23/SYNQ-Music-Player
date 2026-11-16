@@ -37,7 +37,7 @@ import {
   AUDIO_EFFECT_DELAY_MESSAGE,
   AUDIO_FILTERS as FILTER_DEFS,
 } from "@/lib/audio";
-import { usePlayerStore } from "@/store/player";
+import { noteTrackDownloaded, usePlayerStore } from "@/store/player";
 import { toast } from "sonner";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -47,7 +47,8 @@ import {
   DOWNLOAD_MESSAGES,
 } from "@/lib/downloadAuth";
 import { requestAuthorizedDownload } from "@/lib/authorizedDownload";
-import { getDownloadManager } from "@/lib/downloads";
+import { useNativeDownloadRecord } from "@/hooks/useNativeDownloads";
+import { nativeDownloadsSupported } from "@/lib/nativeDownloads";
 import {
   ChevronDown,
   Crosshair,
@@ -199,6 +200,11 @@ function LyricsPanel({
   containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const current = usePlayerStore((s) => s.current);
+  const localCover = usePlayerStore((s) => s.localCover);
+  const currentCover =
+    localCover && current && localCover.trackId === current.id
+      ? localCover.url
+      : current?.coverUrl;
   const seek = usePlayerStore((s) => s.seek);
   // The karaoke fill follows the playhead; the panel is mounted only while
   // open, so this subscription costs nothing when it is closed.
@@ -273,9 +279,9 @@ function LyricsPanel({
         </div>
         {current && (
           <div className="mt-2.5 flex min-w-0 items-center gap-2.5">
-            {current.coverUrl && (
+            {currentCover && (
               <img
-                src={current.coverUrl}
+                src={currentCover}
                 alt=""
                 className="size-9 shrink-0 rounded-md object-cover ring-1 ring-white/10"
               />
@@ -565,6 +571,11 @@ export function FullscreenPlayer() {
   const navigate = useNavigate();
   const fullscreen = usePlayerStore((s) => s.fullscreen);
   const current = usePlayerStore((s) => s.current);
+  const localCover = usePlayerStore((s) => s.localCover);
+  const currentCover =
+    localCover && current && localCover.trackId === current.id
+      ? localCover.url
+      : current?.coverUrl;
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTime = usePlayerStore((s) => s.currentTime);
   const duration = usePlayerStore((s) => s.duration);
@@ -958,7 +969,7 @@ export function FullscreenPlayer() {
 
         {/* ambient accent glows */}
         <div
-          className="glow-pulse pointer-events-none absolute -top-48 left-1/2 z-[1] h-[520px] w-[780px] -translate-x-1/2 rounded-full blur-3xl"
+          className="pointer-events-none absolute -top-48 left-1/2 z-[1] h-[520px] w-[780px] -translate-x-1/2 rounded-full blur-3xl"
           style={{
             background: `radial-gradient(closest-side, rgb(${a.r} ${a.g} ${a.b} / 0.2), transparent)`,
           }}
@@ -1010,7 +1021,7 @@ export function FullscreenPlayer() {
                     : "Add to liked songs"
                 }
                 onClick={() => toggleLike(current.id)}
-                className="rounded-full p-2 transition-all hover:scale-110 sm:hidden"
+                className="rounded-full p-2 transition-ui hover:scale-110 sm:hidden"
               >
                 <Heart
                   className={cn(
@@ -1031,7 +1042,7 @@ export function FullscreenPlayer() {
                 }
                 onClick={() => toggleLike(current.id)}
                 className={cn(
-                  "hidden rounded-full p-2.5 transition-all hover:scale-110 sm:block",
+                  "hidden rounded-full p-2.5 transition-ui hover:scale-110 sm:block",
                   liked[current.id]
                     ? "text-[rgb(var(--tint))]"
                     : "text-muted-foreground hover:text-foreground",
@@ -1092,7 +1103,7 @@ export function FullscreenPlayer() {
               is open (desktop) so the lyrics never cover the video */}
           <div
             className={cn(
-              "flex min-h-0 flex-1 items-center justify-center py-3 transition-all duration-300 sm:py-6",
+              "flex min-h-0 flex-1 items-center justify-center py-3 transition-ui duration-300 sm:py-6",
               lyricsOpen && "hidden lg:flex", // lyrics overlay covers on small screens
               // Lyrics panel is 28rem wide — reserve exactly that so the
               // video stays centered in the remaining space (a touch right
@@ -1103,7 +1114,7 @@ export function FullscreenPlayer() {
             {isYoutube && showVideo ? (
               <div
                 ref={videoFrameRef}
-                className="fade-rise relative aspect-video w-[min(72vh,640px)] max-w-full overflow-hidden rounded-2xl bg-black shadow-[0_30px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/10 transition-all duration-300"
+                className="fade-rise relative aspect-video w-[min(72vh,640px)] max-w-full overflow-hidden rounded-2xl bg-black shadow-[0_30px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/10 transition-ui duration-300"
                 style={lyricsOpen ? { width: "min(48vh, 480px)" } : undefined}
               >
                 {/* Shield: absorbs clicks so YouTube's in-frame UI (title bar,
@@ -1115,7 +1126,7 @@ export function FullscreenPlayer() {
                 />
                 {/* cover art behind the overlaid live player */}
                 <img
-                  src={current.coverUrl}
+                  src={currentCover}
                   alt=""
                   className={cn(
                     "absolute inset-0 size-full object-cover",
@@ -1158,7 +1169,7 @@ export function FullscreenPlayer() {
               </div>
             ) : (
               <motion.img
-                src={current.coverUrl}
+                src={currentCover}
                 alt={`${current.title} cover art`}
                 className="size-[min(32vh,280px)] rounded-2xl object-cover shadow-[0_30px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/10"
                 animate={{ y: [0, 0, 0] }}
@@ -1257,7 +1268,7 @@ export function FullscreenPlayer() {
               lyrics panel is open on desktop */}
           <div
             className={cn(
-              "flex w-full flex-col items-center gap-3 transition-all duration-300",
+              "flex w-full flex-col items-center gap-3 transition-ui duration-300",
               // Match the video's reserved space so title/controls center on it.
               lyricsOpen ? "lg:pr-[28rem]" : "mx-auto max-w-2xl",
               lyricsOpen && "opacity-0 lg:opacity-100", // lyrics overlay covers on small screens
@@ -1349,7 +1360,7 @@ export function FullscreenPlayer() {
                 title={liked[current.id] ? "Unlike" : "Like"}
                 onClick={() => toggleLike(current.id)}
                 className={cn(
-                  "hidden rounded-full p-2 transition-all hover:scale-110 sm:block",
+                  "hidden rounded-full p-2 transition-ui hover:scale-110 sm:block",
                   liked[current.id]
                     ? "text-[rgb(var(--tint))]"
                     : "text-muted-foreground hover:text-foreground",
@@ -1547,16 +1558,18 @@ export function FullscreenPlayer() {
 function DownloadCurrentButton() {
   const current = usePlayerStore((s) => s.current);
   const authorizeDownload = useAction(api.downloads.authorizeDownload);
-  // A tick counter instead of holding status state: the manager is a plain
-  // object, so this just re-renders while a transfer is live and stops when
-  // it is not — no React state inside the download engine itself.
-  const [, forceTick] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => forceTick((n) => n + 1), 500);
-    return () => window.clearInterval(id);
-  }, []);
+  const { platform, record, refresh } = useNativeDownloadRecord(current?.id);
 
-  if (!current) return null;
+  // A completed native record must invalidate the player's cached network URL
+  // immediately, even when the transfer was started from this screen (where
+  // there is no navigation to the Download Hub).
+  useEffect(() => {
+    if (record?.status === "completed" && current) {
+      noteTrackDownloaded(current.id);
+    }
+  }, [record?.status, current]);
+
+  if (!nativeDownloadsSupported() || platform === "web" || !current) return null;
   // SoundCloud provenance joins Jamendo's: a `sc:` track is eligible in
   // principle and the server re-verifies the artist's download grant.
   const availability = downloadAvailability(
@@ -1566,10 +1579,10 @@ function DownloadCurrentButton() {
   );
   if (!availability.allowed) return null;
 
-  const records = getDownloadManager().list();
-  const record = records.find((r) => r.trackId === current.id);
   const downloading =
-    record?.status === "queued" || record?.status === "downloading";
+    record?.status === "queued" ||
+    record?.status === "downloading" ||
+    record?.status === "validating";
   const downloaded = record?.status === "completed";
 
   return (
@@ -1613,7 +1626,7 @@ function DownloadCurrentButton() {
               result.refusal.message ?? DOWNLOAD_MESSAGES["not-authorized"],
             );
           }
-          forceTick((n) => n + 1);
+          await refresh();
         })();
       }}
       className="relative rounded-full p-2 text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground sm:p-2.5"

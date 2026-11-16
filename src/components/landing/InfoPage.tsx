@@ -25,9 +25,9 @@ export function InfoPage({
 }) {
   return (
     <div className="relative min-h-dvh overflow-x-hidden bg-background pt-[env(safe-area-inset-top)] text-foreground">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px]">
-        <div className="absolute left-1/2 top-[-260px] h-[620px] w-[900px] -translate-x-1/2 rounded-full bg-brand/12 blur-3xl" />
-      </div>
+      {/* This page is for reading, so the decorative glow behind the masthead is
+          gone. A hairline under the header does the same separating job and
+          costs one border instead of a 900px blurred layer. */}
 
       <header className="relative z-10 mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-6 sm:px-6">
         <Logo to="/" />
@@ -95,7 +95,7 @@ export function InfoPage({
           <p className="text-sm font-medium">Ready when you are.</p>
           <Link
             to="/auth?returnTo=/home"
-            className="rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-brand-foreground transition-transform hover:scale-105"
+            className="rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-brand-foreground transition-ui active:scale-[0.98]"
           >
             Start listening
           </Link>

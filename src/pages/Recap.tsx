@@ -9,7 +9,7 @@ import {
   Flame,
   Minus,
   Music2,
-  Sparkles,
+  Disc3,
   Users,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
@@ -22,7 +22,7 @@ const HIGHLIGHT_ICONS: Record<string, typeof Clock> = {
   songs: Music2,
   artists: Users,
   streak: Flame,
-  new_artists: Sparkles,
+  new_artists: Disc3,
   peak_hour: Clock,
   busiest_day: BarChart3,
 };
@@ -120,7 +120,7 @@ export default function Recap() {
           ))}
         </div>
       ) : recap === null || recap.isEmpty ? (
-        <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-white/10 py-24 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-3xl border border-white/[0.07] bg-white/[0.02] py-24 text-center">
           <BarChart3 className="size-10 text-muted-foreground/40" />
           <div>
             <p className="font-display text-lg font-semibold">Nothing to recap yet</p>
@@ -156,7 +156,7 @@ export default function Recap() {
           {/* Highlights */}
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {recap.highlights.map((h, i) => {
-              const Icon = HIGHLIGHT_ICONS[h.id] ?? Sparkles;
+              const Icon = HIGHLIGHT_ICONS[h.id] ?? Music2;
               return (
                 <motion.div
                   key={h.id}

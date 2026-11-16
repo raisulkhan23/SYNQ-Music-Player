@@ -19,6 +19,7 @@ import { copyText } from "@/lib/clipboard";
 import { toPlayableYoutube } from "@/lib/playable";
 import { downloadAvailability, downloadTargetId } from "@/lib/downloadAuth";
 import { requestAuthorizedDownload } from "@/lib/authorizedDownload";
+import { nativeDownloadsSupported } from "@/lib/nativeDownloads";
 import { useAction } from "convex/react";
 import { cleanArtistName, cleanTrackTitle, type YtItem } from "@/lib/youtube";
 import { usePlayerStore } from "@/store/player";
@@ -245,7 +246,11 @@ export function TrackActionsMenu({
    * rendered only for tracks from an authorized source, and the server
    * independently re-checks that flag on every request.
    */
-  const availability = downloadAvailability(item.id, item.jamendoId);
+  // The website/PWA never receives a Download affordance. The platform check
+  // is the runtime native bridge; it is not a viewport or user-agent guess.
+  const availability = nativeDownloadsSupported()
+    ? downloadAvailability(item.id, item.jamendoId)
+    : null;
 
   return (
     <>
@@ -318,7 +323,7 @@ export function TrackActionsMenu({
             that is always unavailable is noise, and its absence is the honest
             answer.
           */}
-          {availability.allowed ? (
+          {availability?.allowed ? (
             <DropdownMenuItem
               className="gap-2"
               onSelect={() => {

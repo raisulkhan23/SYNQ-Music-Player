@@ -56,7 +56,8 @@ export type DownloadRefusalCode =
   | "not-configured"
   | "rate-limited"
   | "network"
-  | "invalid-request";
+  | "invalid-request"
+  | "unsupported-platform";
 
 /** One refusal, with copy the UI can show verbatim. */
 export interface DownloadRefusal {
@@ -223,6 +224,8 @@ export const DOWNLOAD_MESSAGES: Record<DownloadRefusalCode, string> = {
   "rate-limited": "Too many download requests just now. Try again shortly.",
   network: "Couldn't reach the audio source. Check your connection and retry.",
   "invalid-request": "That track can't be downloaded.",
+  "unsupported-platform":
+    "Downloads are available only in the SYNQ Android and desktop apps.",
 };
 
 /** Build a refusal with the canonical message and the right retry hint. */

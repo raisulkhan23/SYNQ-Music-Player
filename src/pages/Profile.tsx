@@ -181,7 +181,7 @@ function StatCard({
   return (
     <Link
       to={to}
-      className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4 transition-all hover:border-[rgb(var(--tint)_/_0.35)] hover:bg-white/[0.05]"
+      className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4 transition-ui hover:border-[rgb(var(--tint)_/_0.35)] hover:bg-white/[0.05]"
     >
       <span className="flex size-8 items-center justify-center rounded-lg bg-[rgb(var(--tint)_/_0.14)] text-[rgb(var(--tint))]">
         {icon}

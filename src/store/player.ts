@@ -92,7 +92,7 @@ import {
   SOUNDCLOUD_RESOLVE_MARKER,
   type Playable,
 } from "@/lib/playable";
-import { localAudioUrl } from "@/lib/opfsSink";
+import { localArtworkUrl, localAudioUrl } from "@/lib/nativeDownloads";
 import { resolveViaPiped } from "@/lib/pipedResolve";
 import type { RecoCandidate } from "@/lib/recommend";
 import { DEFAULT_EXPLORATION } from "@/lib/recommend";
@@ -297,6 +297,19 @@ const localAudioUrls = new Map<string, string | null>();
  * same moment do not both stat the directory.
  */
 const localAudioPending = new Map<string, Promise<string | null>>();
+/** Tracks already explained as unavailable offline, so a resolver retry does
+ * not stack identical toasts. */
+const offlineWarned = new Set<string>();
+
+function noteOfflineUnavailable(trackId: string): void {
+  if (typeof navigator !== "undefined" && navigator.onLine) return;
+  if (offlineWarned.has(trackId)) return;
+  offlineWarned.add(trackId);
+  toast.error("This track isn't available offline", {
+    description:
+      "It hasn't been downloaded to this device, and streaming needs a connection.",
+  });
+}
 
 function primeLocalAudio(videoId: string): Promise<string | null> {
   const existing = localAudioPending.get(videoId);
@@ -304,6 +317,18 @@ function primeLocalAudio(videoId: string): Promise<string | null> {
   const pending = localAudioUrl(videoId)
     .then((url) => {
       localAudioUrls.set(videoId, url);
+      if (url) {
+        void localArtworkUrl(videoId).then((artwork) => {
+          if (
+            artwork &&
+            usePlayerStore.getState().current?.id === videoId
+          ) {
+            usePlayerStore.setState({
+              localCover: { trackId: videoId, url: artwork },
+            });
+          }
+        });
+      }
       return url;
     })
     .catch(() => {
@@ -334,6 +359,9 @@ export function noteTrackRemoved(videoId: string): void {
   localAudioUrls.set(videoId, null);
   ytResolveCache.delete(videoId);
   invalidateScResolve(videoId);
+  if (usePlayerStore.getState().localCover?.trackId === videoId) {
+    usePlayerStore.setState({ localCover: null });
+  }
 }
 
 /** Resolve once per track, then reuse the stream while EQ/effects are adjusted. */
@@ -359,6 +387,12 @@ const ytResolve = (videoId: string): Promise<string | null> => {
   // offline. So the lookup is awaited rather than assumed.
   return primeLocalAudio(videoId).then((url) => {
     if (url) return url;
+    // Not on disk and no connection: the honest outcome is an unavailable
+    // track, not a resolver loop or a silent failure.
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      noteOfflineUnavailable(videoId);
+      return null;
+    }
     // Genuinely not on disk: continue down the normal resolution path.
     const cached = getCachedStream(videoId);
     if (cached) return cached;
@@ -405,6 +439,10 @@ function scResolve(trackId: string): Promise<string | null> {
   if (cached) return cached;
   const pending = primeLocalAudio(trackId).then((onDisk) => {
     if (onDisk) return onDisk;
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      noteOfflineUnavailable(trackId);
+      return null;
+    }
     return (async (): Promise<string | null> => {
       try {
         scResolveClient =
@@ -586,6 +624,12 @@ interface PlayerStore {
   unshuffledQueue: Playable[] | null;
   unshuffledIndex: number;
   current: Playable | null;
+  /**
+   * Artwork stored beside a completed offline download, scoped to its track.
+   * It never replaces the track's library metadata; the remote cover remains
+   * the fallback when the local file is deleted.
+   */
+  localCover: { trackId: string; url: string } | null;
   isPlaying: boolean;
   isBuffering: boolean;
   currentTime: number;
@@ -2141,6 +2185,9 @@ function audioElementIsSource(t: Playable | null | undefined): boolean {
     t.audioUrl.includes("piped") ||
     t.audioUrl.includes("odycdn") ||
     t.audioUrl.includes("sndcdn") ||
+    // Native offline audio is owned by the deck and never resolved again.
+    t.audioUrl.startsWith("synq-media:") ||
+    t.audioUrl.includes("_capacitor_file_") ||
     // A non-YouTube direct URL (catalog tracks) also plays via the element.
     (!t.youtubeId && /^https?:\/\//.test(t.audioUrl))
   );
@@ -2620,9 +2667,10 @@ function prepareIncoming(track: Playable): Promise<HTMLAudioElement | null> {
       if (!track.youtubeId) return null;
       url = (await ytResolve(track.youtubeId)) ?? "";
     }
-    // `blob:` is the object URL for a downloaded copy on disk. It is as
-    // playable as any network URL, so the guard has to accept it.
-    if (!url || !/^(https?:|blob:)/.test(url)) return null;
+    // Native local audio is addressed by the app's restricted media scheme
+    // on desktop, or Capacitor's local-file URL on Android. Both are as
+    // playable as a network URL, so both are accepted here.
+    if (!url || !/^(https?:|blob:|synq-media:)/.test(url)) return null;
     // The listener may have skipped while this was resolving; do not load a
     // track the queue has moved on from.
     if (transition !== t && t) return null;
@@ -2712,10 +2760,13 @@ async function maybeRunCrossfade(remaining: number): Promise<void> {
 
   // Make sure the incoming deck really is holding this track before fading to
   // it. If the resolver was slow or failed, fall back rather than fade to
-  // silence. `blob:` is a downloaded copy's object URL — as valid a source as
-  // any http one.
+  // silence. Native offline audio is a valid source just like an HTTP URL.
   const incomingSrc = incoming.currentSrc || "";
-  if (!incomingSrc.startsWith("http") && !incomingSrc.startsWith("blob:")) {
+  if (
+    !incomingSrc.startsWith("http") &&
+    !incomingSrc.startsWith("blob:") &&
+    !incomingSrc.startsWith("synq-media:")
+  ) {
     const prepared = await prepareIncoming(t.track);
     if (!prepared || !transition || transition !== t) return;
     if (!canCrossfadeNow()) {
@@ -3735,6 +3786,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     // either. Every branch must observe the same committed state.
     set({
       current: track,
+      localCover: null,
       currentTime: resumeAt,
       duration: track.duration,
       bufferedEnd: 0,
@@ -4946,6 +4998,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       // new one plays.
       set({
         current: track,
+        localCover: null,
         currentTime: resumeAt,
         duration: track.duration,
         bufferedEnd: 0,
@@ -5196,6 +5249,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     queue: [],
     queueIndex: -1,
     current: null,
+    localCover: null,
     isPlaying: false,
     isBuffering: false,
     currentTime: 0,
@@ -5777,6 +5831,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
         queue: [],
         queueIndex: -1,
         current: null,
+        localCover: null,
         isPlaying: false,
         isBuffering: false,
         currentTime: 0,

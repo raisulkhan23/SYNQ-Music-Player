@@ -5,7 +5,7 @@ import {
   ListMusic,
   LogOut,
   Plus,
-  Sparkles,
+  Users,
   UserRound,
 } from "lucide-react";
 
@@ -80,7 +80,7 @@ export function SharedWithMe() {
               key={item.playlistId}
               className="flex items-center gap-2 rounded-full border border-[rgb(var(--tint)_/_0.35)] bg-[rgb(var(--tint)_/_0.1)] py-1.5 pr-1.5 pl-3"
             >
-              <Sparkles className="size-3.5 shrink-0 text-[rgb(var(--tint))]" />
+              <Users className="size-3.5 shrink-0 text-[rgb(var(--tint))]" />
               <Link
                 to={`/playlist/${item.playlistId}`}
                 className="max-w-52 truncate text-xs font-semibold"

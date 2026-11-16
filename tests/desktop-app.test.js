@@ -60,21 +60,35 @@ describe("the shell is locked down", () => {
   });
 
   test("the bridge uses explicit named channels, never an arbitrary one", () => {
-    // Each channel string appears exactly once: the preload sends on
-    // `desktop:begin-oauth` / `desktop:minimize-to-tray` and listens on
-    // `synq:auth-result` / `tray:action`, and the main process matches those
-    // names. No wildcard or renderer-approved channel name exists.
-    expect((preload.match(/desktop:begin-oauth/g) ?? []).length).toBe(1);
-    expect((preload.match(/desktop:minimize-to-tray/g) ?? []).length).toBe(1);
-    expect((preload.match(/synq:auth-result/g) ?? []).length).toBe(1);
-    expect((preload.match(/tray:action/g) ?? []).length).toBe(1);
-    // Exactly two senders and two listeners — nothing else is wired.
-    expect((preload.match(/ipcRenderer\.on\(/g) ?? []).length).toBe(2);
-    expect((preload.match(/ipcRenderer\.send\(/g) ?? []).length).toBe(2);
+    // Every channel is a fixed literal and appears once in the preload. OAuth
+    // has one sender and one listener, tray has one of each, and downloads
+    // have seven named invokes plus one change listener. No wildcard or
+    // renderer-approved channel name exists.
+    for (const channel of [
+      "desktop:begin-oauth",
+      "desktop:minimize-to-tray",
+      "synq:auth-result",
+      "tray:action",
+      "desktop:downloads:list",
+      "desktop:downloads:start",
+      "desktop:downloads:cancel",
+      "desktop:downloads:retry",
+      "desktop:downloads:remove",
+      "desktop:downloads:playback",
+      "desktop:downloads:artwork",
+      "desktop:downloads:storage",
+      "downloads:changed",
+    ]) {
+      expect((preload.match(new RegExp(channel, "g")) ?? []).length).toBe(1);
+    }
+    // No generic `ipcRenderer.on(<variable>)` or `invoke(channel, ...)` path:
+    // every call site must name one of the literals above.
+    expect(preload).not.toMatch(/ipcRenderer\.(on|send|invoke)\(\s*[a-zA-Z_$]/);
     // Listener fan-out is isolated: one throwing listener cannot break the
     // other channel or remove the surface.
     expect(preload).toMatch(/for \(const listener of authResultListeners\)/);
     expect(preload).toMatch(/for \(const listener of trayActionListeners\)/);
+    expect(preload).toMatch(/for \(const listener of downloadListeners\)/);
   });
 
   test("external links leave the app instead of replacing it", () => {

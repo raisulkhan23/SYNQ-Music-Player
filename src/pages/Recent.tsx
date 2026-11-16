@@ -192,7 +192,7 @@ export default function Recent() {
             type="button"
             onClick={() => playAll(false)}
             disabled={items.length === 0}
-            className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-2.5 text-sm font-semibold transition-all hover:border-[rgb(var(--tint)_/_0.35)] hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-2.5 text-sm font-semibold transition-ui hover:border-[rgb(var(--tint)_/_0.35)] hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Play className="size-4 text-[rgb(var(--tint))]" />
             Play all
@@ -201,7 +201,7 @@ export default function Recent() {
             type="button"
             onClick={() => playAll(true)}
             disabled={items.length === 0}
-            className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-2.5 text-sm font-semibold transition-all hover:border-[rgb(var(--tint)_/_0.35)] hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-2.5 text-sm font-semibold transition-ui hover:border-[rgb(var(--tint)_/_0.35)] hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Shuffle className="size-4 text-[rgb(var(--tint))]" />
             Shuffle all
@@ -209,7 +209,7 @@ export default function Recent() {
           <button
             type="button"
             onClick={feelingLucky}
-            className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-2.5 text-sm font-semibold transition-all hover:border-[rgb(var(--tint)_/_0.35)] hover:bg-white/[0.05]"
+            className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-2.5 text-sm font-semibold transition-ui hover:border-[rgb(var(--tint)_/_0.35)] hover:bg-white/[0.05]"
           >
             <Dices className="size-4 text-[rgb(var(--tint))]" />
             I&apos;m feeling lucky

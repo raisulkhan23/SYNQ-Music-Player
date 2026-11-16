@@ -23,12 +23,14 @@ import {
   CopyMinus,
   Eraser,
   GripVertical,
+  Layers3,
   Link2,
   ListMusic,
   Plus,
   Save,
   Shuffle,
-  Sparkles,
+  Dices,
+  Infinity,
   Trash2,
   X,
 } from "lucide-react";
@@ -181,6 +183,11 @@ export function QueuePanel() {
   const open = usePlayerStore((s) => s.queueOpen);
   const setOpen = usePlayerStore((s) => s.setQueueOpen);
   const current = usePlayerStore((s) => s.current);
+  const localCover = usePlayerStore((s) => s.localCover);
+  const currentCover =
+    localCover && current && localCover.trackId === current.id
+      ? localCover.url
+      : current?.coverUrl;
   const queue = usePlayerStore((s) => s.queue);
   const queueIndex = usePlayerStore((s) => s.queueIndex);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -326,7 +333,7 @@ export function QueuePanel() {
                   : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
               )}
             >
-              <Sparkles className="size-3.5" />
+              <Dices className="size-3.5" />
               Smart
             </button>
             {/* plain shuffle */}
@@ -371,7 +378,7 @@ export function QueuePanel() {
                   : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
               )}
             >
-              <Sparkles className="size-3.5" />
+              <Infinity className="size-3.5" />
               Auto
             </button>
             {/* save queue as playlist */}
@@ -474,7 +481,7 @@ export function QueuePanel() {
               </p>
               <div className="flex items-center gap-3">
                 <img
-                  src={current.coverUrl}
+                  src={currentCover}
                   alt=""
                   className="size-11 shrink-0 rounded-md object-cover"
                 />
@@ -562,7 +569,7 @@ export function QueuePanel() {
           {(suggestions.length > 0 || current) && (
             <section>
               <p className="flex items-center gap-1.5 px-1 pb-2 text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
-                <Sparkles className="size-3" />
+                <Layers3 className="size-3" />
                 Suggested for the queue
               </p>
               <div className="space-y-1">
@@ -605,7 +612,7 @@ export function QueuePanel() {
                   onClick={extendQueue}
                   className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-sm font-semibold transition-colors hover:border-[rgb(var(--tint)_/_0.35)] hover:bg-white/[0.05]"
                 >
-                  <Sparkles className="size-4 text-[rgb(var(--tint))]" />
+                  <ListMusic className="size-4 text-[rgb(var(--tint))]" />
                   Add similar songs automatically
                 </button>
               </div>

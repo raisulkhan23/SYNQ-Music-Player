@@ -64,15 +64,19 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   }
 
   return (
+    /* Two orbs — one brand-tinted, one violet — used to float behind this
+       card. That pairing is the most recognisable "AI product" backdrop there
+       is, and it added nothing: the sign-in card is the only thing on the
+       page. One low-contrast wash keeps the top edge from reading flat. */
     <div className="relative flex min-h-dvh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)] text-foreground">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px]">
-        <div className="absolute left-1/2 top-[-200px] h-[480px] w-[760px] -translate-x-1/2 rounded-full bg-brand/12 blur-3xl" />
-        <div className="absolute right-[-120px] bottom-[-60px] h-[320px] w-[320px] rounded-full bg-violet-500/10 blur-3xl" />
-      </div>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[380px] bg-[radial-gradient(120%_100%_at_50%_0%,color-mix(in_oklab,var(--brand)_9%,transparent),transparent_70%)]"
+      />
 
-      <div className="relative flex flex-1 items-center justify-center">
-        <div className="flex h-full flex-col items-center justify-center">
-          <Card className="min-w-[350px] border-white/10 bg-white/[0.04] pb-0 shadow-[0_30px_80px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+      <div className="relative flex flex-1 items-center justify-center px-4">
+        <div className="flex w-full max-w-sm flex-col items-center justify-center">
+          <Card className="w-full border-white/[0.08] bg-card pb-0 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.8)]">
             <CardHeader className="text-center">
               <div className="mb-4 mt-4 flex justify-center">
                 <Logo to="/" className="text-lg" />
@@ -94,7 +98,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 onSuccess={() => navigate(redirect, { replace: true })}
               />
             </CardContent>
-            <div className="border-t border-white/[0.07] bg-white/[0.02] px-6 py-4 text-center text-xs text-muted-foreground rounded-b-lg">
+            <div className="rounded-b-xl border-t border-white/[0.07] bg-white/[0.02] px-6 py-4 text-center text-xs text-muted-foreground">
               Secured by{" "}
               <a
                 href="https://freebuff.com"

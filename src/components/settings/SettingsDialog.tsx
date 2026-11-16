@@ -87,7 +87,7 @@ import {
   Play,
   SlidersHorizontal,
   SkipForward,
-  Sparkles,
+  Brush,
   RotateCcw,
   Trash2,
   UserRound,
@@ -163,7 +163,7 @@ const SETTINGS_SECTIONS = [
   ["Playback", "settings-playback", Gauge],
   ["Audio", "settings-audio", SlidersHorizontal],
   ["Appearance", "settings-appearance", Palette],
-  ["Personalize", "settings-personalization", Sparkles],
+  ["Personalize", "settings-personalization", Brush],
   ["Profile", "settings-profile", UserRound],
   ["Shortcuts", "settings-shortcuts", Keyboard],
   ["App", "settings-app", Download],
@@ -1050,7 +1050,7 @@ export function SettingsDialog({
                   aria-label={
                     isPlaying ? "Pause current track" : "Play current track"
                   }
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black transition-transform hover:scale-105 active:scale-95"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black transition-ui active:scale-95"
                 >
                   {isPlaying ? (
                     <Pause className="size-4 fill-current" />
@@ -1737,7 +1737,7 @@ export function SettingsDialog({
                   Tune the light and depth of this settings surface.
                 </p>
               </div>
-              <Sparkles className="size-4 text-[rgb(var(--tint))]" />
+              <Brush className="size-4 text-[rgb(var(--tint))]" />
             </div>
             <div className="flex flex-col gap-2">
               <ToggleRow
@@ -1885,7 +1885,7 @@ export function SettingsDialog({
                     );
                   }}
                   className={cn(
-                    "flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition-all",
+                    "flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition-ui",
                     accentTheme === id
                       ? "border-white/60 bg-white/[0.1] text-foreground"
                       : "border-white/10 text-muted-foreground hover:border-white/30",
@@ -2206,7 +2206,7 @@ export function SettingsDialog({
                           type="button"
                           onClick={() => activateWallpaperEntry(entry)}
                           className={cn(
-                            "relative aspect-square w-full overflow-hidden rounded-lg border bg-black/20 transition-all hover:scale-[1.03]",
+                            "relative aspect-square w-full overflow-hidden rounded-lg border bg-black/20 transition-ui hover:scale-[1.03]",
                             selected
                               ? "border-[rgb(var(--tint))] ring-2 ring-[rgb(var(--tint)_/_0.35]"
                               : "border-white/10 hover:border-white/30",
@@ -2464,7 +2464,7 @@ export function SettingsDialog({
                       );
                     }}
                     className={cn(
-                      "rounded-lg border px-2.5 py-2 text-left transition-all hover:-translate-y-0.5",
+                      "rounded-lg border px-2.5 py-2 text-left transition-ui hover:-translate-y-0.5",
                       selected
                         ? "border-[rgb(var(--tint))] bg-[rgb(var(--tint)_/_0.1)] ring-2 ring-[rgb(var(--tint)_/_0.18)]"
                         : "border-white/10 hover:border-white/25",
@@ -2534,7 +2534,7 @@ export function SettingsDialog({
           className="scroll-mt-20 flex flex-col gap-2"
         >
           <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
-            <Sparkles className="size-3.5" />
+            <Brush className="size-3.5" />
             Personalization
           </p>
           <ToggleRow
@@ -2569,7 +2569,7 @@ export function SettingsDialog({
             <button
               type="button"
               onClick={() => avatarInputRef.current?.click()}
-              className="group relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[rgb(var(--tint))] text-lg font-bold text-black ring-2 ring-white/10 transition-transform hover:scale-105"
+              className="group relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[rgb(var(--tint))] text-lg font-bold text-black ring-2 ring-white/10 transition-colors hover:ring-white/25"
               aria-label="Change profile picture"
             >
               {user?.image ? (
@@ -2872,7 +2872,7 @@ function InstallAppRow() {
           onClick={() => {
             void install();
           }}
-          className="shrink-0 rounded-full bg-[rgb(var(--tint))] px-3 py-1.5 text-xs font-semibold text-black transition-transform hover:scale-105"
+          className="shrink-0 rounded-full bg-[rgb(var(--tint))] px-3 py-1.5 text-xs font-semibold text-black transition-ui active:scale-[0.98]"
         >
           Install
         </button>
@@ -2991,10 +2991,13 @@ function ToggleRow({
           on ? "bg-[rgb(var(--tint))]" : "bg-white/15",
         )}
       >
+        {/* The knob slides with `translate`, not by swapping `left`. `left` is
+            a layout property, so the old version relaid out the row on every
+            frame of the 16px travel; this one is compositor-only. */}
         <span
           className={cn(
-            "absolute top-0.5 size-4 rounded-full bg-white shadow transition-all",
-            on ? "left-[18px]" : "left-0.5",
+            "absolute top-0.5 left-0.5 size-4 rounded-full bg-white shadow transition-ui",
+            on ? "translate-x-4" : "translate-x-0",
           )}
         />
       </span>

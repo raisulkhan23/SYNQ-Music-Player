@@ -12,16 +12,15 @@ import {
   downloadAvailability,
   authorizedProviderId,
 } from "../src/lib/downloadAuth.ts";
-import { buildId3Tag } from "../src/lib/id3.ts";
+import { officialDownloadEndpoint } from "../src/convex/soundcloud.ts";
 
 /**
  * SoundCloud as a first-class playable source, ported from the melo player.
  *
  * The player-side branch and the Convex resolver cannot run in this suite
  * (no network, no Convex runtime), so these tests pin the CONTRACTS that keep
- * it honest: the id namespacing that routes playback and downloads, the
- * refusal rules the server must enforce, and the byte-level ID3 tag the
- * download pipeline prepends.
+ * it honest: the id namespacing that routes playback and downloads and the
+ * refusal rules the server must enforce.
  */
 
 describe("soundcloud playables", () => {
@@ -102,12 +101,22 @@ describe("the server-side honesty rules (source contract)", () => {
   });
 
   test("the download grant is the artist's own flag, re-verified server-side", () => {
-    // SoundCloud's /download endpoint only honours artist-enabled tracks; the
-    // check must happen BEFORE the URL is fetched, same rule as Jamendo's
+    // Both the artist's `downloadable` flag and the API-issued download_url
+    // must be present before any file request, same rule as Jamendo's
     // audiodownload_allowed.
     expect(downloads).toMatch(/downloadable !== true/);
+    expect(downloads).toMatch(/record\.downloadUrl/);
     expect(downloads).toMatch(/fetchAuthorizedSoundcloudRelease/);
     expect(downloads).toMatch(/soundcloudProviderId\(trackId\)/);
+  });
+
+  test("the official download resource is API-issued, not reconstructed", () => {
+    expect(server).toContain("raw.download_url");
+    expect(server).toContain("officialDownloadEndpoint");
+    expect(server).toContain("grant_type=client_credentials");
+    expect(server).toContain("Authorization: `OAuth ${token}`");
+    expect(server).not.toContain("hasDownloadsLeft");
+    expect(server).not.toContain("downloads_remaining");
   });
 
   test("an un-namespaced id is refused before any network call", () => {
@@ -120,71 +129,25 @@ describe("the server-side honesty rules (source contract)", () => {
   });
 });
 
-describe("the ID3v2.3 tag writer", () => {
-  test("an empty input builds nothing — no dead bytes", () => {
-    expect(buildId3Tag({})).toBeNull();
-    expect(buildId3Tag({ title: "   ", artist: "" })).toBeNull();
+describe("official SoundCloud download endpoint", () => {
+  test("accepts only the official API's track download resource", () => {
+    expect(
+      officialDownloadEndpoint(
+        "https://api.soundcloud.com/tracks/1245132/download?client_id=legacy",
+      ),
+    ).toBe("https://api.soundcloud.com/tracks/1245132/download");
+    expect(
+      officialDownloadEndpoint("api.soundcloud.com/tracks/1245132/download"),
+    ).toBe("https://api.soundcloud.com/tracks/1245132/download");
   });
 
-  test("the header is ID3/v2.3 with a syncsafe size", () => {
-    const tag = buildId3Tag({ title: "Nightdrive", artist: "Analog Ghost" });
-    expect(tag).not.toBeNull();
-    const t = tag;
-    expect(t[0]).toBe(0x49); // I
-    expect(t[1]).toBe(0x44); // D
-    expect(t[2]).toBe(0x33); // 3
-    expect(t[3]).toBe(0x03); // v2.3
-    expect(t[5]).toBe(0x00); // no flags
-    // Syncsafe: every size byte's high bit must be clear.
-    for (const b of [t[6], t[7], t[8], t[9]]) expect(b & 0x80).toBe(0);
-  });
-
-  test("declared size equals the frame bytes that follow the header", () => {
-    const tag = buildId3Tag({
-      title: "Nightdrive",
-      artist: "Analog Ghost",
-      album: "Signals",
-      durationMs: 213_000,
-    });
-    const declared =
-      ((tag[6] & 0x7f) << 21) | ((tag[7] & 0x7f) << 14) | ((tag[8] & 0x7f) << 7) | (tag[9] & 0x7f);
-    expect(declared).toBe(tag.length - 10);
-  });
-
-  test("frames carry the expected ids in order", () => {
-    const tag = buildId3Tag({ title: "T", artist: "A", album: "L" });
-    const text = new TextDecoder("latin1").decode(tag);
-    expect(text).toContain("TIT2");
-    expect(text).toContain("TPE1");
-    expect(text).toContain("TALB");
-  });
-
-  test("artwork becomes an APIC frame only with a valid image mime", () => {
-    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
-    const withJpeg = buildId3Tag({
-      title: "T",
-      artwork: bytes,
-      artworkMime: "image/jpeg",
-    });
-    expect(new TextDecoder("latin1").decode(withJpeg)).toContain("APIC");
-    // A wrong mime must be dropped, not embedded as a corrupt picture.
-    const withBadMime = buildId3Tag({
-      title: "T",
-      artwork: bytes,
-      artworkMime: "image/webp",
-    });
-    expect(new TextDecoder("latin1").decode(withBadMime)).not.toContain("APIC");
-  });
-
-  test("the licence URL travels as a TXXX frame", () => {
-    const tag = buildId3Tag({
-      title: "T",
-      licenseUrl: "https://soundcloud.com/track",
-    });
-    // Text frames are UTF-16 with a BOM; decoding as latin1 interleaves
-    // zero bytes, so the readable text is checked with them stripped.
-    const flat = new TextDecoder("latin1").decode(tag).replace(/\u0000/g, "");
-    expect(flat).toContain("TXXX");
-    expect(flat).toContain("soundcloud.com");
+  test("rejects lookalike hosts, schemes, paths and missing grants", () => {
+    expect(
+      officialDownloadEndpoint("https://api.soundcloud.com.evil.test/tracks/1/download"),
+    ).toBeNull();
+    expect(officialDownloadEndpoint("http://api.soundcloud.com/tracks/1/download")).toBeNull();
+    expect(officialDownloadEndpoint("https://api.soundcloud.com/tracks/1/stream")).toBeNull();
+    expect(officialDownloadEndpoint("https://api.soundcloud.com/me")).toBeNull();
+    expect(officialDownloadEndpoint(null)).toBeNull();
   });
 });

@@ -27,6 +27,7 @@ import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { useAccountActions } from "@/hooks/use-account-actions";
 import { useAuth } from "@/hooks/use-auth";
+import { nativeDownloadsSupported } from "@/lib/nativeDownloads";
 
 /**
  * Everything the desktop sidebar links to that the 4-item phone bottom bar
@@ -135,7 +136,10 @@ export function MobileMoreMenu() {
           </SheetTitle>
         </SheetHeader>
         <nav className="flex flex-col gap-1 overflow-y-auto px-3 py-3">
-          {EXTRA_DESTINATIONS.map(({ to, label, detail, icon: Icon }) => (
+          {EXTRA_DESTINATIONS.filter(
+            (destination) =>
+              destination.to !== "/downloads" || nativeDownloadsSupported(),
+          ).map(({ to, label, detail, icon: Icon }) => (
             <button
               key={to}
               type="button"

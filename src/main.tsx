@@ -215,7 +215,7 @@ function RouteErrorCard({
   onRetry: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-4 rounded-3xl border border-dashed border-white/10 px-6 py-20 text-center">
+    <div className="flex flex-col items-center gap-4 rounded-3xl border border-white/[0.07] bg-white/[0.02] px-6 py-20 text-center">
       <p className="font-display text-lg font-semibold">
         This page didn&apos;t load
       </p>

@@ -66,9 +66,13 @@ export function SeekBar({ className }: { className?: string }) {
         if (!dragging) setHoverPos(null);
       }}
     >
+      {/* The rail keeps a constant 6px box and thickens by scaling down to
+          4px at rest. Animating `height` from 4px to 6px relaid out the whole
+          rail — and anything positioned against it — on every hover frame;
+          `scale-y` is compositor-only. */}
       <div
         ref={trackRef}
-        className="relative h-[4px] w-full rounded-full bg-white/10 transition-all duration-150 group-hover:h-[6px]"
+        className="relative h-[6px] w-full origin-center scale-y-[0.667] rounded-full bg-white/10 transition-ui duration-150 group-hover:scale-y-100 motion-reduce:transition-none"
       >
         <div
           className="absolute inset-y-0 left-0 rounded-full bg-white/15"

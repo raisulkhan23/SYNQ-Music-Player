@@ -415,12 +415,15 @@ export function canHandOffGapless(
   if (req.preparedFor !== req.trackId) {
     return { ready: false, because: "nothing preloaded" };
   }
-  // `blob:` is the object URL of a downloaded copy in OPFS — as playable as
-  // any network URL, and the ONLY form a downloaded track's src takes.
-  // Rejecting it meant downloaded tracks could never gapless-hand-off, which
-  // is the exact situation a listener's offline library lives in.
+  // A native offline track is served from app-private storage on a scheme
+  // that belongs to the installed app. Rejecting it made a listener's
+  // downloaded library unable to gapless-hand-off.
   const src = req.currentSrc ?? "";
-  if (!src.startsWith("http") && !src.startsWith("blob:")) {
+  if (
+    !src.startsWith("http") &&
+    !src.startsWith("blob:") &&
+    !src.startsWith("synq-media:")
+  ) {
     return { ready: false, because: "no resolved src" };
   }
   if (!(req.readyState >= GAPLESS_MIN_READY_STATE)) {

@@ -601,7 +601,7 @@ export default function PlaylistDetail() {
               type="button"
               onClick={() => void playAll()}
               disabled={resolvingId !== null}
-              className="flex items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-all hover:scale-[1.03] active:scale-95 disabled:opacity-60"
+              className="flex items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-ui hover:scale-[1.03] active:scale-95 disabled:opacity-60"
             >
               <Play className="size-4 fill-current" />
               {resolvingId === "__all__" ? "Loading…" : "Play all"}
@@ -732,7 +732,7 @@ export default function PlaylistDetail() {
           )}
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-white/10 py-16 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-3xl border border-white/[0.07] bg-white/[0.02] py-16 text-center">
           <ListMusic className="size-10 text-muted-foreground/40" />
           <p className="max-w-sm text-sm text-muted-foreground">
             This playlist is empty. Add songs from search results.

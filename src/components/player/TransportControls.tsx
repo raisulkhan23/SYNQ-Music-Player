@@ -15,7 +15,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
-  Sparkles,
+  Zap,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -103,7 +103,7 @@ export function TransportControls({
               identical and there was no way to know which mode was running. */}
           {shuffleState === "smart" && (
             <span className="absolute -top-0.5 -right-0.5 flex size-3 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black ring-2 ring-[rgb(var(--background))]">
-              <Sparkles className="size-2" strokeWidth={2.5} />
+              <Zap className="size-2 fill-current" strokeWidth={2.5} />
               <span className="sr-only">Smart shuffle on</span>
             </span>
           )}
@@ -122,7 +122,7 @@ export function TransportControls({
         onClick={togglePlay}
         disabled={!current}
         className={cn(
-          "touch-manipulation flex size-10 shrink-0 items-center justify-center self-center rounded-full bg-[rgb(var(--tint))] text-black shadow-[0_5px_22px_rgb(var(--tint)_/_0.2)] ring-1 ring-white/20 transition-[transform,background-color,opacity] duration-200 hover:scale-105 hover:brightness-105 active:scale-90 disabled:pointer-events-none disabled:opacity-35",
+          "touch-manipulation flex size-10 shrink-0 items-center justify-center self-center rounded-full bg-[rgb(var(--tint))] text-black shadow-[0_5px_18px_-6px_rgb(var(--tint)_/_0.45)] ring-1 ring-white/20 transition-ui hover:brightness-105 active:scale-90 disabled:pointer-events-none disabled:opacity-35",
           !compact && "col-start-3",
         )}
       >

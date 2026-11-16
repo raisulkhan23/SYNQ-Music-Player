@@ -84,7 +84,7 @@ export default function Stats() {
       </header>
 
       {isEmpty ? (
-        <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-white/10 py-16 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-3xl border border-white/[0.07] bg-white/[0.02] py-16 text-center">
           <BarChart3 className="size-10 text-muted-foreground/40" />
           <p className="max-w-sm text-sm text-muted-foreground">
             Play some music and your stats will appear here — top tracks,

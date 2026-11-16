@@ -29,6 +29,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const authResultListeners = new Set();
 const trayActionListeners = new Set();
+const downloadListeners = new Set();
 
 contextBridge.exposeInMainWorld(
   "synqDesktop",
@@ -38,6 +39,31 @@ contextBridge.exposeInMainWorld(
     // The shell serves `app://synq`; the renderer uses it to build share links
     // that are meaningful outside the app.
     shell: "electron",
+
+    // --- Native offline downloads -----------------------------------------
+    // `isSupported` is a runtime capability fact, not a user-agent guess. Each
+    // method is a named IPC call; the renderer never receives fs or a raw ipc
+    // send surface. Main re-validates every argument.
+    downloads: Object.freeze({
+      isSupported: true,
+      list: () => ipcRenderer.invoke("desktop:downloads:list"),
+      start: (request) => ipcRenderer.invoke("desktop:downloads:start", request),
+      cancel: (id) => ipcRenderer.invoke("desktop:downloads:cancel", id),
+      retry: (id) => ipcRenderer.invoke("desktop:downloads:retry", id),
+      remove: (id) => ipcRenderer.invoke("desktop:downloads:remove", id),
+      getPlaybackUrl: (trackId) =>
+        ipcRenderer.invoke("desktop:downloads:playback", trackId),
+      getArtworkUrl: (trackId) =>
+        ipcRenderer.invoke("desktop:downloads:artwork", trackId),
+      getStorage: () => ipcRenderer.invoke("desktop:downloads:storage"),
+      onChanged: (listener) => {
+        if (typeof listener !== "function") return () => {};
+        downloadListeners.add(listener);
+        return () => {
+          downloadListeners.delete(listener);
+        };
+      },
+    }),
 
     // --- Desktop OAuth -----------------------------------------------------
     beginOAuth: (clientId, params) => {
@@ -92,6 +118,16 @@ ipcRenderer.on("tray:action", (_event, action) => {
       listener(action);
     } catch (err) {
       console.error("[SYNQ] tray action handler threw", err);
+    }
+  }
+});
+
+ipcRenderer.on("downloads:changed", () => {
+  for (const listener of downloadListeners) {
+    try {
+      listener();
+    } catch (err) {
+      console.error("[SYNQ] download listener threw", err);
     }
   }
 });
