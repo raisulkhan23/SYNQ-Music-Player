@@ -25,6 +25,7 @@ import { usePlayerStore } from "@/store/player";
 import { applyAnimationLevel, readAnimationLevel } from "@/lib/motion";
 import { installImageFallback } from "@/lib/imageFallback";
 import { isNativeShell } from "@/lib/nativeShell";
+import { isDesktopShell } from "@/lib/pwa";
 import { isFileProtocol } from "@/lib/publicAsset";
 import "./index.css";
 
@@ -152,6 +153,7 @@ function RouteLoading() {
 function RootRoute() {
   const launchedAsApp =
     isNativeShell() ||
+    isDesktopShell() ||
     isFileProtocol() ||
     new URLSearchParams(window.location.search).get("source") === "pwa";
   if (launchedAsApp) return <Navigate to="/home" replace />;

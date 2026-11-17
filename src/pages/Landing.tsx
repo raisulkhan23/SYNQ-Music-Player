@@ -466,7 +466,7 @@ export default function Landing() {
       </div>
 
       <header className="relative z-20 mx-auto flex h-20 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Logo to="/" />
+        <Logo />
         <nav className="hidden items-center gap-7 text-sm font-medium text-muted-foreground md:flex">
           <a
             href="#whats-new"
@@ -548,12 +548,6 @@ export default function Landing() {
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
             </Link>
             <InstallAppButton />
-            <a
-              href="#downloads"
-              className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
-            >
-              Download app
-            </a>
             <a
               href="#experience"
               className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
@@ -836,12 +830,6 @@ export default function Landing() {
                 <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
               </Link>
               <InstallAppButton />
-            <a
-              href="#downloads"
-              className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
-            >
-              Download app
-            </a>
               <a
                 href="#features"
                 className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"

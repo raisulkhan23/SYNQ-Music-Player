@@ -229,6 +229,9 @@ function createWindow() {
     // Matches `--background` so the first paint is not a white flash.
     backgroundColor: "#0A0B10",
     title: "SYNQ",
+    // Use the shipped mark for the window/taskbar icon even when the
+    // executable's embedded resources could not be rewritten in this build.
+    icon: path.join(DIST, "logo.png"),
     autoHideMenuBar: true,
     // The renderer draws its own chrome; the window keeps the native frame and
     // system controls so maximise/restore/snap behave like every other Windows

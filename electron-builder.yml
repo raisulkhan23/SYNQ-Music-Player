@@ -20,6 +20,13 @@ files:
 
 asar: true
 
+# The tray loads its icon from `process.resourcesPath/logo.png`; without this
+# copy the packaged app has no logo in the notification area and silently
+# disables close-to-tray. Keep using the same shipped mark as the web app.
+extraResources:
+  - from: public/logo.png
+    to: logo.png
+
 win:
   target:
     - target: nsis

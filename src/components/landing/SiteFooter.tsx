@@ -125,7 +125,7 @@ export function SiteFooter() {
         <div className="grid gap-12 lg:grid-cols-[1.15fr_1.85fr] lg:gap-10">
           {/* brand block */}
           <div className="max-w-sm">
-            <Logo to="/" />
+            <Logo />
             <p className="mt-4 text-sm leading-6 text-foreground/70">
               A home for the songs you actually want to hear — no ads, no
               clutter, and a queue that moves like you do.
