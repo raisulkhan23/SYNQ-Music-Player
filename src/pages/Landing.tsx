@@ -892,8 +892,8 @@ export default function Landing() {
             <div>
               <h3 className="font-display text-lg font-semibold">Android</h3>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                APK, ~5 MB. Debug-signed today; sideload via “Install unknown
-                apps.” A signed build lands with the next release.
+                APK, ~5.5 MB. Signed release build; sideload via “Install
+                unknown apps.”
               </p>
             </div>
             <span className="mt-auto flex items-center gap-1 text-sm font-semibold text-brand">

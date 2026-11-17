@@ -16,6 +16,8 @@ directories:
 files:
   - electron/**
   - dist/**
+  # Web downloads are served from the site, not bundled into the desktop app.
+  - "!dist/installers/**"
   - package.json
 
 asar: true
