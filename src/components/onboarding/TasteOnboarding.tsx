@@ -102,7 +102,10 @@ export function TasteOnboarding() {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[rgb(18_18_22)] p-6 sm:rounded-3xl">
+      {/* The same phone inset the smart-playlist sheet uses: on a bottom sheet
+          the last row is "Start listening", and without the inset it lands
+          under Android's gesture/button navigation bar. */}
+      <div className="max-h-[calc(92dvh_-_env(safe-area-inset-bottom))] w-full max-w-xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[rgb(18_18_22)] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:max-h-[92vh] sm:rounded-3xl sm:pb-6">
         <div className="flex items-center gap-2">
           <Disc3 className="size-5 text-[rgb(var(--tint))]" />
           <h2 className="font-display text-xl font-bold">What are you into?</h2>

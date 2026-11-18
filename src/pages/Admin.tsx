@@ -1642,10 +1642,13 @@ export default function Admin() {
         </TabsContent>
       </Tabs>
 
-      {/* GitHub profile popover */}
+      {/* GitHub profile popover. `z-[60]`, not `z-50`: this overlay is rendered
+          inside the page rather than portalled to the body, so at `z-50` it tied
+          with the phone bottom bar and lost on document order — the nav painted
+          straight over it. */}
       {gh && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
           onClick={() => setGh(null)}
         >
           <div

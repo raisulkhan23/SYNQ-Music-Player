@@ -72,8 +72,15 @@ describe("RC1 — a released deck must stay usable (it was permanently dead)", (
 
   test("releaseDeck stops and empties the deck", () => {
     expect(release).toMatch(/deck\.el\.pause\(\)/);
-    expect(release).toMatch(/deck\.el\.removeAttribute\("src"\)/);
-    expect(release).toMatch(/deck\.el\.load\(\)/);
+    // Emptying the source now goes through the shared release helper, because
+    // an HLS deck also owns a MediaSource and a loader that must be destroyed
+    // first. Assert the call AND the helper's actual teardown, not just a
+    // substring that could drift away from the behaviour.
+    expect(release).toMatch(/releaseAudioSource\(deck\.el\)/);
+    const hlsCode = stripComments(readSource("src/lib/hlsAudio.ts"));
+    expect(hlsCode).toMatch(/audio\.removeAttribute\("src"\)/);
+    expect(hlsCode).toMatch(/audio\.load\(\)/);
+    expect(hlsCode).toMatch(/hls\.destroy\(\)/);
   });
 
   test("releaseDeck never disconnects or forgets the source/gain nodes", () => {

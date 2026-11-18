@@ -1,15 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { readSource } from "./helpers/tailwind-css.js";
+import { compileClasses, readSource } from "./helpers/tailwind-css.js";
 
 const shell = readSource("src/components/layout/AppShell.tsx");
 const sidebar = readSource("src/components/layout/Sidebar.tsx");
 const more = readSource("src/components/layout/MobileMoreMenu.tsx");
 const playlists = readSource("src/pages/Playlists.tsx");
+const smartPlaylists = readSource("src/components/playlists/SmartPlaylists.tsx");
+const taste = readSource("src/components/onboarding/TasteOnboarding.tsx");
+const admin = readSource("src/pages/Admin.tsx");
 const social = readSource("src/pages/Social.tsx");
 const css = readSource("src/index.css");
 
 const flatMore = more.replace(/\s+/g, " ");
 const flatPlaylists = playlists.replace(/\s+/g, " ");
+const flatSmart = smartPlaylists.replace(/\s+/g, " ");
 
 // Every destination the `lg:`-only sidebar can reach. These are exactly the
 // routes a phone listener had no way to open before the More sheet existed.
@@ -138,6 +142,65 @@ describe("library page shortcuts", () => {
   test("the shortcut row reflects the current route", () => {
     expect(playlists).toContain("useLocation");
     expect(flatPlaylists).toContain("location.pathname === to");
+  });
+});
+
+describe("smart playlist builder sheet", () => {
+  test("the sheet stacks above the phone nav bar and player island", () => {
+    // `.mobile-bottom-nav` is fixed at z-50 and comes LATER in the document
+    // than the Library page, so at an equal z-index the sheet's rule row and
+    // its Create button painted underneath the nav. It must outrank both the
+    // nav (z-50) and the player island (z-40).
+    expect(flatSmart).toContain(
+      "fixed inset-0 z-[60] flex items-end justify-center",
+    );
+  });
+
+  test("the sheet keeps its actions above the system navigation bar", () => {
+    expect(flatSmart).toContain(
+      "pb-[max(1.25rem,env(safe-area-inset-bottom))]",
+    );
+    // The height cap subtracts the same inset, so adding the padding cannot
+    // push the top of a tall sheet off the screen.
+    expect(flatSmart).toContain(
+      "max-h-[calc(92dvh_-_env(safe-area-inset-bottom))]",
+    );
+    // Desktop keeps the centred modal: no phone inset, original cap.
+    expect(flatSmart).toContain("sm:max-h-[92vh]");
+  });
+  test("the sheet's phone utilities are real, not dropped class names", async () => {
+    // A typo in an arbitrary value silently emits NOTHING, which would put the
+    // actions back under the nav with no visible error anywhere.
+    const css = await compileClasses([
+      "z-[60]",
+      "max-h-[calc(92dvh_-_env(safe-area-inset-bottom))]",
+      "pb-[max(1.25rem,env(safe-area-inset-bottom))]",
+    ]);
+    expect(css).toMatch(/z-index:\s*60/);
+    expect(css).toMatch(/max-height:[^;}]*safe-area-inset-bottom/);
+    expect(css).toMatch(/padding-bottom:[^;}]*safe-area-inset-bottom/);
+  });
+});
+
+describe("other phone overlays clear the nav and the system bar", () => {
+  test("the onboarding sheet keeps Start listening above the system bar", () => {
+    // Same bottom-sheet shape as the smart-playlist builder: pinned to the
+    // bottom of the viewport, so its last row needs the nav inset and its
+    // height cap has to subtract it.
+    const flatTaste = taste.replace(/\s+/g, " ");
+    expect(flatTaste).toContain("pb-[max(1.5rem,env(safe-area-inset-bottom))]");
+    expect(flatTaste).toContain(
+      "max-h-[calc(92dvh_-_env(safe-area-inset-bottom))]",
+    );
+  });
+
+  test("the admin profile overlay outranks the phone nav", () => {
+    // It renders inside the page rather than portalled to the body, so `z-50`
+    // tied with `.mobile-bottom-nav` and lost on document order — the nav
+    // painted over the overlay.
+    expect(admin.replace(/\s+/g, " ")).toContain(
+      "fixed inset-0 z-[60] flex items-center justify-center",
+    );
   });
 });
 

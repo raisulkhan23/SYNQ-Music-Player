@@ -185,6 +185,10 @@ const HARNESS = `(async () => {
   // The app's OWN deck element: decks are built at store creation, so this is
   // the very object the player would be playing through.
   const audio = window.__ssAudio || (() => { const a = new Audio(); a.setAttribute("aria-hidden", "true"); a.style.display = "none"; document.body.appendChild(a); window.__ssAudio = a; return a; })();
+  // Same native lease the production media-session layer takes on play. Without
+  // it the WebView is allowed to go GONE and Chromium pauses the deck.
+  const playback = window.Capacitor?.Plugins?.SynqPlayback;
+  if (playback) await playback.setPlaybackActive({ active: true });
   audio.src = url;
   audio.loop = false;
   audio.currentTime = 0;

@@ -11,7 +11,7 @@
 
 <br/>
 
-[![Version](https://img.shields.io/badge/version-1.0.0-b7f04a?style=for-the-badge&labelColor=0d1117)](package.json)
+[![Version](https://img.shields.io/badge/version-1.0.1-b7f04a?style=for-the-badge&labelColor=0d1117)](package.json)
 [![Platforms](https://img.shields.io/badge/platform-web%20%C2%B7%20windows%20%C2%B7%20android-b7f04a?style=for-the-badge&labelColor=0d1117)](#download)
 [![Status](https://img.shields.io/badge/status-beta-8b93a7?style=for-the-badge&labelColor=0d1117)](#known-limitations)
 [![License](https://img.shields.io/badge/license-not%20yet%20granted-8b93a7?style=for-the-badge&labelColor=0d1117)](#licence)
@@ -108,7 +108,7 @@ Interface screenshots are captured from the running app at each release; none ar
 | Platform | Status | How to get it |
 | --- | --- | --- |
 | **Web / PWA** | **Available now** | [synqmusic.freebuff.app](https://synqmusic.freebuff.app) — installable from the browser |
-| **Windows 10 / 11** | Builds locally, no public installer yet | `npm run desktop:installer` → `desktop-dist/SYNQ-Setup-1.0.0.exe` |
+| **Windows 10 / 11** | Builds locally, no public installer yet | `npm run desktop:installer` → `desktop-dist/SYNQ-Setup-1.0.1.exe` |
 | **Android 8.0+** | Builds locally, no public APK yet | `npm run android:apk` → `android/app/build/outputs/apk/` |
 | **iOS** | Not built | — |
 | **Linux / macOS** | Not built | The Electron shell targets Windows only |
@@ -139,7 +139,7 @@ Interface screenshots are captured from the running app at each release; none ar
    npm run build:icon          # generates build/icon.ico from public/logo.png
    npm run desktop:installer   # NSIS installer in desktop-dist/
    ```
-2. Run `desktop-dist/SYNQ-Setup-1.0.0.exe`. Windows SmartScreen will warn about an unsigned build — **More info → Run anyway** is expected for a self-signed installer.
+2. Run `desktop-dist/SYNQ-Setup-1.0.1.exe`. Windows SmartScreen will warn about an unsigned build — **More info → Run anyway** is expected for a self-signed installer.
 3. The desktop shell serves `dist/` from `app://synq/`, so router paths and deep links keep working. It needs `dist/` to exist: run `npm run build` first.
 
 ### Android

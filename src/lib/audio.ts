@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { releaseAudioSource } from "@/lib/hlsAudio";
 
 /**
  * A playback "deck": one <audio> element plus the Web Audio nodes that belong
@@ -1445,12 +1446,7 @@ export function releaseDeck(slot: "a" | "b"): void {
   } catch {
     /* ignore */
   }
-  try {
-    deck.el.removeAttribute("src");
-    deck.el.load();
-  } catch {
-    /* ignore */
-  }
+  releaseAudioSource(deck.el);
   // Neutralise the transition multiplier WITHOUT unwiring the node, so this
   // deck is immediately clean if it is ever used for playback again.
   setDeckGainNow(slot, 1);

@@ -162,6 +162,28 @@ describe("transport state", () => {
     session.publishPlaybackState("none");
     expect(bridge.states).toEqual(["playing", "paused", "none"]);
   });
+
+  test("the Android wake lock and WebView are held only while playing", () => {
+    // `none` is a distinct transport state from `paused` (it stops the
+    // foreground service), but both release the lease: the wake lock and the
+    // withheld WebView visibility exist only so sound survives the app being
+    // backgrounded.
+    expect(session.holdsNativePlaybackLease("playing")).toBe(true);
+    expect(session.holdsNativePlaybackLease("paused")).toBe(false);
+    expect(session.holdsNativePlaybackLease("none")).toBe(false);
+  });
+
+  test("publishing a transport state drives the Android lease", () => {
+    // The bridge hop itself cannot run here: `@capacitor/core` reaches the
+    // native plugin, and a module mock only takes effect when this file is the
+    // one that loads the module graph (in the full suite another file has
+    // already imported it). The wiring is therefore checked statically, the
+    // same way every other Android-side invariant in this suite is.
+    const source = read("src/lib/mediaSession.ts").replace(/\s+/g, " ");
+    expect(source).toContain("if (isAndroidShell()) {");
+    expect(source).toContain("NativePlayback.setPlaybackActive(");
+    expect(source).toContain("active: holdsNativePlaybackLease(state)");
+  });
 });
 
 describe("position state", () => {
@@ -361,6 +383,15 @@ const mainActivity = read(
 const routeLoss = read(
   "android/app/src/main/java/com/synq/music/AudioRouteLossReceiver.java",
 );
+const playbackPlugin = read(
+  "android/app/src/main/java/com/synq/music/SynqPlaybackPlugin.java",
+);
+const synqWebView = read(
+  "android/app/src/main/java/com/synq/music/SynqWebView.java",
+);
+const bridgeLayout = read(
+  "android/app/src/main/res/layout/capacitor_bridge_layout_main.xml",
+);
 const playerStore = read("src/store/player.ts");
 const playerBar = read("src/components/player/PlayerBar.tsx");
 
@@ -388,6 +419,23 @@ describe("Android manifest background-playback declarations", () => {
       ),
     ).toHaveLength(1);
     expect(mainActivity).not.toContain("requestPermission");
+  });
+});
+
+describe("Android background playback lease", () => {
+  test("the native lease is registered and tied to the playback state", () => {
+    expect(mainActivity).toContain("registerPlugin(SynqPlaybackPlugin.class)");
+    expect(playbackPlugin).toContain("@CapacitorPlugin(name = \"SynqPlayback\")");
+    expect(playbackPlugin).toContain("PowerManager.PARTIAL_WAKE_LOCK");
+    expect(playbackPlugin).toContain("setPlaybackActive");
+  });
+
+  test("the custom WebView keeps Chromium visible only while playback is active", () => {
+    expect(bridgeLayout).toContain("com.synq.music.SynqWebView");
+    expect(bridgeLayout).toContain('android:id="@+id/webview"');
+    expect(synqWebView).toContain("onWindowVisibilityChanged");
+    expect(synqWebView).toContain("SynqPlaybackPlugin.isPlaybackActive()");
+    expect(mainActivity).toContain("SynqWebView.setActivityVisible(false)");
   });
 });
 

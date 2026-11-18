@@ -10,8 +10,9 @@ import { TTL, cacheKey, dedupeRequest, takeRateSlot } from "./providerCache";
  * `refreshServerScClientId`, `searchSoundcloud`, `fetchDirectSoundCloudStreamServer`
  * — and the on-device port `SoundCloud.kt`), adapted to SYNQ's architecture:
  * the API is called from a Convex action (no CORS problem, no key in the
- * client) and the resolved CDN URL is streamed to the browser through the
- * same `/audio-proxy` route the Piped streams use.
+ * client). Progressive URLs use `/audio-proxy`; SoundCloud's signed HLS
+ * manifests go straight to HLS.js on the existing audio deck, since proxying
+ * the manifest would break its relative segment URLs.
  *
  * HOW AUTH WORKS (and why it is safe)
  * -----------------------------------
@@ -28,10 +29,9 @@ import { TTL, cacheKey, dedupeRequest, takeRateSlot } from "./providerCache";
  * - A track with `policy: "SNIP"` is a 30-second preview. It is FILTERED OUT
  *   of search and REFUSED at resolve time — playing a preview as if it were
  *   the song is the exact fabrication this codebase refuses.
- * - HLS-only tracks are refused rather than returned as something the player
- *   will choke on. A progressive MP3 exists for the vast majority of the
- *   catalogue; for the rest, silence with an explanation beats a broken
- *   element.
+ * - Progressive MP3 is preferred when offered. Current uploads usually expose
+ *   only HLS, which is returned with `isHls: true` and attached to the same
+ *   audio deck through HLS.js — refusing it left valid tracks unplayable.
  */
 
 /** A SoundCloud track, as the client sees it. */
@@ -75,17 +75,27 @@ async function fetchText(url: string, timeoutMs = 10_000): Promise<string | null
   }
 }
 
-async function fetchJson(
+interface JsonResponse {
+  status: number;
+  body: unknown;
+}
+
+async function fetchJsonResponse(
   url: string,
   timeoutMs = 10_000,
-): Promise<Record<string, unknown> | Array<unknown> | null> {
+): Promise<JsonResponse | null> {
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": WEB_UA, Accept: "application/json" },
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) return null;
-    return (await res.json()) as Record<string, unknown> | Array<unknown>;
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* an error body may be empty or HTML */
+    }
+    return { status: res.status, body };
   } catch {
     return null;
   }
@@ -325,15 +335,28 @@ export async function fetchOfficialSoundcloudDownloadUrl(
   }
 }
 
-/** One authenticated API GET, refreshing the client_id once on failure. */
-async function apiGet(path: string): Promise<unknown | null> {
-  let cid = await ensureClientId();
-  let json = await fetchJson(`${API}${path}${path.includes("?") ? "&" : "?"}client_id=${cid}`);
-  if (json === null) {
-    cid = await ensureClientId(true);
-    json = await fetchJson(`${API}${path}${path.includes("?") ? "&" : "?"}client_id=${cid}`);
+/** One authenticated API GET, keeping the status so failures stay specific. */
+async function apiGetResponse(path: string): Promise<JsonResponse | null> {
+  const request = async (): Promise<JsonResponse | null> => {
+    const cid = await ensureClientId();
+    return fetchJsonResponse(
+      `${API}${path}${path.includes("?") ? "&" : "?"}client_id=${cid}`,
+    );
+  };
+  let response = await request();
+  // A stale public web client id is the one failure worth one retry.
+  if (response && (response.status === 401 || response.status === 403)) {
+    await ensureClientId(true);
+    response = await request();
   }
-  return json;
+  return response;
+}
+
+async function apiGet(path: string): Promise<unknown | null> {
+  const response = await apiGetResponse(path);
+  return response && response.status >= 200 && response.status < 300
+    ? response.body
+    : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -426,36 +449,89 @@ export const searchSoundcloud = action({
 
 /** Result of resolving one track's stream. */
 export interface ScStreamResult {
-  /** The CDN MP3 URL, ready to be proxied to the browser. */
+  /** SoundCloud's public signed URL, ready for the player's audio deck. */
   url: string;
-  /** Always false: HLS-only tracks are refused, not returned. */
+  /** True for an HLS manifest; the deck attaches it through HLS.js. */
   isHls: boolean;
-  /** How the stream was found (for diagnostics). */
-  via: "transcoding" | "search-fallback";
+}
+
+/** Hosts SoundCloud itself uses to serve public media. */
+export function soundcloudStreamUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    const host = url.hostname.toLowerCase();
+    const allowed =
+      host === "sndcdn.com" ||
+      host.endsWith(".sndcdn.com") ||
+      host === "soundcloud.cloud" ||
+      host.endsWith(".soundcloud.cloud") ||
+      host === "soundcloud.com" ||
+      host.endsWith(".soundcloud.com");
+    return allowed ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface SoundcloudTranscoding {
+  protocol: "progressive" | "hls";
+  url: string;
 }
 
 /**
- * Resolve one track to a progressive (byte-range-able) MP3 URL.
+ * Pick the stream format to resolve, without fetching it.
  *
- * `trackId` must be the numeric SoundCloud id carried on the wire as a
- * string. When a queue entry lost its id (a stale cache row), pass
- * `fallbackQuery` and the resolver finds a full-length match by search — the
- * same repair path melo's `resolveByQuery` provides.
+ * Progressive MP3 remains first choice because it is byte-range-able and
+ * needs no extra player machinery. Most current uploads only expose `hls`, so
+ * that is the valid second choice rather than a refusal. SoundCloud's highest
+ * quality HLS rendition is listed first. SNIP previews are not streams of the
+ * song and are excluded by the caller.
+ */
+export function pickSoundcloudTranscoding(
+  raw: unknown,
+): SoundcloudTranscoding | null {
+  if (!isRecord(raw) || !isRecord(raw.media)) return null;
+  // The live v2 track resource nests these under `media`.
+  const transcodings = Array.isArray(raw.media.transcodings)
+    ? raw.media.transcodings
+    : null;
+  if (!transcodings) return null;
+  const candidates: SoundcloudTranscoding[] = [];
+  for (const value of transcodings) {
+    if (!isRecord(value) || !isRecord(value.format)) continue;
+    const protocol = str(value.format.protocol);
+    const url = str(value.url);
+    if (!url || (protocol !== "progressive" && protocol !== "hls")) continue;
+    candidates.push({ protocol, url });
+  }
+  return (
+    candidates.find((candidate) => candidate.protocol === "progressive") ??
+    candidates.find((candidate) => candidate.protocol === "hls") ??
+    null
+  );
+}
+
+/**
+ * Resolve one SoundCloud track to a public progressive MP3 or HLS manifest.
+ *
+ * `trackId` must be the numeric SoundCloud id carried on the wire as a string.
+ * There is deliberately no search fallback: a "closest" result is a different
+ * recording, and silently replacing the track the listener chose is worse than
+ * a clear resolution failure.
  */
 export const resolveSoundcloudStream = action({
   args: {
     trackId: v.string(),
-    fallbackQuery: v.optional(v.string()),
   },
-  handler: async (ctx, { trackId, fallbackQuery }): Promise<ScStreamResult> => {
+  handler: async (ctx, { trackId }): Promise<ScStreamResult> => {
     const id = trackId.trim().replace(/^sc:/, "");
-    if (!/^\d{6,}$/.test(id) && !fallbackQuery) {
+    if (!/^\d{6,}$/.test(id)) {
       throw new ConvexError("That is not a SoundCloud track id");
     }
 
-    const key = cacheKey("soundcloud", "streamUrl", {
-      id: id || (fallbackQuery ?? ""),
-    });
+    const key = cacheKey("soundcloud", "streamUrl", { id });
     const cached = (await ctx.runQuery(api.providerCache.cacheGet, { key })) as {
       value: ScStreamResult;
     } | null;
@@ -469,63 +545,86 @@ export const resolveSoundcloudStream = action({
         );
       }
 
-      const resolveFromTrack = async (
-        trackIdNumeric: string,
-      ): Promise<string | null> => {
-        const raw = await apiGet(`/tracks/${trackIdNumeric}`);
-        if (!isRecord(raw)) return null;
-        // A SNIP track resolved directly must not come back as the song.
-        if (str(raw.policy) === "SNIP") return null;
-        const transcodings = Array.isArray(raw.transcodings)
-          ? raw.transcodings
-          : [];
-        // Progressive first: a plain MP3 the <audio> element and the download
-        // pipeline can both consume. HLS is refused, not converted.
-        for (const t of transcodings) {
-          if (!isRecord(t) || !isRecord(t.format)) continue;
-          if (str(t.format.protocol) !== "progressive") continue;
-          const pollUrl = str(t.url);
-          if (!pollUrl) continue;
-          const cid = await ensureClientId();
-          const auth = str(raw.track_authorization);
-          const sep = pollUrl.includes("?") ? "&" : "?";
-          const poll = await fetchJson(
-            `${pollUrl}${sep}client_id=${cid}${auth ? `&track_authorization=${auth}` : ""}`,
+      const trackResponse = await apiGetResponse(`/tracks/${id}`);
+      if (!trackResponse || trackResponse.status < 200 || trackResponse.status >= 300) {
+        const status = trackResponse?.status;
+        if (status === 404) {
+          throw new ConvexError(
+            "This track is no longer available on SoundCloud.",
           );
-          const url = isRecord(poll) ? str(poll.url) : undefined;
-          if (url) return url;
         }
-        return null;
-      };
-
-      if (/^\d{6,}$/.test(id)) {
-        const url = await resolveFromTrack(id);
-        if (url) return { url, isHls: false, via: "transcoding" as const };
-      }
-
-      // Repair path: match by query, refusing previews and sub-30s uploads —
-      // the same duration rule melo applies so a jingle cannot stand in for
-      // the song.
-      const query = fallbackQuery?.trim();
-      if (!query) {
+        if (status === 401 || status === 403) {
+          throw new ConvexError(
+            "SoundCloud requires authentication for this track, or it is restricted.",
+          );
+        }
+        if (status !== undefined) {
+          throw new ConvexError(
+            "SoundCloud's stream is temporarily unavailable. Please try again.",
+          );
+        }
         throw new ConvexError(
-          "SoundCloud couldn't provide this track (no progressive stream).",
+          "Couldn't reach SoundCloud. Check your connection and try again.",
         );
       }
-      const searchJson = await apiGet(
-        `/search/tracks?q=${encodeURIComponent(query)}&limit=6&linked_partitioning=0`,
-      );
-      const collection = isRecord(searchJson) ? searchJson.collection : searchJson;
-      const candidates = Array.isArray(collection) ? collection : [];
-      for (const raw of candidates) {
-        const track = mapTrack(raw);
-        if (!track || track.durationMs <= 30_000) continue;
-        const url = await resolveFromTrack(track.id);
-        if (url) return { url, isHls: false, via: "search-fallback" as const };
+      const raw = trackResponse.body;
+      if (!isRecord(raw)) {
+        throw new ConvexError(
+          "SoundCloud returned an unreadable response for this track.",
+        );
       }
-      throw new ConvexError(
-        "SoundCloud couldn't provide a playable stream for this track.",
+      if (str(raw.policy) === "SNIP") {
+        throw new ConvexError(
+          "That SoundCloud upload is a 30-second preview, not the full track.",
+        );
+      }
+      const transcoding = pickSoundcloudTranscoding(raw);
+      if (!transcoding) {
+        throw new ConvexError(
+          "This SoundCloud track uses an audio format SYNQ cannot play.",
+        );
+      }
+
+      const pollUrl = soundcloudStreamUrl(transcoding.url);
+      if (!pollUrl) {
+        throw new ConvexError(
+          "SoundCloud returned an invalid stream address.",
+        );
+      }
+      const auth = str(raw.track_authorization);
+      const requestStream = async (): Promise<JsonResponse | null> => {
+        const cid = await ensureClientId();
+        const sep = pollUrl.includes("?") ? "&" : "?";
+        return fetchJsonResponse(
+          `${pollUrl}${sep}client_id=${cid}${auth ? `&track_authorization=${encodeURIComponent(auth)}` : ""}`,
+        );
+      };
+      let poll = await requestStream();
+      if (poll && (poll.status === 401 || poll.status === 403)) {
+        await ensureClientId(true);
+        poll = await requestStream();
+      }
+      if (poll && (poll.status === 401 || poll.status === 403)) {
+        throw new ConvexError(
+          "SoundCloud requires authentication to stream this track.",
+        );
+      }
+      if (!poll || poll.status < 200 || poll.status >= 300) {
+        throw new ConvexError(
+          "SoundCloud's stream is temporarily unavailable. Please try again.",
+        );
+      }
+      const url = soundcloudStreamUrl(
+        isRecord(poll.body) && typeof poll.body.url === "string"
+          ? poll.body.url
+          : null,
       );
+      if (!url) {
+        throw new ConvexError(
+          "SoundCloud couldn't provide a playable stream for this track right now.",
+        );
+      }
+      return { url, isHls: transcoding.protocol === "hls" };
     });
 
     await ctx.runMutation(internal.providerCache.cachePut, {

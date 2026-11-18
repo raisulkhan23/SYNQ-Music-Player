@@ -108,8 +108,13 @@ function SmartPlaylistDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-[rgb(20_20_24)] p-5 sm:rounded-3xl">
+    /* `z-[60]`, not `z-50`: the phone bottom bar owns z-50 and comes later in
+       the document than this sheet, so at an equal z-index the last rule row
+       (and the Create button under it) painted UNDER the nav bar. Above it,
+       and padded by the safe-area inset, the sheet's actions stay on screen on
+       a gesture- or button-navigated Android phone. */
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4">
+      <div className="max-h-[calc(92dvh_-_env(safe-area-inset-bottom))] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-[rgb(20_20_24)] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-[92vh] sm:rounded-3xl sm:pb-5">
         <div className="flex items-center gap-2">
           <Wand2 className="size-5 text-[rgb(var(--tint))]" />
           <h2 className="font-display text-lg font-bold">

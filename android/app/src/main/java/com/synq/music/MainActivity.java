@@ -44,6 +44,11 @@ public class MainActivity extends BridgeActivity {
         // plugin in its startup plugin list. The web layer checks that native
         // availability, not a user agent, before offering downloads.
         registerPlugin(SynqDownloadsPlugin.class);
+        // The web player tells this plugin when sound is actually playing; it
+        // then holds the CPU and keeps Chromium from treating the background
+        // WebView as GONE. Registered here, before the bridge starts, so the
+        // web layer can call it as soon as the first track starts.
+        registerPlugin(SynqPlaybackPlugin.class);
         super.onCreate(savedInstanceState);
         registerRouteLossReceiver();
         installOAuthNavigation(getBridge());
@@ -236,7 +241,22 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onStart() {
+        SynqWebView.setActivityVisible(true);
+        super.onStart();
+    }
+
+    @Override
+    public void onStop() {
+        // Must be set before the bridge sees onStop: while audio is active the
+        // SynqWebView intentionally ignores the GONE that follows.
+        SynqWebView.setActivityVisible(false);
+        super.onStop();
+    }
+
+    @Override
     public void onDestroy() {
+        SynqWebView.setActivityVisible(false);
         if (routeLossReceiver != null) {
             try {
                 unregisterReceiver(routeLossReceiver);

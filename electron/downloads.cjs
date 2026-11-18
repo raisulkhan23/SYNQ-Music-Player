@@ -706,6 +706,12 @@ class NativeDownloadStore {
       if (record.status === "cancelled" || controller.signal.aborted) {
         record.status = "cancelled";
         record.error = undefined;
+        // A cancelled transfer keeps no bytes. `cancel()` already zeroes the
+        // counter, but a chunk that was mid-`write()` when the abort landed is
+        // added afterwards — and its partial file is deleted below, so a
+        // non-zero count would advertise progress that no longer exists.
+        record.bytes = 0;
+        record.speed = 0;
       } else {
         record.status = "failed";
         record.error =

@@ -1,7 +1,7 @@
 {
   "name": "synq",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SYNQ — your music, uninterrupted.",
   "type": "module",
   "main": "electron/main.cjs",
@@ -68,6 +68,7 @@
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.23.25",
+    "hls.js": "^1.7.4",
     "hono": "^4.10.7",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.555.0",

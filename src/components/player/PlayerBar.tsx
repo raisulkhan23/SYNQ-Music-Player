@@ -378,6 +378,14 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
   // total swaps the chain stops and says so instead of repeating.
   const totalSwaps = useRef(0);
   const MAX_TOTAL_SWAPS = 3;
+  // A successful SoundCloud retry re-arms the one-refresh guard and clears the
+  // loading toast. Without this, a later expiry on the SAME track would look
+  // like a retry already spent, and the loading toast would never go away.
+  useEffect(() => {
+    if (!isPlaying || current?.source !== "soundcloud") return;
+    attempts.current = 0;
+    toast.dismiss("soundcloud-playback");
+  }, [current?.id, current?.source, isPlaying]);
   useEffect(() => {
     if (errorNonce === 0) return;
     const s = usePlayerStore.getState();
@@ -388,6 +396,27 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
       lastErrorTrack.current = track.id;
       attempts.current = 0;
       rescueExhausted.current = false;
+    }
+    // SoundCloud has one honest recovery: ask its resolver for a fresh signed
+    // URL for THIS track. Re-searching by title would play a different
+    // recording, and its API never supplies YouTube alternatives. After one
+    // refresh, report the failure and leave the track in the queue.
+    if (track.source === "soundcloud") {
+      attempts.current += 1;
+      if (attempts.current === 1) {
+        toast.loading(`Refreshing SoundCloud stream for "${track.title}"…`, {
+          id: "soundcloud-playback",
+        });
+        s.retryCurrent();
+        return;
+      }
+      toast.error(`Couldn't play "${track.title}"`, {
+        id: "soundcloud-playback",
+        description:
+          "SoundCloud's stream may have expired. Retry to request a fresh one.",
+        action: { label: "Retry", onClick: () => s.retryCurrent() },
+      });
+      return;
     }
     if (totalSwaps.current >= MAX_TOTAL_SWAPS) {
       rescueExhausted.current = true;

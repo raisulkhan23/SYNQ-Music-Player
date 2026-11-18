@@ -24,7 +24,18 @@
  * swallowed rejection instead of a `throw`.
  */
 import { MediaSession } from "@capgo/capacitor-media-session";
-import { isNativeShell } from "@/lib/nativeShell";
+import { registerPlugin } from "@capacitor/core";
+import { isAndroidShell, isNativeShell } from "@/lib/nativeShell";
+
+/**
+ * The Android shell's playback lease. It holds a partial wake lock and keeps
+ * Chromium from pausing the WebView when the Activity window becomes GONE.
+ * Declared through `registerPlugin` so a web build (where the plugin does not
+ * exist) simply has its rejected calls swallowed below.
+ */
+const NativePlayback = registerPlugin<{
+  setPlaybackActive(options: { active: boolean }): Promise<void>;
+}>("SynqPlayback");
 
 /** Artwork sizes the notification / lock screen may ask for. */
 const ARTWORK_SIZES = [96, 256, 512];
@@ -115,6 +126,20 @@ export function publishTrackMetadata(track: MediaSessionTrack | null): void {
 let publishedState: MediaSessionPlaybackState | null = null;
 
 /**
+ * Whether the native Android playback lease is held for a transport state.
+ *
+ * Only `playing` holds it. The lease exists to keep the CPU awake and stop
+ * Chromium hiding the WebView, and neither is wanted for a paused or stopped
+ * player — releasing it on `paused` is also what lets the OS battery-optimise
+ * the app again instead of holding a wake lock for a silent session.
+ */
+export function holdsNativePlaybackLease(
+  state: MediaSessionPlaybackState,
+): boolean {
+  return state === "playing";
+}
+
+/**
  * Publish the transport state.
  *
  * On Android this call is also what starts and stops the foreground service:
@@ -127,6 +152,14 @@ export function publishPlaybackState(state: MediaSessionPlaybackState): void {
   if (!mediaSessionUsable()) return;
   if (state === publishedState) return;
   publishedState = state;
+  // Start the native hold before the media-session service update. While the
+  // app is still foreground this is cheap; if the user backgrounds it in the
+  // same moment, the wake lock and WebView visibility are already in place.
+  if (isAndroidShell()) {
+    void NativePlayback.setPlaybackActive({
+      active: holdsNativePlaybackLease(state),
+    }).catch(ignore);
+  }
   void MediaSession.setPlaybackState({ playbackState: state }).catch(ignore);
 }
 

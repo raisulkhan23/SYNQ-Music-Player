@@ -420,6 +420,7 @@ describe("preloadLead", () => {
 
 const playerSource = readSource("src/store/player.ts");
 const audioSource = readSource("src/lib/audio.ts");
+const hlsSource = readSource("src/lib/hlsAudio.ts");
 const settingsSource = readSource("src/components/settings/SettingsDialog.tsx");
 
 describe("crossfade is built on two real audio decks", () => {
@@ -488,7 +489,12 @@ describe("crossfade is built on two real audio decks", () => {
     // Otherwise a decoded stream and a network connection stay alive for the
     // whole session — a slow leak across an evening of listening.
     expect(audioSource).toMatch(/export function releaseDeck/);
-    expect(audioSource).toMatch(/removeAttribute\("src"\)/);
+    expect(audioSource).toMatch(/releaseAudioSource\(deck\.el\)/);
+    // The HLS path holds a MediaSource and its loader. Releasing only the
+    // element's src would leave that loader fetching segments in the
+    // background, so the shared helper must destroy it before emptying.
+    expect(hlsSource).toMatch(/hls\.destroy\(\)/);
+    expect(hlsSource).toMatch(/audio\.removeAttribute\("src"\)/);
     expect(playerSource).toMatch(/releaseDeck\(outgoingSlot\)/);
   });
 

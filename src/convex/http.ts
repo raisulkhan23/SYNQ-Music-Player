@@ -21,20 +21,27 @@ const STREAM_PROXY = httpAction(async (ctx, request) => {
   if (!target) {
     return new Response("Bad or missing stream url", { status: 400 });
   }
-  // Validate the target is an audio/video stream we expect to proxy.
-  // Historically only googlevideo videoplayback URLs landed here; Piped's
-  // own proxy endpoint is now also a supported upstream, so accept either.
-  // SoundCloud's CDN (sndcdn.com) joined them when SoundCloud became a
-  // playable source: its streams are public signed URLs, and the proxy is
-  // what lets the Web Audio graph tap them.
-  if (
-    !target.startsWith("https://") ||
-    (!(target.includes("googlevideo.com/videoplayback") ||
-      target.includes("player.odycdn.com") ||
-      target.includes("piped-proxy.") ||
-      target.includes("odycdn.com") ||
-      target.includes("sndcdn.com")))
-  ) {
+  // Validate the target is one of the media hosts this proxy exists for.
+  // Check the parsed hostname, never a substring: `attacker.example/?x=cdn.com`
+  // must not be able to turn an open CORS proxy into arbitrary SSRF.
+  let upstreamUrl: URL;
+  try {
+    upstreamUrl = new URL(target);
+  } catch {
+    return new Response("Bad or missing stream url", { status: 400 });
+  }
+  const host = upstreamUrl.hostname.toLowerCase();
+  const allowedHost =
+    (host.endsWith("googlevideo.com") &&
+      upstreamUrl.pathname === "/videoplayback") ||
+    host === "odycdn.com" ||
+    host.endsWith(".odycdn.com") ||
+    host.startsWith("piped-proxy.") ||
+    host === "sndcdn.com" ||
+    host.endsWith(".sndcdn.com") ||
+    host === "soundcloud.cloud" ||
+    host.endsWith(".soundcloud.cloud");
+  if (upstreamUrl.protocol !== "https:" || !allowedHost) {
     return new Response("Bad or missing stream url", { status: 400 });
   }
 

@@ -93,6 +93,12 @@ import {
   type Playable,
 } from "@/lib/playable";
 import { localArtworkUrl, localAudioUrl } from "@/lib/nativeDownloads";
+import {
+  AudioSourceError,
+  detachHls,
+  loadAudioSource,
+  reloadAudioSource,
+} from "@/lib/hlsAudio";
 import { resolveViaPiped } from "@/lib/pipedResolve";
 import type { RecoCandidate } from "@/lib/recommend";
 import { DEFAULT_EXPLORATION } from "@/lib/recommend";
@@ -415,55 +421,101 @@ export function prewarmYoutubeStream(videoId: string): void {
 
 // --- SoundCloud resolution ----------------------------------------------------
 //
-// SoundCloud tracks play from SoundCloud itself: the Convex action resolves
-// the track's progressive MP3 (refusing 30-second SNIP previews and HLS-only
-// uploads), and the browser streams it through /audio-proxy so the Web Audio
-// graph can tap it like any other deck source.
+// SoundCloud tracks play from SoundCloud itself: the Convex action resolves a
+// public progressive MP3 or HLS manifest (refusing 30-second SNIP previews),
+// and the existing deck plays it. Progressive URLs go through /audio-proxy;
+// HLS manifests go straight to HLS.js because its segment URLs are relative.
 
 let scResolveClient: ConvexClient | null = null;
-const scResolveCache = new Map<string, Promise<string | null>>();
+
+interface ScResolvedSource {
+  url: string | null;
+  /** A user-facing reason when resolution failed; never an internal stack. */
+  error: string | null;
+}
+
+const scResolveCache = new Map<string, Promise<ScResolvedSource>>();
+
+/** Keep provider internals out of the player while preserving a useful cause. */
+function soundcloudResolveFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (/30-second|preview|SNIP/i.test(message)) {
+    return "This upload is only a preview, not the full track.";
+  }
+  if (/rate-limit/i.test(message)) {
+    return "SoundCloud is temporarily rate-limiting playback.";
+  }
+  if (/format SYNQ cannot play|invalid stream address/i.test(message)) {
+    return "SoundCloud returned an unsupported audio format.";
+  }
+  if (/no longer available|not a SoundCloud track/i.test(message)) {
+    return "This track is no longer available on SoundCloud.";
+  }
+  if (/couldn't provide|temporarily unavailable/i.test(message)) {
+    return "SoundCloud's stream is temporarily unavailable.";
+  }
+  return "Couldn't reach SoundCloud. Check your connection.";
+}
 
 /**
- * Resolve one SoundCloud track id to a proxied, playable URL.
+ * Resolve one SoundCloud track id to a playable URL.
  *
- * Failures resolve to null (not throw) so a dead source degrades to the
- * store's normal "couldn't play" path with its retry affordance, rather than
- * crashing a transition. A downloaded copy wins before any network, exactly
- * like `ytResolve` — offline playback of a saved SoundCloud release is the
- * same first-class path as a saved YouTube one.
+ * Failures return an explanation rather than throwing, so a dead source
+ * degrades to the store's normal retry path. A downloaded copy wins before
+ * any network, exactly like `ytResolve` — offline playback of a saved
+ * SoundCloud release is the same first-class path as a saved YouTube one.
+ *
+ * HLS URLs are handed to the deck unchanged: HLS.js reads the manifest through
+ * Media Source Extensions, so wrapping the manifest itself in `/audio-proxy`
+ * would hide its relative segment URLs. Progressive URLs keep the CORS proxy
+ * that lets Web Audio tap them.
  */
-function scResolve(trackId: string): Promise<string | null> {
+function scResolve(trackId: string): Promise<ScResolvedSource> {
   const local = localAudioUrls.get(trackId);
-  if (local !== undefined) return Promise.resolve(local);
+  if (local !== undefined) {
+    return Promise.resolve({ url: local, error: null });
+  }
   const cached = scResolveCache.get(trackId);
   if (cached) return cached;
   const pending = primeLocalAudio(trackId).then((onDisk) => {
-    if (onDisk) return onDisk;
+    if (onDisk) return { url: onDisk, error: null };
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       noteOfflineUnavailable(trackId);
-      return null;
+      return {
+        url: null,
+        error: "You're offline. Connect to the internet to stream this track.",
+      };
     }
-    return (async (): Promise<string | null> => {
+    return (async (): Promise<ScResolvedSource> => {
       try {
         scResolveClient =
           scResolveClient ??
           new ConvexClient(import.meta.env.VITE_CONVEX_URL as string);
-        const res = await scResolveClient.action(api.soundcloud.resolveSoundcloudStream, {
-          trackId,
-        });
-        if (res?.url) {
-          return `${audioProxyBase}?u=${encodeURIComponent(res.url)}`;
+        const res = await scResolveClient.action(
+          api.soundcloud.resolveSoundcloudStream,
+          { trackId },
+        );
+        if (!res?.url) {
+          return {
+            url: null,
+            error: "SoundCloud didn't return a playable stream.",
+          };
         }
-        return null;
-      } catch {
-        return null;
+        return {
+          url: res.isHls
+            ? res.url
+            : `${audioProxyBase}?u=${encodeURIComponent(res.url)}`,
+          error: null,
+        };
+      } catch (error) {
+        return { url: null, error: soundcloudResolveFailure(error) };
       }
     })();
   });
   scResolveCache.set(trackId, pending);
   pending
-    .then((url) => {
-      if (!url) scResolveCache.delete(trackId);
+    .then((result) => {
+      if (!result.url) scResolveCache.delete(trackId);
     })
     .catch(() => scResolveCache.delete(trackId));
   return pending;
@@ -2662,7 +2714,7 @@ function prepareIncoming(track: Playable): Promise<HTMLAudioElement | null> {
     // SoundCloud tracks preloads exactly like a YouTube one.
     if (track.audioUrl === SOUNDCLOUD_RESOLVE_MARKER) {
       const scId = track.soundcloudId ?? track.id.replace(/^sc:/, "");
-      url = (await scResolve(scId)) ?? "";
+      url = (await scResolve(scId)).url ?? "";
     } else if (!audioElementIsSource(track) || track.audioUrl === "stream") {
       if (!track.youtubeId) return null;
       url = (await ytResolve(track.youtubeId)) ?? "";
@@ -2674,10 +2726,9 @@ function prepareIncoming(track: Playable): Promise<HTMLAudioElement | null> {
     // The listener may have skipped while this was resolving; do not load a
     // track the queue has moved on from.
     if (transition !== t && t) return null;
-    el.src = url;
+    await loadAudioSource(el, url);
     el.preload = "auto";
     el.playbackRate = usePlayerStore.getState().rate;
-    el.load();
     if (transition === t && t) t.preparedFor = track.id;
     return el;
   };
@@ -3109,6 +3160,12 @@ function armAudioBufferWatchdog(audio: HTMLAudioElement): void {
     // would trigger PlayerBar's alternate-upload fallback and could replace
     // the user's song just because the network briefly stalled.
     const resumeAt = audio.currentTime;
+    // HLS.js owns the MediaSource buffer. Calling `load()` on an element it
+    // attached would tear that buffer down; let HLS restart the segment load.
+    if (reloadAudioSource(audio)) {
+      void audio.play().catch(() => undefined);
+      return;
+    }
     // `load()` DISCARDS every byte already downloaded and starts again from
     // zero. Calling it on an element that was merely SLOW to fill therefore
     // threw away the very progress it was waiting for, and the next `stalled`
@@ -3590,7 +3647,12 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
    * the same "couldn't play" state every other failed source lands in, with
    * the same retry affordance, instead of a silent spinner.
    */
-  const resolveAndPlaySoundcloud = (track: Playable, resumeAt: number, seq: number) => {
+  const resolveAndPlaySoundcloud = (
+    track: Playable,
+    resumeAt: number,
+    seq: number,
+    retry = 0,
+  ) => {
     const id = track.soundcloudId ?? track.id.replace(/^sc:/, "");
     // The effects/EQ live on the deck, so the graph must exist before the
     // first sc track sounds — same gesture-context rule as the filter path.
@@ -3598,18 +3660,53 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     ytEngine.pause();
     const audio = getAudio();
     void scResolve(id)
-      .then((url) => {
+      .then(async (resolved) => {
         if (seq !== loadSeq || get().current?.id !== track.id) return;
-        if (!url) {
+        if (!resolved.url) {
           invalidateScResolve(id);
-          noteTransition("This SoundCloud track wouldn't resolve — no playable stream.");
-          reportLoadFailure(seq, track.id);
+          noteTransition(
+            resolved.error ?? "This SoundCloud track would not resolve.",
+          );
+          if (retry === 0) {
+            resolveAndPlaySoundcloud(track, resumeAt, seq, 1);
+            return;
+          }
+          usePlayerStore.setState({ isBuffering: false, isPlaying: false });
+          toast.error(`Couldn't play "${track.title}"`, {
+            id: "soundcloud-playback",
+            description: resolved.error ?? "SoundCloud is unavailable.",
+            action: { label: "Retry", onClick: () => retryCurrent() },
+            cancel: { label: "Play next", onClick: () => next() },
+          });
           return;
         }
-        audio.src = url;
+
+        try {
+          await loadAudioSource(audio, resolved.url);
+        } catch (error) {
+          if (seq !== loadSeq || get().current?.id !== track.id) return;
+          invalidateScResolve(id);
+          const reason =
+            error instanceof AudioSourceError
+              ? error.message
+              : "SoundCloud's stream could not be loaded.";
+          noteTransition(reason);
+          if (retry === 0) {
+            resolveAndPlaySoundcloud(track, resumeAt, seq, 1);
+            return;
+          }
+          usePlayerStore.setState({ isBuffering: false, isPlaying: false });
+          toast.error(`Couldn't play "${track.title}"`, {
+            id: "soundcloud-playback",
+            description: reason,
+            action: { label: "Retry", onClick: () => retryCurrent() },
+            cancel: { label: "Play next", onClick: () => next() },
+          });
+          return;
+        }
+
         audio.playbackRate = get().rate;
         watchAudioErrors(audio, seq, track.id);
-        audio.load();
         if (resumeAt > 0) {
           const applyResume = () => {
             audio.currentTime = resumeAt;
@@ -4024,6 +4121,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
       ) {
         ensureGraph();
       }
+      detachHls(audio);
       audio.src = track.audioUrl;
       audio.playbackRate = get().rate;
       watchAudioErrors(audio, seq, track.id);
@@ -4473,6 +4571,11 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
     const track = get().current;
     if (!track) return;
     cancelTransition("retry");
+    // A retry must ask SoundCloud for a fresh signed URL. Reusing the cached
+    // answer is exactly what would fail again after its short expiry.
+    if (track.source === "soundcloud") {
+      invalidateScResolve(track.soundcloudId ?? track.id.replace(/^sc:/, ""));
+    }
     loadTrack(track);
   };
 
@@ -4894,6 +4997,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
         const from = livePlaybackPosition(videoId) ?? at;
         ytEngine.pause();
         audio.pause();
+        detachHls(audio);
         audio.src = url;
         audio.playbackRate = get().rate;
         audio.load();
@@ -5027,6 +5131,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => {
           : resumeAt;
         ytEngine.pause();
         audio.pause();
+        detachHls(audio);
         audio.src = url;
         audio.playbackRate = get().rate;
         audio.load();
