@@ -456,6 +456,12 @@ const featureCards = [
   },
 ];
 
+// The published desktop build. `.github/workflows/release.yml` renames
+// `desktop-dist/*.exe` to this stable asset name, so `latest/download` keeps
+// the CTA pointing at the newest installer instead of a version we pin here.
+const WINDOWS_INSTALLER_URL =
+  "https://github.com/raisulkhan23/synqmusic/releases/latest/download/synq-windows-setup.exe";
+
 export default function Landing() {
   return (
     <div className="relative min-h-dvh overflow-x-hidden bg-background pt-[env(safe-area-inset-top)] text-foreground">
@@ -547,7 +553,13 @@ export default function Landing() {
               Start listening free{" "}
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
             </Link>
-            <InstallAppButton />
+            <a
+              href={WINDOWS_INSTALLER_URL}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+            >
+              <Download className="size-4" />
+              Download for Windows
+            </a>
             <a
               href="#experience"
               className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
@@ -829,7 +841,13 @@ export default function Landing() {
                 Start listening{" "}
                 <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
               </Link>
-              <InstallAppButton />
+              <a
+                href={WINDOWS_INSTALLER_URL}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+              >
+                <Download className="size-4" />
+                Download for Windows
+              </a>
               <a
                 href="#features"
                 className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
@@ -861,7 +879,7 @@ export default function Landing() {
         </motion.div>
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <a
-            href="https://github.com/raisulkhan23/synqmusic/releases/latest/download/synq-windows-setup.exe"
+            href={WINDOWS_INSTALLER_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="group flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6 transition-ui hover:-translate-y-1 hover:border-brand/30 hover:bg-white/[0.05]"

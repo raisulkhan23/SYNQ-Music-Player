@@ -46,14 +46,13 @@ win:
   # installer, Start-menu shortcut and taskbar all use the same artwork.
   icon: build/icon.ico
   artifactName: SYNQ-Setup-${version}.${ext}
-  # Rewriting the exe's resources needs `rcedit`, which electron-builder fetches
-  # from its winCodeSign cache. That archive contains macOS symlinks, and
-  # extracting it requires the Windows "create symbolic link" privilege —
-  # Developer Mode or an elevated shell. This build environment has neither, so
-  # the metadata step is skipped (the app still runs, the installer is still
-  # branded). On a machine with that privilege, delete this line to get the
-  # icon and version info embedded in SYNQ.exe as well.
-  signAndEditExecutable: false
+  # Skip only code signing, not resource editing: `signAndEditExecutable: false`
+  # also skipped rcedit, which left SYNQ.exe with Electron's default icon and
+  # Electron's 33.x version metadata — so the Start-menu/desktop shortcut and
+  # Explorer's file properties showed the wrong mark and the wrong version.
+  # `signExecutable: false` keeps the icon and version info embedded while still
+  # producing an unsigned (as before) executable.
+  signExecutable: false
 
 nsis:
   installerIcon: build/icon.ico

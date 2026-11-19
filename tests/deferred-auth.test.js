@@ -794,10 +794,23 @@ describe("SYNQ can be downloaded from the landing page", () => {
     expect(landing).toMatch(/<InstallAppButton \/>/);
   });
 
-  test("it appears in more than one spot, not just the footer", () => {
-    // A single instance is easy to miss on a long marketing page.
+  test("the download CTAs lead to the desktop installer, not only the PWA", () => {
+    // The hero used to render the PWA install button as "Download app", so the
+    // most prominent download on the page installed a browser app and never
+    // reached the .exe. The installer CTA must be there in its place.
+    expect(landing).toMatch(/const WINDOWS_INSTALLER_URL =\s*\n?\s*"https:\/\/github\.com\/raisulkhan23\/synqmusic\/releases\/latest\/download\/synq-windows-setup\.exe"/);
+    const installerLinks = (
+      landing.match(/href=\{WINDOWS_INSTALLER_URL\}/g) ?? []
+    ).length;
+    expect(installerLinks).toBeGreaterThanOrEqual(2);
+    expect(landing).toMatch(/Download for Windows/);
+  });
+
+  test("the PWA option stays available where it is labelled as one", () => {
+    // Still the right answer for mobile/web visitors — it just must not be the
+    // page's only download, and it has to sit in the explicitly-labelled card.
     const count = (landing.match(/<InstallAppButton \/>/g) ?? []).length;
-    expect(count).toBeGreaterThanOrEqual(2);
+    expect(count).toBeGreaterThanOrEqual(1);
   });
 
   test("it reuses the real install hook, not a second implementation", () => {
