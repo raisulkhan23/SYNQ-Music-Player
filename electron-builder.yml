@@ -18,6 +18,13 @@ files:
   - dist/**
   # Web downloads are served from the site, not bundled into the desktop app.
   - "!dist/installers/**"
+  # electron-builder copies production dependencies by default. The main
+  # process only requires Electron builtins and files from `electron/`, so that
+  # copy added ~1500 deeply nested files (paths past the 244-character limit)
+  # and made the uninstaller fail while renaming the old install during an
+  # upgrade, which aborted updates with "Failed to uninstall old application
+  # files".
+  - "!node_modules/**"
   - package.json
 
 asar: true
@@ -65,6 +72,9 @@ nsis:
   shortcutName: SYNQ
   # Keeps the app's own user data across upgrades.
   deleteAppDataOnUninstall: false
+  # Overrides the uninstaller's move-into-$PLUGINSDIR step, which fails on deep
+  # paths and blocks upgrades over an existing install. See scripts/installer.nsh.
+  include: scripts/installer.nsh
 
 # Desktop builds are not published from here. Update hosting and code signing
 # are external requirements; see README "Desktop (Windows)".
