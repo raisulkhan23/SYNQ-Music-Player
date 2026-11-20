@@ -24,9 +24,16 @@ jobs:
           node-version: 20
       - run: npm ci
       - name: Build web app for Pages
-        env:
-          VITE_BASE: /synqmusic/
-        run: npm run build -- --base=./
+        # A GitHub Pages *project* site is served from /<repo>/, so the build
+        # base must be that prefix. The router basename and the `public/` asset
+        # URLs both read it back from `import.meta.env.BASE_URL`, which keeps the
+        # landing page, its nav and its download CTAs pointing at the real
+        # location instead of the domain root.
+        run: npm run build -- --base=/synqmusic/
+      # A history router needs the shell for deep links and refreshes; Pages
+      # serves 404.html for unknown paths, so make it the same document.
+      - name: Add SPA fallback
+        run: cp dist/index.html dist/404.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

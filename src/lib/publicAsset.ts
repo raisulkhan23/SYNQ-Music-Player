@@ -22,6 +22,30 @@
 // was and only changes what was broken.
 // ---------------------------------------------------------------------------
 
+/**
+ * The path this build is actually served from.
+ *
+ * A relative base (`./`, the default and what the packaged desktop build uses)
+ * means "next to the document" and has no mount path, so this reports `/`.
+ * An absolute base such as `/synqmusic/` is a GitHub Pages *project* site: the
+ * app genuinely lives under that prefix, so router links and `public/` assets
+ * have to carry it or every one of them resolves to the domain root.
+ */
+export function appBasePath(): string {
+  const base = import.meta.env?.BASE_URL;
+  if (!base || !base.startsWith("/")) return "/";
+  return base.endsWith("/") ? base : `${base}/`;
+}
+
+/**
+ * Router basename for this build: the mount path without its trailing slash.
+ * At a domain root (and in the packaged shells) this is `/`, which is what
+ * `BrowserRouter` expects for an app that owns the whole path.
+ */
+export function routerBasename(): string {
+  return appBasePath().replace(/\/+$/, "") || "/";
+}
+
 /** True when the renderer is running from the packaged app bundle. */
 export function isFileProtocol(): boolean {
   return typeof window !== "undefined" && window.location.protocol === "file:";
@@ -46,7 +70,7 @@ export function publicAsset(path: string): string {
   // every runtime instead of resolving it against the document.
   if (!clean) return "/";
   if (typeof window === "undefined") return `/${clean}`;
-  if (!isFileProtocol()) return `/${clean}`;
+  if (!isFileProtocol()) return `${appBasePath()}${clean}`;
 
   // `?v=2` style cache-busting query strings are part of the reference and are
   // preserved by URL resolution.

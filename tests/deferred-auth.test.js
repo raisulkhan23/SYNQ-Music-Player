@@ -642,7 +642,10 @@ describe("the bridge is mounted somewhere it can actually work", () => {
     // outside one, and the throw happens on EVERY render of the dialog — so
     // mounting the provider as a sibling of `</BrowserRouter>` took down the
     // whole app the moment the prompt appeared.
-    const routerOpen = main.indexOf("<BrowserRouter>");
+    // Matched on the opening tag prefix, not the bare `<BrowserRouter>`: the
+    // router carries a `basename` so a sub-path deployment (GitHub Pages) can
+    // mount the app under its own prefix.
+    const routerOpen = main.indexOf("<BrowserRouter");
     const routerClose = main.indexOf("</BrowserRouter>");
     const mount = main.indexOf("<AuthGateProvider />");
     expect(mount).toBeGreaterThan(-1);
@@ -683,7 +686,7 @@ describe("the bridge is mounted somewhere it can actually work", () => {
     const usesRouter = /useLocation|useNavigate|Link/.test(dialogSource);
     if (usesRouter) {
       const mount = main.indexOf("<AuthGateProvider />");
-      expect(main.lastIndexOf("<BrowserRouter>", mount)).toBeGreaterThan(-1);
+      expect(main.lastIndexOf("<BrowserRouter", mount)).toBeGreaterThan(-1);
     }
   });
 });

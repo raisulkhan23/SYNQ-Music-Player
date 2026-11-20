@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { Logo } from "@/components/brand/Logo";
 import { InstallAppButton } from "@/components/pwa/InstallAppButton";
 import { SiteFooter } from "@/components/landing/SiteFooter";
+import { publicAsset } from "@/lib/publicAsset";
 import {
   Activity,
   ArrowRight,
@@ -135,7 +136,7 @@ function CoverArt({ className = "size-16" }: { className?: string }) {
       className={`relative shrink-0 overflow-hidden rounded-2xl ${className}`}
     >
       <img
-        src="/show-me-love-cover.svg"
+        src={publicAsset("show-me-love-cover.svg")}
         alt="SYNQ cover art"
         className="size-full object-cover"
       />
@@ -197,7 +198,7 @@ function ListeningExperience() {
           >
             <div className="relative size-full overflow-hidden rounded-full border border-white/10">
               <img
-                src="/show-me-love-cover.svg"
+                src={publicAsset("show-me-love-cover.svg")}
                 alt=""
                 className="size-full object-cover"
               />
@@ -899,7 +900,7 @@ export default function Landing() {
             </span>
           </a>
           <a
-            href="/installers/synq-android.apk"
+            href={publicAsset("installers/synq-android.apk")}
             target="_blank"
             rel="noopener noreferrer"
             className="group flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6 transition-ui hover:-translate-y-1 hover:border-brand/30 hover:bg-white/[0.05]"

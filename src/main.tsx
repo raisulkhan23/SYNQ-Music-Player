@@ -26,7 +26,7 @@ import { applyAnimationLevel, readAnimationLevel } from "@/lib/motion";
 import { installImageFallback } from "@/lib/imageFallback";
 import { isNativeShell } from "@/lib/nativeShell";
 import { isDesktopShell } from "@/lib/pwa";
-import { isFileProtocol } from "@/lib/publicAsset";
+import { isFileProtocol, routerBasename } from "@/lib/publicAsset";
 import "./index.css";
 
 // SYNQ defaults to dark; restore the user's theme mode before first paint.
@@ -433,7 +433,7 @@ createRoot(document.getElementById("root")!).render(
         <VlyToolbar />
       </ToolbarErrorBoundary>
       <ConvexAuthProvider client={convex}>
-        <BrowserRouter>
+        <BrowserRouter basename={routerBasename()}>
           <RouteSyncer />
           <PerformanceModeSync />
           <ScrollToTop />

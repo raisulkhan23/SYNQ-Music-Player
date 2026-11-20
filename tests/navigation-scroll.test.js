@@ -15,7 +15,9 @@ describe("navigation scroll reset", () => {
     expect(mainSource).toContain(
       'import { ScrollToTop } from "@/components/ScrollToTop"',
     );
-    expect(mainSource).toMatch(/<BrowserRouter>[\s\S]{0,400}<ScrollToTop \/>/);
+    // The opening tag carries a `basename` for sub-path deployments, so match
+    // the tag itself rather than the bare `<BrowserRouter>` form.
+    expect(mainSource).toMatch(/<BrowserRouter\b[\s\S]{0,400}<ScrollToTop \/>/);
   });
 
   test("resets the app shell scroll container, not just the document", () => {
