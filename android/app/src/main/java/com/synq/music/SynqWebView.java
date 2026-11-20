@@ -33,11 +33,29 @@ public class SynqWebView extends CapacitorWebView {
 
     @Override
     protected void onWindowVisibilityChanged(int visibility) {
-        if (visibility == View.GONE && SynqPlaybackPlugin.isPlaybackActive()) {
+        // Chromium pauses HTML media as soon as it believes its window is not
+        // visible, which is exactly what happens when the app is minimised or
+        // the screen is turned off. While the playback lease is held the WebView
+        // must therefore keep reporting itself as visible, so an <audio>
+        // element keeps decoding and the foreground service is not the only
+        // thing keeping the track alive.
+        if ((visibility == View.GONE || visibility == View.INVISIBLE)
+                && SynqPlaybackPlugin.isPlaybackActive()) {
             super.onWindowVisibilityChanged(View.VISIBLE);
             return;
         }
         super.onWindowVisibilityChanged(visibility);
+    }
+
+    @Override
+    public void onVisibilityChanged(View changedView, int visibility) {
+        if ((visibility == View.GONE || visibility == View.INVISIBLE)
+                && SynqPlaybackPlugin.isPlaybackActive()
+                && changedView == this) {
+            super.onVisibilityChanged(changedView, View.VISIBLE);
+            return;
+        }
+        super.onVisibilityChanged(changedView, visibility);
     }
 
     /** Re-apply the visibility Chromium should see after a lease change. */

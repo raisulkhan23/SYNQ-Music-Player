@@ -20,6 +20,13 @@ const config: CapacitorConfig = {
   appName: "SYNQ",
   webDir: "dist",
   android: {
+    // Keep the WebView running when the app is backgrounded. This is the
+    // Capacitor-side half of background playback: without it the bridge pauses
+    // the WebView on onStop even though the media session foreground service
+    // is still running, which is exactly the "music stops when minimized"
+    // failure. The other half is SynqWebView withholding the GONE visibility
+    // notification while the playback lease is held.
+    keepRunning: true,
     // Released builds must not ship a debuggable WebView, so this is OFF unless
     // it is asked for explicitly — the same opt-in shape as
     // `CAPACITOR_SERVER_URL` above, and for the same reason: an ambient setting
