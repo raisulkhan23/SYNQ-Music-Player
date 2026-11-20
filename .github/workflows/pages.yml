@@ -29,7 +29,15 @@ jobs:
         # URLs both read it back from `import.meta.env.BASE_URL`, which keeps the
         # landing page, its nav and its download CTAs pointing at the real
         # location instead of the domain root.
-        run: npm run build -- --base=/synqmusic/
+        #
+        # The prefix is taken from the repository running the workflow, not
+        # hardcoded: this same file ships in both the canonical repo
+        # (`synqmusic`) and the public mirror (`SYNQ-Music-Player`), and each one
+        # is served under its own name. Repo names are case-sensitive in the
+        # Pages path, so the exact `repository.name` is used.
+        env:
+          PAGES_BASE: /${{ github.event.repository.name }}/
+        run: npm run build -- --base="$PAGES_BASE"
       # A history router needs the shell for deep links and refreshes; Pages
       # serves 404.html for unknown paths, so make it the same document.
       - name: Add SPA fallback
