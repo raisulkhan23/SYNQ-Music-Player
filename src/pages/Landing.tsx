@@ -502,7 +502,7 @@ export default function Landing() {
           </Link>
           <Link
             to="/home"
-            className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground shadow-[0_6px_24px_rgb(203_244_143/0.35)] transition-transform hover:scale-105"
+            className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground shadow-[0_6px_24px_rgb(203_244_143/0.35)] transition-transform [@media(hover:hover)]:hover:scale-105"
           >
             Start listening
           </Link>
@@ -548,10 +548,10 @@ export default function Landing() {
           >
             <Link
               to="/home"
-              className="group flex items-center gap-2 rounded-full bg-brand px-6 py-3 text-sm font-semibold text-brand-foreground shadow-[0_10px_36px_rgb(203_244_143/0.4)] transition-transform hover:scale-105"
+              className="group flex items-center gap-2 rounded-full bg-brand px-6 py-3 text-sm font-semibold text-brand-foreground shadow-[0_10px_36px_rgb(203_244_143/0.4)] transition-transform [@media(hover:hover)]:hover:scale-105"
             >
               Start listening free{" "}
-              <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+              <ArrowRight className="size-4 transition-transform [@media(hover:hover)]:group-hover:translate-x-1" />
             </Link>
             <a
               href={WINDOWS_INSTALLER_URL}
@@ -621,7 +621,7 @@ export default function Landing() {
               transition={{ ...fadeUp.transition, delay: index * 0.07 }}
               className="group rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5 transition-ui [@media(hover:hover)]:hover:-translate-y-1 hover:border-brand/30 hover:bg-white/[0.05]"
             >
-              <span className="flex size-10 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20 transition-transform group-hover:scale-110">
+              <span className="flex size-10 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20 transition-transform [@media(hover:hover)]:group-hover:scale-110">
                 <Icon className="size-5" />
               </span>
               <h3 className="mt-4 font-display text-base font-semibold">
@@ -797,7 +797,7 @@ export default function Landing() {
               transition={{ ...fadeUp.transition, delay: index * 0.08 }}
               className="group flex items-center gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] px-5 py-4 transition-colors hover:border-brand/30 hover:bg-white/[0.05]"
             >
-              <span className="flex size-10 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20 transition-transform group-hover:scale-110">
+              <span className="flex size-10 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20 transition-transform [@media(hover:hover)]:group-hover:scale-110">
                 <Icon className="size-5" />
               </span>
               <h3 className="max-w-full shrink-0 truncate font-display text-base font-semibold sm:text-lg">
@@ -836,10 +836,10 @@ export default function Landing() {
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
                 to="/home"
-                className="group flex items-center gap-2 rounded-full bg-brand px-7 py-3 text-sm font-semibold text-brand-foreground shadow-[0_10px_36px_rgb(203_244_143/0.4)] transition-transform hover:scale-105"
+                className="group flex items-center gap-2 rounded-full bg-brand px-7 py-3 text-sm font-semibold text-brand-foreground shadow-[0_10px_36px_rgb(203_244_143/0.4)] transition-transform [@media(hover:hover)]:hover:scale-105"
               >
                 Start listening{" "}
-                <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="size-4 transition-transform [@media(hover:hover)]:group-hover:translate-x-1" />
               </Link>
               <a
                 href={WINDOWS_INSTALLER_URL}
@@ -895,7 +895,7 @@ export default function Landing() {
               </p>
             </div>
             <span className="mt-auto flex items-center gap-1 text-sm font-semibold text-brand">
-              Download .exe <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+              Download .exe <ArrowRight className="size-4 transition-transform [@media(hover:hover)]:group-hover:translate-x-1" />
             </span>
           </a>
           <a
@@ -915,7 +915,7 @@ export default function Landing() {
               </p>
             </div>
             <span className="mt-auto flex items-center gap-1 text-sm font-semibold text-brand">
-              Download .apk <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+              Download .apk <ArrowRight className="size-4 transition-transform [@media(hover:hover)]:group-hover:translate-x-1" />
             </span>
           </a>
           <div className="flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">

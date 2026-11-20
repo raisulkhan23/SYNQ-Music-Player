@@ -151,7 +151,7 @@ export function MediaCard({
                   "bg-[rgb(var(--tint))] text-black shadow-lg transition-ui duration-200",
                   // Hover reveals on pointer devices; on touch the card has no
                   // hover, so the control stays put and out of the way.
-                  "translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100",
+                  "translate-y-1 opacity-0 [@media(hover:hover)]:group-hover:translate-y-0 group-hover:opacity-100",
                   "focus-visible:translate-y-0 focus-visible:opacity-100 max-sm:translate-y-0 max-sm:opacity-100",
                   resolving && "max-sm:opacity-100",
                 )}

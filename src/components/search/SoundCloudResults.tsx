@@ -208,7 +208,7 @@ function SoundCloudRow({
             source: "soundcloud",
           })
         }
-        className="shrink-0 rounded-full p-1.5 transition-colors hover:scale-110"
+        className="shrink-0 rounded-full p-1.5 transition-colors [@media(hover:hover)]:hover:scale-110"
       >
         <Heart
           className={

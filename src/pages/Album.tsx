@@ -307,7 +307,7 @@ export default function Album() {
               <button
                 type="button"
                 onClick={playAll}
-                className="inline-flex items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-bold text-black transition-transform hover:scale-[1.02]"
+                className="inline-flex items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-bold text-black transition-transform [@media(hover:hover)]:hover:scale-[1.02]"
               >
                 <Play className="size-4 fill-current" />
                 Play album

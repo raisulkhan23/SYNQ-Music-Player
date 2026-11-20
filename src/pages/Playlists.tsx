@@ -65,7 +65,7 @@ export default function Playlists() {
         <button
           type="button"
           onClick={() => setDialogOpen(true)}
-          className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--tint))] px-4 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform hover:scale-[1.03]"
+          className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--tint))] px-4 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform [@media(hover:hover)]:hover:scale-[1.03]"
         >
           <Plus className="size-4" />
           New playlist
@@ -137,7 +137,7 @@ export default function Playlists() {
           <button
             type="button"
             onClick={() => setDialogOpen(true)}
-            className="mt-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform hover:scale-[1.03]"
+            className="mt-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform [@media(hover:hover)]:hover:scale-[1.03]"
           >
             Create your first playlist
           </button>

@@ -350,7 +350,7 @@ function MixCard({ mix }: { mix: (typeof POPULAR_MIXES)[number] }) {
       type="button"
       onClick={() => void play()}
       className={cn(
-        "group relative flex h-36 w-36 shrink-0 flex-col justify-end overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br p-3.5 text-left outline outline-1 outline-white/10 ring-1 ring-white/10 transition-[transform,border-color,outline-color,box-shadow] hover:scale-[1.03] hover:border-white/40 hover:outline-white/20 hover:ring-white/25 sm:w-44",
+        "group relative flex h-36 w-36 shrink-0 flex-col justify-end overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br p-3.5 text-left outline outline-1 outline-white/10 ring-1 ring-white/10 transition-[transform,border-color,outline-color,box-shadow] [@media(hover:hover)]:hover:scale-[1.03] hover:border-white/40 hover:outline-white/20 hover:ring-white/25 sm:w-44",
         mix.gradient,
       )}
     >

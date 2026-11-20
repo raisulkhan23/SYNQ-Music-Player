@@ -216,7 +216,7 @@ export default function Liked() {
               type="button"
               onClick={playAll}
               disabled={resolvingRemoteId !== null}
-              className="flex shrink-0 items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-ui hover:scale-[1.03] active:scale-95 disabled:opacity-60"
+              className="flex shrink-0 items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-ui [@media(hover:hover)]:hover:scale-[1.03] active:scale-95 disabled:opacity-60"
             >
               <Play className="size-4 fill-current" />
               Play all
@@ -268,7 +268,7 @@ export default function Liked() {
           <button
             type="button"
             onClick={() => navigate("/search")}
-            className="mt-1 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform hover:scale-[1.03]"
+            className="mt-1 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform [@media(hover:hover)]:hover:scale-[1.03]"
           >
             Find music
           </button>

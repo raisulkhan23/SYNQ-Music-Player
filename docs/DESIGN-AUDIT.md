@@ -29,6 +29,15 @@ Audit performed against the rules in: `apple-design`, `impeccable`, `emil-design
 | sheet `ease-in-out` + duration 300/500 | `ease-drawer` + duration 200/300 | `src/components/ui/sheet.tsx:59` | drawer curve + sub-300/500 budget (emil) |
 | (missing) `ease-drawer` utility | added `@utility ease-drawer` | `src/index.css` | extend tokens, not fork (emil) |
 
+## Additional fixes (second audit pass)
+
+| Before | After | File(s) | Rule (skill) |
+| --- | --- | --- | --- |
+| 38 ungated `hover:scale-*` / `group-hover:scale-*` / `hover:translate-*` | gated behind `[@media(hover:hover)]` | 21 files under `src/` | hover gating on touch (emil/apple) |
+| `.eq-bar`, `.shimmer` not in reduced-motion list | added to `animation: none !important` | `src/index.css` | reduced-motion (emil/apple) |
+| lyric highlight transition 500ms | 300ms | `FullscreenPlayer.tsx` | sub-300ms UI (emil) |
+| click-ripple 700ms | 400ms | `src/index.css` | sub-300/500 UI budget (emil) |
+
 ## Not applied (out of scope / not applicable)
 
 - apple-design gesture rules (1:1 tracking, rubber-banding, momentum projection): no gesture-driven draggable surfaces in scope.

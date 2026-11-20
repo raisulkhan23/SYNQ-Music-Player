@@ -160,7 +160,7 @@ export default function TrackLink() {
           onClick={() =>
             isCurrent ? togglePlay() : playTrack(trackMetaToPlayable(meta))
           }
-          className="flex items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform hover:scale-[1.03]"
+          className="flex items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform [@media(hover:hover)]:hover:scale-[1.03]"
         >
           <Play className="size-4 fill-current" />
           Play
@@ -175,7 +175,7 @@ export default function TrackLink() {
       <div className="flex items-center gap-2">
         <Link
           to="/home"
-          className="rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform hover:scale-[1.03]"
+          className="rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-transform [@media(hover:hover)]:hover:scale-[1.03]"
         >
           Open SYNQ
         </Link>

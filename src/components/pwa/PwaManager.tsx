@@ -176,7 +176,7 @@ export function PwaManager() {
                 // lozenge. `whitespace-nowrap` stops the label breaking on a
                 // narrow strip, and the slightly roomier padding gives it a
                 // comfortable one-line hit target.
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[rgb(var(--tint))] px-3 py-1.5 text-[11px] font-semibold whitespace-nowrap text-black transition-transform hover:scale-[1.03]"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[rgb(var(--tint))] px-3 py-1.5 text-[11px] font-semibold whitespace-nowrap text-black transition-transform [@media(hover:hover)]:hover:scale-[1.03]"
               >
                 <Download className="size-3" />
                 Install

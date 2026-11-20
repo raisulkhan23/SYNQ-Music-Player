@@ -91,7 +91,7 @@ export function SharedWithMe() {
                 type="button"
                 aria-label={`Add ${item.name} to your library`}
                 onClick={() => void addToLibrary(item.playlistId)}
-                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black transition-transform hover:scale-[1.05]"
+                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--tint))] text-black transition-transform [@media(hover:hover)]:hover:scale-[1.05]"
               >
                 <Plus className="size-3.5" />
               </button>

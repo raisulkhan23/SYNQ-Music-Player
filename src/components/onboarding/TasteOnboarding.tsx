@@ -180,7 +180,7 @@ export function TasteOnboarding() {
             className={cn(
               "flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-transform",
               tasteIsUsable(profile) && !saving
-                ? "bg-[rgb(var(--tint))] text-black hover:scale-[1.02]"
+                ? "bg-[rgb(var(--tint))] text-black [@media(hover:hover)]:hover:scale-[1.02]"
                 : "cursor-not-allowed bg-white/[0.06] text-muted-foreground",
             )}
           >

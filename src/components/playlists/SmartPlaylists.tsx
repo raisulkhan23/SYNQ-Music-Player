@@ -309,7 +309,7 @@ function SmartCard({
           "mt-3 flex w-full items-center justify-center gap-2 rounded-full py-2 text-sm font-semibold transition-colors",
           playlist.trackCount === 0
             ? "cursor-not-allowed bg-white/[0.05] text-muted-foreground"
-            : "bg-[rgb(var(--tint))] text-black hover:scale-[1.01]",
+            : "bg-[rgb(var(--tint))] text-black [@media(hover:hover)]:hover:scale-[1.01]",
         )}
       >
         <Play className="size-4" />

@@ -287,7 +287,7 @@ function ReadingSessionNav() {
       <button
         type="button"
         onClick={exitSession}
-        className="flex items-center gap-1.5 rounded-xl bg-brand px-2.5 py-2 text-xs font-semibold text-brand-foreground transition-transform hover:scale-[1.02]"
+        className="flex items-center gap-1.5 rounded-xl bg-brand px-2.5 py-2 text-xs font-semibold text-brand-foreground transition-transform [@media(hover:hover)]:hover:scale-[1.02]"
         title="End listening session"
       >
         <Minimize2 className="size-3.5" />
@@ -792,7 +792,7 @@ export function PlayerBar({ compact = false }: { compact?: boolean }) {
               setTimeout(() => setLikePulse(false), 400);
             }}
             className={cn(
-              "hidden shrink-0 rounded-full p-1.5 transition-ui hover:scale-110 lg:block",
+              "hidden shrink-0 rounded-full p-1.5 transition-ui [@media(hover:hover)]:hover:scale-110 lg:block",
               isLiked
                 ? "text-[rgb(var(--tint))]"
                 : "text-muted-foreground hover:text-foreground",

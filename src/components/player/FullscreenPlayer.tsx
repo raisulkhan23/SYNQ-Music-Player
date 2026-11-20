@@ -349,7 +349,7 @@ function LyricsPanel({
                     // width of the panel, and the left gutter is where the
                     // active marker lives so the text never shifts sideways
                     // when a line becomes active.
-                    "group relative block w-full rounded-r-lg py-[3px] pr-2 pl-5 text-left transition-[color,opacity,transform] duration-500 ease-out",
+                    "group relative block w-full rounded-r-lg py-[3px] pr-2 pl-5 text-left transition-[color,opacity,transform] duration-300 ease-out",
                     i === activeIndex && synced
                       ? "text-[1.15rem] leading-relaxed font-bold text-[rgb(var(--tint))]"
                       : "text-[0.95rem] leading-relaxed font-medium text-foreground/35 hover:text-foreground/70",
@@ -362,7 +362,7 @@ function LyricsPanel({
                   <span
                     aria-hidden="true"
                     className={cn(
-                      "absolute top-1/2 left-0 w-[3px] -translate-y-1/2 rounded-full bg-[rgb(var(--tint))] transition-[height,opacity] duration-500",
+                      "absolute top-1/2 left-0 w-[3px] -translate-y-1/2 rounded-full bg-[rgb(var(--tint))] transition-[height,opacity] duration-300",
                       i === activeIndex && synced
                         ? "h-6 opacity-100"
                         : "h-0 opacity-0",
@@ -1021,7 +1021,7 @@ export function FullscreenPlayer() {
                     : "Add to liked songs"
                 }
                 onClick={() => toggleLike(current.id)}
-                className="rounded-full p-2 transition-ui hover:scale-110 sm:hidden"
+                className="rounded-full p-2 transition-ui [@media(hover:hover)]:hover:scale-110 sm:hidden"
               >
                 <Heart
                   className={cn(
@@ -1042,7 +1042,7 @@ export function FullscreenPlayer() {
                 }
                 onClick={() => toggleLike(current.id)}
                 className={cn(
-                  "hidden rounded-full p-2.5 transition-ui hover:scale-110 sm:block",
+                  "hidden rounded-full p-2.5 transition-ui [@media(hover:hover)]:hover:scale-110 sm:block",
                   liked[current.id]
                     ? "text-[rgb(var(--tint))]"
                     : "text-muted-foreground hover:text-foreground",
@@ -1360,7 +1360,7 @@ export function FullscreenPlayer() {
                 title={liked[current.id] ? "Unlike" : "Like"}
                 onClick={() => toggleLike(current.id)}
                 className={cn(
-                  "hidden rounded-full p-2 transition-ui hover:scale-110 sm:block",
+                  "hidden rounded-full p-2 transition-ui [@media(hover:hover)]:hover:scale-110 sm:block",
                   liked[current.id]
                     ? "text-[rgb(var(--tint))]"
                     : "text-muted-foreground hover:text-foreground",

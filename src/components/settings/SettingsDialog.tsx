@@ -2206,7 +2206,7 @@ export function SettingsDialog({
                           type="button"
                           onClick={() => activateWallpaperEntry(entry)}
                           className={cn(
-                            "relative aspect-square w-full overflow-hidden rounded-lg border bg-black/20 transition-ui hover:scale-[1.03]",
+                            "relative aspect-square w-full overflow-hidden rounded-lg border bg-black/20 transition-ui [@media(hover:hover)]:hover:scale-[1.03]",
                             selected
                               ? "border-[rgb(var(--tint))] ring-2 ring-[rgb(var(--tint)_/_0.35]"
                               : "border-white/10 hover:border-white/30",

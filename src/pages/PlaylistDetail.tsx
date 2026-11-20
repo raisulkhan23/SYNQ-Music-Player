@@ -601,7 +601,7 @@ export default function PlaylistDetail() {
               type="button"
               onClick={() => void playAll()}
               disabled={resolvingId !== null}
-              className="flex items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-ui hover:scale-[1.03] active:scale-95 disabled:opacity-60"
+              className="flex items-center gap-2 rounded-full bg-[rgb(var(--tint))] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_8px_30px_rgb(var(--tint)/0.35)] transition-ui [@media(hover:hover)]:hover:scale-[1.03] active:scale-95 disabled:opacity-60"
             >
               <Play className="size-4 fill-current" />
               {resolvingId === "__all__" ? "Loading…" : "Play all"}

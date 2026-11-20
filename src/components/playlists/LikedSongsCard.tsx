@@ -46,7 +46,7 @@ export function LikedSongsCard() {
           <div className="absolute inset-0 bg-gradient-to-br from-rose-500/45 via-fuchsia-500/20 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
           <div className="relative flex size-full items-center justify-center">
-            <Heart className="size-9 text-[rgb(var(--tint))] drop-shadow-[0_4px_16px_rgb(var(--tint)/0.45)] transition-transform duration-300 group-hover:scale-110" />
+            <Heart className="size-9 text-[rgb(var(--tint))] drop-shadow-[0_4px_16px_rgb(var(--tint)/0.45)] transition-transform duration-300 [@media(hover:hover)]:group-hover:scale-110" />
           </div>
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
         </div>

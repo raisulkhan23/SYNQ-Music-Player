@@ -148,7 +148,7 @@ export function ShareDialog({
                       <button
                         type="button"
                         onClick={() => void handleShare(match.userId, match.name)}
-                        className="flex shrink-0 items-center gap-1 rounded-full bg-[rgb(var(--tint))] px-3 py-1.5 text-xs font-semibold text-black transition-transform hover:scale-[1.03]"
+                        className="flex shrink-0 items-center gap-1 rounded-full bg-[rgb(var(--tint))] px-3 py-1.5 text-xs font-semibold text-black transition-transform [@media(hover:hover)]:hover:scale-[1.03]"
                       >
                         <UserPlus className="size-3.5" />
                         Share

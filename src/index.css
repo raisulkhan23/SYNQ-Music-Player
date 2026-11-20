@@ -1681,7 +1681,7 @@ html.reduce-motion *::after {
     box-shadow: 0 0 22px rgb(var(--tint) / 0.16);
     pointer-events: none;
     transform: translate(-50%, -50%) scale(0.35);
-    animation: click-ripple-expand 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: click-ripple-expand 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
   @keyframes click-ripple-expand {
     0% {
@@ -1724,7 +1724,9 @@ html.reduce-motion *::after {
     .mobile-player,
     .mobile-island-aura,
     .mobile-player-art,
-    .mobile-live-cue i {
+    .mobile-live-cue i,
+    .eq-bar,
+    .shimmer {
       animation: none !important;
     }
     .glass-card,

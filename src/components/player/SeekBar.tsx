@@ -72,7 +72,7 @@ export function SeekBar({ className }: { className?: string }) {
           `scale-y` is compositor-only. */}
       <div
         ref={trackRef}
-        className="relative h-[6px] w-full origin-center scale-y-[0.667] rounded-full bg-white/10 transition-ui duration-150 group-hover:scale-y-100 motion-reduce:transition-none"
+        className="relative h-[6px] w-full origin-center scale-y-[0.667] rounded-full bg-white/10 transition-ui duration-150 [@media(hover:hover)]:group-hover:scale-y-100 motion-reduce:transition-none"
       >
         <div
           className="absolute inset-y-0 left-0 rounded-full bg-white/15"
