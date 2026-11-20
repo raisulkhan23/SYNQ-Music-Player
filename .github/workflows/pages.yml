@@ -37,6 +37,13 @@ jobs:
         # Pages path, so the exact `repository.name` is used.
         env:
           PAGES_BASE: /${{ github.event.repository.name }}/
+          # The client backend address, baked in at build time. Without it the
+          # deployed site boots into its "running without the Convex backend"
+          # state and every visitor sees a dead client that retries a
+          # placeholder WebSocket host. This is the same public deployment the
+          # packaged Android build pins (see release.yml), kept overridable by a
+          # repository variable so the URL can move without a code change.
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL || 'https://graceful-jaguar-949.convex.cloud' }}
         run: npm run build -- --base="$PAGES_BASE"
       # A history router needs the shell for deep links and refreshes; Pages
       # serves 404.html for unknown paths, so make it the same document.
