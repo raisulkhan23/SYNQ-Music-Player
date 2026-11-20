@@ -723,6 +723,10 @@ html.reduce-motion *::after {
    Nothing layout-affecting (`width`, `height`, `margin`, `padding`, `top`,
    `left`) belongs here: those force layout, paint and composite on every
    frame instead of running on the compositor. */
+@utility ease-drawer {
+  transition-timing-function: var(--ease-drawer);
+}
+
 @utility transition-ui {
   transition-property:
     translate, scale, rotate, transform, opacity, background-color,

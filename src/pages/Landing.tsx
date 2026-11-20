@@ -171,7 +171,7 @@ function ListeningExperience() {
               key={key}
               type="button"
               onClick={() => setMode(key)}
-              className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-all ${mode === key ? "bg-white text-black shadow-lg" : "text-muted-foreground hover:text-foreground"}`}
+              className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-ui ${mode === key ? "bg-white text-black shadow-lg" : "text-muted-foreground hover:text-foreground"}`}
             >
               {modeContent[key].label}
             </button>
@@ -619,7 +619,7 @@ export default function Landing() {
               key={title}
               {...fadeUp}
               transition={{ ...fadeUp.transition, delay: index * 0.07 }}
-              className="group rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5 transition-all hover:-translate-y-1 hover:border-brand/30 hover:bg-white/[0.05]"
+              className="group rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5 transition-ui [@media(hover:hover)]:hover:-translate-y-1 hover:border-brand/30 hover:bg-white/[0.05]"
             >
               <span className="flex size-10 items-center justify-center rounded-xl bg-brand/12 text-brand ring-1 ring-brand/20 transition-transform group-hover:scale-110">
                 <Icon className="size-5" />
